@@ -48,15 +48,14 @@ const LOG = [
  *   'wortmarke' — SYSTEM ONLINE, set in two lines across the ring. Reads
  *     instantly, in any language, and needs no artwork that does not exist yet.
  *
- *   'monogramm' — 2, the lily, 9. The stronger idea, because the counter's own
- *     digits are what stay behind: a hundred becomes twenty-nine in the same
- *     face in the same place, so the ending is a transformation rather than a
- *     cut to a logo. It is waiting on the real lily; what ships here is a
- *     drawn-from-scratch stand-in.
+ *   'monogramm' — 2, the lily, 9, as one figure. The stronger ending, because
+ *     the counter's own digits are what stay behind: a hundred becomes
+ *     twenty-nine in the same face in the same place, so it reads as a
+ *     transformation rather than a cut to a logo.
  *
  * One word decides it, and nothing else in the file cares which.
  */
-const END_MARK: 'wortmarke' | 'monogramm' = 'wortmarke'
+const END_MARK: 'wortmarke' | 'monogramm' = 'monogramm'
 
 const CYAN = '#00e5ff'
 const HOT = '#dffbff'
@@ -75,35 +74,65 @@ const easeIO = (t: number) => {
 }
 
 /**
- * The lily.
+ * The mark: two, the lily, nine — as one figure rather than three objects.
  *
- * A fleur-de-lis: one upright lance, two petals falling away from it, a band
- * across the waist. Stroked rather than filled, so it belongs to the same
- * wireframe world as everything around it.
+ * A fleur-de-lis is a lance rising from a band with leaves falling away from
+ * it, and that structure has exactly the slots this needs. The lance goes up
+ * the middle. The band across the waist is also the line the digits stand on.
+ * The leaves curl out from under it. So the digits are not placed beside a
+ * lily; they occupy the places where a lily's outer petals would be, and the
+ * silhouette stays a crest.
  *
- * PLACEHOLDER. This is a drawn-from-scratch lily, not the real mark. When the
- * actual icon arrives it replaces the body of this function and nothing else —
- * the sequence around it neither knows nor cares what shape gets drawn here.
+ * The digits are set in Chakra Petch rather than drawn. The project's own face
+ * shapes a 2 and a 9 better than bezier curves guessed by hand, and it means
+ * the mark is in the same voice as every other numeral in the interface.
+ *
+ * Geometry is in units of `s`, the mark's full height, so it holds together at
+ * any size — which matters, because the same function draws it at a hundred
+ * pixels in the boot ring and could draw it at sixteen in a tab.
  */
-function lily(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-  const h = s / 2
+function mark(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const band = cy + s * 0.3
 
+  // The lance. A pointed leaf with a slight waist, closed at the band.
   ctx.beginPath()
-  ctx.moveTo(cx, cy - h)
-  ctx.bezierCurveTo(cx + s * 0.17, cy - h * 0.34, cx + s * 0.12, cy + h * 0.12, cx, cy + h * 0.4)
-  ctx.bezierCurveTo(cx - s * 0.12, cy + h * 0.12, cx - s * 0.17, cy - h * 0.34, cx, cy - h)
+  ctx.moveTo(cx, cy - s * 0.62)
+  ctx.bezierCurveTo(cx + s * 0.13, cy - s * 0.3, cx + s * 0.1, cy + s * 0.05, cx + s * 0.04, band)
+  ctx.lineTo(cx - s * 0.04, band)
+  ctx.bezierCurveTo(cx - s * 0.1, cy + s * 0.05, cx - s * 0.13, cy - s * 0.3, cx, cy - s * 0.62)
   ctx.stroke()
 
+  // A seed of light where the lance meets the band — the one filled element,
+  // and the thing that keeps the centre from reading as empty at small sizes.
   ctx.beginPath()
-  ctx.moveTo(cx + s * 0.03, cy - h * 0.1)
-  ctx.bezierCurveTo(cx + s * 0.36, cy - h * 0.52, cx + s * 0.42, cy + h * 0.08, cx + s * 0.15, cy + h * 0.38)
-  ctx.moveTo(cx - s * 0.03, cy - h * 0.1)
-  ctx.bezierCurveTo(cx - s * 0.36, cy - h * 0.52, cx - s * 0.42, cy + h * 0.08, cx - s * 0.15, cy + h * 0.38)
-  ctx.stroke()
+  ctx.arc(cx, cy - s * 0.04, s * 0.045, 0, Math.PI * 2)
+  ctx.fill()
 
+  // The digits, standing on the band.
+  ctx.save()
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
+  ctx.font = `700 ${s * 0.52}px 'Chakra Petch', system-ui, sans-serif`
+  ctx.fillText('2', cx - s * 0.42, band)
+  ctx.fillText('9', cx + s * 0.42, band)
+  ctx.restore()
+
+  // The band, and the two leaves curling out from under its ends.
   ctx.beginPath()
-  ctx.moveTo(cx - s * 0.26, cy + h * 0.5)
-  ctx.lineTo(cx + s * 0.26, cy + h * 0.5)
+  ctx.moveTo(cx - s * 0.6, band)
+  ctx.lineTo(cx + s * 0.6, band)
+  ctx.moveTo(cx - s * 0.6, band)
+  ctx.bezierCurveTo(
+    cx - s * 0.78, band + s * 0.04,
+    cx - s * 0.72, band + s * 0.2,
+    cx - s * 0.5, band + s * 0.24,
+  )
+  ctx.moveTo(cx + s * 0.6, band)
+  ctx.bezierCurveTo(
+    cx + s * 0.78, band + s * 0.04,
+    cx + s * 0.72, band + s * 0.2,
+    cx + s * 0.5, band + s * 0.24,
+  )
   ctx.stroke()
 }
 
@@ -223,10 +252,9 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
     ctx.textBaseline = 'middle'
 
     if (END_MARK === 'monogramm') {
-      lily(ctx, cx, cy, ms * (0.86 + markIn * 0.14))
-      ctx.font = `700 ${ms * 0.62}px 'Chakra Petch', system-ui, sans-serif`
-      ctx.fillText('2', cx - ms * 0.6, cy + ms * 0.12)
-      ctx.fillText('9', cx + ms * 0.6, cy + ms * 0.12)
+      // Raised by a tenth of its height: the mark hangs its leaves below the
+      // band, so its optical centre sits above its geometric one.
+      mark(ctx, cx, cy - ms * 0.1, ms * (0.9 + markIn * 0.1))
     } else {
       // Two lines rather than one: thirteen letter-spaced characters do not fit
       // across a circle, and stacked six-and-six sits in it as a lockup.

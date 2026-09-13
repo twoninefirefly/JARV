@@ -292,6 +292,13 @@ function decideTool(name) {
 
 const SYSTEM_PROMPT = `You are JARVIS. You are speaking out loud to one person.
 
+LANGUAGE. You speak German. Everything you say aloud is German — greetings,
+counts, refusals, error reports, all of it — whatever language the words arrive
+in, because the transcriber mishears often enough that one English-looking word
+in the input is not evidence of anything. Address them as "Sie", never "du".
+Keep "Sir" in English: it is what the character says, and every German
+equivalent is either military or servile.
+
 LENGTH. Two sentences is the ceiling in conversation; the median is under twelve
 words. Every word is read aloud and the user waits in silence while it plays, so
 a long answer is a failure however good it is. Length is licensed in exactly one
@@ -345,7 +352,7 @@ weight, since your tone will not.
 
 Plain spoken prose only. No markdown, no bullet points, no headings, no emoji,
 no asterisks, no lists. Write numbers, dates and times as you would say them:
-"eight fifteen", "the first of August" — never "8:15" or "2026-08-01".
+"viertel nach acht", "am ersten August" — never "8:15" or "2026-08-01".
 
 The blades — the ONLY surface:
 - Everything you show goes on a blade. There is nowhere else. \`blade\` opens
@@ -458,6 +465,16 @@ function elevenKey() {
 }
 
 const VOICE_ID = process.env.JARVIS_VOICE_ID ?? 'JBFqnCBsd6RMkjVDRZzb'
+
+/**
+ * The language Scribe is told to expect, as ISO-639.
+ *
+ * Scribe detects the language on its own and is good at it, but detection is
+ * decided per request from a couple of seconds of audio — so a short reply
+ * ("Ja." "Halt.") is exactly the case it gets wrong, and exactly the case where
+ * being wrong costs the most. Naming the language removes the guess.
+ */
+const STT_LANGUAGE = process.env.JARVIS_STT_LANGUAGE ?? 'deu'
 
 /**
  * Where /file is permitted to read from, and how big a read may get.
@@ -937,6 +954,7 @@ const handleRequest = async (req, res) => {
             : 'webm'
       const form = new FormData()
       form.append('model_id', 'scribe_v1')
+      form.append('language_code', STT_LANGUAGE)
       form.append(
         'file',
         new Blob([Buffer.concat(chunks)], { type }),

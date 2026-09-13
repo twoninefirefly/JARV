@@ -8,44 +8,47 @@
  * The phrasing follows the character's actual grammar rather than generic
  * assistant-speak, which matters more than it sounds:
  *
- *   - Working lines are subjectless present participles: "Compiling.",
- *     "Cross-referencing." Not "I'm now checking" and never "let me".
- *   - There is no snap-to compliance formula. "Right away" and "At once" are
- *     not in his vocabulary; acknowledgement is deferential, not eager.
+ *   - Working lines name the work without naming a worker. English does this
+ *     with the bare participle ("Compiling."); German does it with the
+ *     subjectless passive ("Wird kompiliert."). Never "ich schaue mal".
+ *   - There is no snap-to compliance formula. "Sofort" and "Umgehend" are not
+ *     in his vocabulary; acknowledgement is deferential, not eager.
  *   - No filler words, no enthusiasm, no apology, no exclamation marks.
- *   - "Sir" fronted means urgency; final means routine. These are all routine,
- *     so it goes at the end, and only sometimes.
+ *   - "Sir" stays English and is never translated — "mein Herr" is a waiter.
+ *     Fronted it means urgency, final means routine. These are all routine, so
+ *     it goes at the end, and only sometimes.
+ *   - Siezen throughout.
  */
 
 /** Said as soon as the first tool fires, before any answer exists. */
 const WORKING = [
-  'Working on it, sir.',
-  'Compiling.',
-  'Retrieving.',
-  'Accessing the archive.',
-  'Cross-referencing.',
-  'Running the query now.',
-  'Searching.',
-  'Under way.',
+  'Wird erledigt, Sir.',
+  'Wird kompiliert.',
+  'Wird abgerufen.',
+  'Zugriff auf das Archiv.',
+  'Wird abgeglichen.',
+  'Die Abfrage läuft.',
+  'Wird gesucht.',
+  'Läuft bereits.',
 ]
 
 /** Acknowledging an order where no tool is involved. */
 const ACKNOWLEDGE = [
-  'As you wish, sir.',
-  'Very good, sir.',
-  'Certainly.',
-  'Understood.',
-  'Consider it done.',
-  'Directly, sir.',
+  'Wie Sie wünschen, Sir.',
+  'Sehr wohl, Sir.',
+  'Gewiss.',
+  'Verstanden.',
+  'Betrachten Sie es als erledigt.',
+  'Selbstverständlich, Sir.',
 ]
 
 /** Answering to his name, before the user has said what they want. */
 const ATTENTION = [
-  'Yes, sir?',
+  'Ja, Sir?',
   'Sir?',
-  'At your service, sir.',
-  'Standing by.',
-  'Awake, sir.',
+  'Zu Diensten, Sir.',
+  'Bereit.',
+  'Ich höre, Sir.',
 ]
 
 /**

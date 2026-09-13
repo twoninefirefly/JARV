@@ -1,4 +1,4 @@
-import { BRIDGE_HTTP_URL } from '../config'
+import { BRIDGE_HTTP_URL, LOCALE } from '../config'
 import { getMic } from './audio'
 import { speakingNow, speakingSince } from './tts'
 import { startVad, type Vad } from './vad'
@@ -76,9 +76,16 @@ const WAKE_DEBOUNCE = 1500
  * Jervis, Jarvys or Java's for a perfectly clear utterance — every one of which
  * used to be silently discarded, so the wake word "just didn't work" with no
  * indication why. Better a rare false wake than a name that does not answer.
+ *
+ * The second group is the German recogniser's version of the same problem: an
+ * English name scored against a German model comes back as Jarwis, Dscharvis
+ * or Jawis. These are guesses until they are not — the diagnostics panel prints
+ * the raw transcript, so anything it shows repeatedly belongs in this list.
+ * Deliberately absent: Servus, which a German model does return for "Jarvis"
+ * and which is also a word people say to each other.
  */
 const WAKE =
-  /\b(?:hey|hi|ok|okay|yo)?\s*(?:jarvis|jarvys|jervis|jarvis's|travis|jarviss|java's|jarv)\b(?!'s)/i
+  /\b(?:hey|hi|hey,|he|ey|ok|okay|yo)?\s*(?:jarvis|jarvys|jervis|jarvis's|travis|jarviss|java's|jarv|jarwis|dscharvis|scharvis|charvis|jawis)\b(?!'s)/i
 
 /** Everything after the wake phrase, which is usually the actual command. */
 function afterWake(text: string): string {
@@ -267,7 +274,7 @@ const norm = (s: string) =>
  * would be the single most infuriating failure this file could have.
  */
 const OVERRIDE =
-  /\b(stop|wait|jarvis|cancel|enough|quiet|hold on|shut up|never ?mind|forget it|no)\b/i
+  /\b(stop|stopp|halt|warte|wait|jarvis|cancel|abbrechen|enough|genug|quiet|ruhe|still|hold on|shut up|never ?mind|egal|forget it|vergiss es|no|nein)\b/i
 
 /**
  * Words too common to be evidence of anything.
@@ -760,7 +767,7 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
     rec = new Ctor()
     rec.continuous = true
     rec.interimResults = true
-    rec.lang = 'en-GB'
+    rec.lang = LOCALE
     rec.onstart = () => {
       running = true
       diag.running = true

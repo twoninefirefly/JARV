@@ -5,6 +5,8 @@ import {
   TTS_ENGINE,
   KOKORO_VOICE,
   BRIDGE_HTTP_URL,
+  LOCALE,
+  LANG,
 } from '../config'
 import * as kokoro from './kokoro'
 import { caps } from './capabilities'
@@ -165,54 +167,92 @@ const MAX_UNSPOKEN = 220
 const VOICE_PREF_KEY = 'jarvis.voice'
 
 /**
- * Rank installed voices by how close they are to the character: a British
- * male, low and level, not a novelty voice.
+ * Which installed voices come closest to the character, per language.
  *
- * The big win on macOS is the Enhanced/Premium variant of Daniel. The stock
- * "Daniel" is a compact voice from a decade ago and sounds it; the Enhanced
- * download is free (System Settings → Accessibility → Spoken Content → System
- * Voice → Manage Voices) and once installed it appears here automatically.
+ * speechSynthesis exposes a name and a BCP-47 tag and nothing else — no gender,
+ * no register, no quality — so ranking has to name the voices rather than
+ * describe them, and each language ships a different set. Anything not listed
+ * still scores on its tag alone; the lists only decide the order at the top.
+ */
+type Rank = {
+  /** The closest thing to the character available without leaving the machine. */
+  best: RegExp
+  good: RegExp
+  alt: RegExp
+  /** Right register, wrong decade — usable when nothing better is installed. */
+  passable: RegExp
+  /** Wrong register entirely: pushed below the usable threshold. */
+  wrong: RegExp
+}
+
+const RANKS: Record<string, Rank> = {
+  en: {
+    best: /^daniel/,
+    good: /google uk english male/,
+    alt: /\b(oliver|arthur|jamie|malcolm)\b/,
+    passable: /\b(reed|rocko|eddy)\b/,
+    wrong: /\b(flo|sandy|shelley|kate|serena|fiona|moira|karen|tessa|samantha|zoe|allison|ava|susan)\b/,
+  },
+  // Markus is the macOS German baritone and the nearest match to the character.
+  // Yannick is brighter but clean; Martin and Viktor are older compact voices
+  // that still read a sentence straight. As with Daniel, the Premium download
+  // is free and worth it — the stock German voices sound like a station
+  // announcement.
+  de: {
+    best: /^markus/,
+    good: /^yannick/,
+    alt: /\b(martin|viktor|boris)\b/,
+    passable: /\b(reed|rocko|eddy)\b/,
+    wrong: /\b(anna|petra|helena|klara|marlene|flo|sandy|shelley)\b/,
+  },
+}
+
+/**
+ * Rank installed voices by how close they are to the character: male, low and
+ * level, not a novelty voice.
+ *
+ * The big win on macOS is the Enhanced/Premium variant — the stock voices are
+ * compact ones from a decade ago and sound it. The download is free (System
+ * Settings → Accessibility → Spoken Content → System Voice → Manage Voices) and
+ * once installed it appears here automatically.
  */
 function score(v: SpeechSynthesisVoice): number {
+  const rank = RANKS[LANG] ?? RANKS.en
   const n = v.name.toLowerCase()
+  const tag = v.lang.toLowerCase().replace('_', '-')
   let s = 0
 
-  // The macOS British male, and the closest thing to the character available
-  // without leaving the machine.
-  if (n.startsWith('daniel')) s += 100
-  else if (n.includes('google uk english male')) s += 85
-  else if (/\b(oliver|arthur|jamie|malcolm)\b/.test(n)) s += 80
-  // Newer macOS en-GB male voices — casual, but serviceable.
-  else if (/\b(reed|rocko|eddy)\b/.test(n)) s += 40
+  if (rank.best.test(n)) s += 100
+  else if (rank.good.test(n)) s += 85
+  else if (rank.alt.test(n)) s += 80
+  else if (rank.passable.test(n)) s += 40
 
   // Higher-quality variants of whatever matched above.
   if (n.includes('premium')) s += 30
   else if (n.includes('enhanced')) s += 20
 
-  if (/en[-_]gb/i.test(v.lang)) s += 25
-  else if (/^en/i.test(v.lang)) s += 5
+  if (tag === LOCALE.toLowerCase()) s += 25
+  else if (tag.startsWith(LANG)) s += 5
 
   // Voices that clearly aren't a butler.
-  if (/grandma|grandpa|bubbles|jester|bells|boing|whisper|zarvox|superstar|trinoids|wobble|bahh|organ|cellos|bad news|good news/.test(n)) {
+  if (/grandma|grandpa|opa|oma|bubbles|jester|bells|boing|whisper|zarvox|superstar|trinoids|wobble|bahh|organ|cellos|bad news|good news/.test(n)) {
     s -= 200
   }
-  // Female-presenting names across the English sets.
-  if (/\b(flo|sandy|shelley|kate|serena|fiona|moira|karen|tessa|samantha|zoe|allison|ava|susan)\b/.test(n)) {
-    s -= 60
-  }
+  // Female-presenting names in this language's set.
+  if (rank.wrong.test(n)) s -= 60
 
   return s
 }
 
-/** Only voices that scored on a name match, not merely on being English —
- *  otherwise the picker cycles through a dozen US novelty voices. */
+/** Only voices that scored on a name match, not merely on speaking the right
+ *  language — otherwise the picker cycles through a dozen novelty voices. */
 const USABLE = 40
 
 /** Best-first list of usable voices — also what the voice picker cycles. */
 export function candidateVoices(): SpeechSynthesisVoice[] {
   return speechSynthesis
     .getVoices()
-    .filter((v) => /^en/i.test(v.lang))
+    .filter((v) => v.lang.toLowerCase().startsWith(LANG))
     .map((v) => ({ v, s: score(v) }))
     .filter((x) => x.s >= USABLE)
     .sort((a, b) => b.s - a.s)
@@ -236,7 +276,10 @@ function pickVoice(): SpeechSynthesisVoice | null {
     localStorage.removeItem(VOICE_PREF_KEY)
   }
 
-  cachedVoice = candidateVoices()[0] ?? all.find((v) => /^en/i.test(v.lang)) ?? null
+  cachedVoice =
+    candidateVoices()[0] ??
+    all.find((v) => v.lang.toLowerCase().startsWith(LANG)) ??
+    null
   return cachedVoice
 }
 
@@ -477,7 +520,7 @@ export function createSpeaker(): Speaker {
       const u = new SpeechSynthesisUtterance(text)
       const voice = pickVoice()
       if (voice) u.voice = voice
-      u.lang = voice?.lang ?? 'en-GB'
+      u.lang = voice?.lang ?? LOCALE
       // Deliberate, and deliberately invariant — the character's pace does not
       // change with stakes, and that steadiness is most of the effect. This
       // lands around 130 wpm, below the median for film dialogue.

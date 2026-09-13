@@ -75,6 +75,24 @@ export const BRIDGE_WS_URL = str(import.meta.env.VITE_BRIDGE_URL) ?? 'ws://local
 export const BRIDGE_HTTP_URL = BRIDGE_WS_URL.replace(/^ws/, 'http')
 
 /**
+ * The language JARVIS listens and speaks in, as a BCP-47 tag.
+ *
+ * Three things have to agree on this or the assistant appears deaf rather than
+ * misconfigured: the browser's SpeechRecognition (which carries both the wake
+ * word and the keyless transcription path), the speechSynthesis voice picker,
+ * and — through the bridge — Scribe and the persona. Set an English recogniser
+ * against German speech and it still returns text, confidently, and none of it
+ * ever matches the wake word.
+ *
+ * Override with VITE_LOCALE in .env.local; the bridge has its own JARVIS_LOCALE
+ * for the half that lives server-side.
+ */
+export const LOCALE = str(import.meta.env.VITE_LOCALE) ?? 'de-DE'
+
+/** Just the language subtag, for matching SpeechSynthesisVoice.lang. */
+export const LANG = LOCALE.split('-')[0].toLowerCase()
+
+/**
  * Speech output engine.
  *
  * false (default) — the browser's own speechSynthesis. Runs on-device, so

@@ -1022,6 +1022,16 @@ console.log(`[jarvis] bridge listening on ws://localhost:${PORT}`)
 console.log(
   `[jarvis] speech ${elevenKey() ? 'via ElevenLabs (key from MCP config)' : 'using browser fallback voice'}`,
 )
+// Which voice, by name of the setting rather than only its value. A wrong
+// JARVIS_VOICE_ID and an unset one sound identical from the other side of the
+// room — both are simply "not the voice I picked" — and the default is a
+// British male who will read German in a British accent all day without
+// complaining. Printing the id, and saying when it is the fallback, turns that
+// into something you can see instead of something you have to guess.
+console.log(
+  `[jarvis] voice ${VOICE_ID}` +
+    (process.env.JARVIS_VOICE_ID ? '' : ' (default — set JARVIS_VOICE_ID to change it)'),
+)
 console.log(`[jarvis] model ${MODEL} · effort ${EFFORT}`)
 console.log(
   `[jarvis] writes ${ALLOW_WRITES ? 'ENABLED' : 'disabled'}` +

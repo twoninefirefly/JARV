@@ -9,13 +9,13 @@ import { GestureGuide } from './GestureGuide'
 
 const statusText: Record<Phase, string> = {
   offline: 'OFFLINE',
-  boot: 'INITIALISING',
-  dormant: 'STANDBY — SAY “HEY JARVIS”',
+  boot: 'INITIALISIERUNG',
+  dormant: 'BEREITSCHAFT — „HEY JARVIS“ SAGEN',
   waking: 'ONLINE',
-  listening: 'LISTENING',
-  thinking: 'PROCESSING',
-  tooling: 'ACCESSING SYSTEMS',
-  speaking: 'RESPONDING',
+  listening: 'HÖRT ZU',
+  thinking: 'VERARBEITET',
+  tooling: 'ZUGRIFF AUF SYSTEME',
+  speaking: 'ANTWORTET',
 }
 
 function Corner({ at }: { at: 'tl' | 'tr' | 'bl' | 'br' }) {
@@ -210,8 +210,8 @@ export function Hud() {
       {/* Left rail: which integrations are live */}
       {ui.chrome.systems && (
         <aside className="rail rail-left">
-          <div className="rail-title">SYSTEMS</div>
-          {connected.length === 0 && <div className="rail-item dim">none linked</div>}
+          <div className="rail-title">SYSTEME</div>
+          {connected.length === 0 && <div className="rail-item dim">nichts verbunden</div>}
           {connected.map((c) => (
             <div key={c} className="rail-item">
               <span className="tick" />
@@ -273,7 +273,7 @@ export function Hud() {
                 exit={{ opacity: 0 }}
                 transition={{ type: 'spring', stiffness: 320, damping: 32 }}
               >
-                <span className="log-who">{t.role === 'user' ? 'YOU' : 'JARVIS'}</span>
+                <span className="log-who">{t.role === 'user' ? 'SIE' : 'JARVIS'}</span>
                 {/* Only his half decodes. What the user said was never
                     transmitted from anywhere — dressing it up as machine
                     output would be a lie about where the words came from. */}
@@ -312,11 +312,11 @@ export function Hud() {
 
       <footer className="hud-bottom">
         <span className="hint">
-          say <b>“hey jarvis”</b> · <kbd>Space</kbd> to talk · <kbd>G</kbd> hands
+          sag <b>„hey jarvis“</b> · <kbd>Leertaste</kbd> zum Sprechen · <kbd>G</kbd> Hände
           {voice && (
             <>
               {' · '}
-              <kbd>V</kbd> voice: {voice.replace(/\(.*?\)/g, '').trim()}
+              <kbd>V</kbd> Stimme: {voice.replace(/\(.*?\)/g, '').trim()}
             </>
           )}
         </span>

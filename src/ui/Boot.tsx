@@ -9,8 +9,8 @@ import { useStore } from '../store'
  * spine: it is on screen from the first frame to the last, and everything else
  * is something happening to it. The loading bar stops being a bar and becomes
  * a waveform; the waveform rolls into a ring; the counter travels into that
- * ring, shrinks, reaches a hundred, and lets go of two of its digits. What is
- * left standing is the mark — 2, the lily, 9.
+ * ring, shrinks, reaches a hundred, and then lets go. What is left standing in
+ * the ring is the mark; END_MARK below decides which one.
  *
  * The last frame is a circle at rest, in the same place and at the same size as
  * the live reactor behind this overlay. That is the whole reason the sequence
@@ -41,6 +41,22 @@ const LOG = [
   'PRUEFSUMME .................... OK',
   'SYSTEMWERKZEUG STARTEN',
 ]
+
+/**
+ * What stands in the ring once the counter reaches a hundred.
+ *
+ *   'wortmarke' — SYSTEM ONLINE, set in two lines across the ring. Reads
+ *     instantly, in any language, and needs no artwork that does not exist yet.
+ *
+ *   'monogramm' — 2, the lily, 9. The stronger idea, because the counter's own
+ *     digits are what stay behind: a hundred becomes twenty-nine in the same
+ *     face in the same place, so the ending is a transformation rather than a
+ *     cut to a logo. It is waiting on the real lily; what ships here is a
+ *     drawn-from-scratch stand-in.
+ *
+ * One word decides it, and nothing else in the file cares which.
+ */
+const END_MARK: 'wortmarke' | 'monogramm' = 'wortmarke'
 
 const CYAN = '#00e5ff'
 const HOT = '#dffbff'
@@ -199,17 +215,38 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
     ctx.save()
     ctx.globalAlpha = markIn
     ctx.strokeStyle = HOT
+    ctx.fillStyle = HOT
     ctx.shadowColor = CYAN
     ctx.shadowBlur = 16
     ctx.lineWidth = 1.5
-    lily(ctx, cx, cy, ms * (0.86 + markIn * 0.14))
-
-    ctx.fillStyle = HOT
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.font = `700 ${ms * 0.62}px 'Chakra Petch', system-ui, sans-serif`
-    ctx.fillText('2', cx - ms * 0.6, cy + ms * 0.12)
-    ctx.fillText('9', cx + ms * 0.6, cy + ms * 0.12)
+
+    if (END_MARK === 'monogramm') {
+      lily(ctx, cx, cy, ms * (0.86 + markIn * 0.14))
+      ctx.font = `700 ${ms * 0.62}px 'Chakra Petch', system-ui, sans-serif`
+      ctx.fillText('2', cx - ms * 0.6, cy + ms * 0.12)
+      ctx.fillText('9', cx + ms * 0.6, cy + ms * 0.12)
+    } else {
+      // Two lines rather than one: thirteen letter-spaced characters do not fit
+      // across a circle, and stacked six-and-six sits in it as a lockup.
+      const ls = unit * 0.055
+      ctx.font = `600 ${ls}px 'Chakra Petch', system-ui, sans-serif`
+      // Chrome and Edge honour this; anywhere else it is ignored rather than
+      // failing, and the words simply set tighter.
+      ctx.letterSpacing = `${ls * 0.26}px`
+      ctx.fillText('SYSTEM', cx, cy - ls * 0.72)
+      ctx.fillText('ONLINE', cx, cy + ls * 0.72)
+      ctx.letterSpacing = '0px'
+
+      // A hairline between the two words, short of them on both sides.
+      ctx.globalAlpha = markIn * 0.5
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(cx - ls * 1.9, cy)
+      ctx.lineTo(cx + ls * 1.9, cy)
+      ctx.stroke()
+    }
     ctx.restore()
   }
 

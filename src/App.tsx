@@ -228,7 +228,7 @@ export default function App() {
       sfx.play('error')
       store
         .getState()
-        .setError(err instanceof Error ? err.message : 'Something went wrong.')
+        .setError(err instanceof Error ? err.message : 'Etwas ist schiefgelaufen.')
     } finally {
       clearTimeout(holdover)
       if (!stale()) {
@@ -366,8 +366,8 @@ export default function App() {
         .getState()
         .setError(
           err instanceof Error
-            ? `Power-up failed: ${err.message}`
-            : 'Power-up failed. Click to try again.',
+            ? `Hochfahren fehlgeschlagen: ${err.message}`
+            : 'Hochfahren fehlgeschlagen. Zum erneuten Versuch klicken.',
         )
     }
   }
@@ -480,18 +480,18 @@ export default function App() {
     // on screen still shows it. Better to say so than to let him quietly forget.
     watchConnection((state) => {
       if (state === 'lost') {
-        store.getState().setError('Bridge connection lost — reconnecting.')
+        store.getState().setError('Verbindung zur Bridge verloren — verbinde neu.')
       } else if (state === 'reconnected') {
         store
           .getState()
-          .setError('Bridge reconnected. The previous conversation was not kept.')
+          .setError('Bridge wieder verbunden. Das vorherige Gespräch wurde nicht behalten.')
       }
     })
     const warming = warm().catch((err: Error) => s.setError(err.message))
 
     if (!usingBridge && !env.anthropicKey) {
       s.setError(
-        'No Anthropic API key — copy .env.example to .env.local and set VITE_ANTHROPIC_API_KEY.',
+        'Kein Anthropic-Schlüssel — .env.example nach .env.local kopieren und VITE_ANTHROPIC_API_KEY setzen.',
       )
     }
 
@@ -622,7 +622,7 @@ export default function App() {
         silence()
         const demo = createSpeaker()
         speaker.current = demo
-        demo.say(`Voice set to ${name.replace(/\(.*?\)/g, '').trim()}. At your service, sir.`)
+        demo.say(`Stimme auf ${name.replace(/\(.*?\)/g, '').trim()} gesetzt. Zu Diensten, Sir.`)
         void demo.end()
         return
       }
@@ -647,8 +647,8 @@ export default function App() {
                 .getState()
                 .setError(
                   err?.name === 'NotAllowedError'
-                    ? 'Camera access denied — gesture control is unavailable.'
-                    : `Gesture control failed to start: ${err?.message ?? err}`,
+                    ? 'Kamerazugriff verweigert — Gestensteuerung nicht verfügbar.'
+                    : `Gestensteuerung ließ sich nicht starten: ${err?.message ?? err}`,
                 )
             })
         }
@@ -670,7 +670,7 @@ export default function App() {
           console.info('[jarvis] audio test →', d)
           if (d && d.started === 0 && d.rescued === 0) {
             store.getState().setError(
-              `No sound produced. engine=${d.engine} voice=${d.voice} error=${d.lastError || 'none'}`,
+              `Kein Ton erzeugt. Maschine=${d.engine} Stimme=${d.voice} Fehler=${d.lastError || 'keiner'}`,
             )
           }
         })

@@ -17,11 +17,11 @@ import { diag } from '../lib/hands'
  */
 
 const MOVES: { gesture: string; hand: string; does: string }[] = [
-  { gesture: 'point', hand: '☝', does: 'move the cursor' },
-  { gesture: 'pinch', hand: '🤏', does: 'grab a blade · move it · press' },
-  { gesture: 'open', hand: '🖐', does: 'let go' },
-  { gesture: 'peace', hand: '✌', does: 'two fingers up-down to scroll' },
-  { gesture: 'frame', hand: '📐', does: 'two L-corners to resize' },
+  { gesture: 'zeigen', hand: '☝', does: 'Zeiger bewegen' },
+  { gesture: 'greifen', hand: '🤏', does: 'Karte greifen · bewegen · drücken' },
+  { gesture: 'öffnen', hand: '🖐', does: 'loslassen' },
+  { gesture: 'peace', hand: '✌', does: 'zwei Finger hoch/runter zum Scrollen' },
+  { gesture: 'rahmen', hand: '📐', does: 'zwei L-Ecken zum Skalieren' },
 ]
 
 /** How long the legend stays after the first successful press. */
@@ -63,7 +63,7 @@ export function GestureGuide({ live }: { live: boolean }) {
           exit={{ opacity: 0, y: 8, filter: 'blur(6px)', transition: { duration: 0.5 } }}
           transition={{ type: 'spring', stiffness: 260, damping: 28 }}
         >
-          <div className="gguide-head">HAND CONTROL</div>
+          <div className="gguide-head">HANDSTEUERUNG</div>
           {MOVES.map((m) => (
             <div key={m.gesture} className="gguide-row">
               <span className="gguide-icon">{m.hand}</span>
@@ -72,7 +72,7 @@ export function GestureGuide({ live }: { live: boolean }) {
             </div>
           ))}
           <div className="gguide-foot">
-            grab a blade by its bar · <kbd>G</kbd> to stop
+            Karte an der Leiste greifen · <kbd>G</kbd> zum Beenden
           </div>
         </motion.div>
       )}

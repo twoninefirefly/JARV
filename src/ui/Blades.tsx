@@ -143,8 +143,8 @@ const CameraView = memo(function CameraView() {
       .catch((err: DOMException) =>
         failed_(
           err?.name === 'NotAllowedError'
-            ? 'Camera access is not permitted.'
-            : `The camera could not be opened: ${err?.message ?? err}`,
+            ? 'Kamerazugriff ist nicht erlaubt.'
+            : `Die Kamera ließ sich nicht öffnen: ${err?.message ?? err}`,
         ),
       )
     return () => {
@@ -179,7 +179,7 @@ const Body = memo(function Body({ blade }: { blade: Blade }) {
 
   if (blade.kind === 'embed' && blade.url) {
     const embed = embedUrl(blade.url)
-    if (!embed) return <p className="bl-note">That video link could not be played.</p>
+    if (!embed) return <p className="bl-note">Dieser Videolink ließ sich nicht abspielen.</p>
     return (
       <iframe
         className="bl-frame"
@@ -232,7 +232,7 @@ const Body = memo(function Body({ blade }: { blade: Blade }) {
     )
   }
 
-  return <p className="bl-note">Nothing to show.</p>
+  return <p className="bl-note">Nichts anzuzeigen.</p>
 })
 
 /* -------------------------------------------------------------------- card */
@@ -536,7 +536,7 @@ function Card({
                   setSize(null)
                   setPos({ x: 0, y: 0 })
                 }}
-                title="Back where it started"
+                title="Zurück auf Anfang"
               >
                 ⤾
               </button>
@@ -569,7 +569,7 @@ function Card({
         </div>
 
         {/* Resize grip. Absent while expanded, where the size is the point. */}
-        {!expanded && <span className="bl-grip" onPointerDown={onGrip} title="Drag to resize" />}
+        {!expanded && <span className="bl-grip" onPointerDown={onGrip} title="Ziehen zum Skalieren" />}
       </motion.section>
     </motion.div>
   )

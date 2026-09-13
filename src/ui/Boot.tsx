@@ -24,12 +24,12 @@ import { useStore } from '../store'
 const T = { rings: 2600, suit: 5200, reactor: 7200 }
 
 const LOG = [
-  'MOUNT F:/BACKUP/GHOST (HIDDEN)',
-  'EXTEND SYSTEM MEMORY .......... OK',
-  'TELEMETRY / COMP CLIMATION',
-  'REMOVE SYSTEM CONFIGURATION',
-  'CHECKSUM ...................... OK',
-  'RUN SYSTEM TOOL',
+  'EINBINDEN F:/BACKUP/GHOST (VERBORGEN)',
+  'SYSTEMSPEICHER ERWEITERN ...... OK',
+  'TELEMETRIE / KOMP-ABGLEICH',
+  'SYSTEMKONFIGURATION ENTFERNEN',
+  'PRUEFSUMME .................... OK',
+  'SYSTEMWERKZEUG STARTEN',
 ]
 
 type Stage = 'bar' | 'rings' | 'suit' | 'reactor'

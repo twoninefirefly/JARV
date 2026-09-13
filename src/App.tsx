@@ -14,7 +14,7 @@ import { listenForClap } from './lib/clap'
 import * as camera from './lib/camera'
 import * as kokoro from './lib/kokoro'
 import { TTS_ENGINE } from './config'
-import { forTool, attention } from './lib/fillers'
+import { forTool, attention, working } from './lib/fillers'
 import {
   ask,
   warm,
@@ -123,6 +123,15 @@ export default function App() {
 
   // -- one turn -------------------------------------------------------------
 
+  /**
+   * How long he may think in complete silence before saying something.
+   *
+   * Short enough that the pause never reads as a crash, long enough that a
+   * quick answer isn't preceded by a pointless "wird erledigt". Most answers
+   * that beat this never fire it.
+   */
+  const HOLDOVER_MS = 1100
+
   const respond = async (said: string): Promise<void> => {
     const mine = ++turn.current
     const stale = () => mine !== turn.current
@@ -145,6 +154,22 @@ export default function App() {
     const turnId = newId()
     let started = false
     let filled = false
+
+    /**
+     * Break the silence while he thinks.
+     *
+     * The filler below only fires when a tool runs. A question needing no tool
+     * used to sit in total silence for however long the model took — and
+     * silence is the one thing a voice interface cannot afford, because there
+     * is no spinner to look at and the user cannot tell thinking from crashed.
+     * It costs nothing either: the answer queues behind this line and starts
+     * the moment it arrives.
+     */
+    const holdover = setTimeout(() => {
+      if (stale() || started || filled) return
+      filled = true
+      spk.say(working())
+    }, HOLDOVER_MS)
 
     try {
       const { text } = await ask(said, history.current, {
@@ -205,6 +230,7 @@ export default function App() {
         .getState()
         .setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
+      clearTimeout(holdover)
       if (!stale()) {
         speaker.current = null
         sfx.duck(false)

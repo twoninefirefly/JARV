@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Scene } from './scene/Scene'
 import { Hud } from './ui/Hud'
-import { Boot } from './ui/Boot'
+import { Boot, BOOT_MS } from './ui/Boot'
 import { Ignition } from './ui/Ignition'
 import { Diagnostics } from './ui/Diagnostics'
 import { useStore } from './store'
@@ -382,7 +382,7 @@ export default function App() {
     // The score. Must be started from inside this click handler for the same
     // reason as the rest of the audio.
     music.enable()
-    music.playBoot()
+    music.playBoot(BOOT_MS)
     music.startAmbient()
 
     s.setPhase('boot')
@@ -513,11 +513,11 @@ export default function App() {
       }, 200)
     }
 
-    // Long enough for the four-beat start-up sequence in Boot.tsx to play —
-    // status bar, rings, suit schematic, reactor power-up — before the live
-    // interface takes over. Kept a touch under the boot cue so the music is
-    // still rising as the reactor lands.
-    await new Promise((r) => setTimeout(r, 9200)) // boot sequence
+    // Exactly as long as the start-up sequence, which owns the number and
+    // exports it. Retiming the animation used to mean remembering to retime
+    // this too, and forgetting left either dead air on a shortened sequence or
+    // a truncated last beat on a lengthened one.
+    await new Promise((r) => setTimeout(r, BOOT_MS))
     await warming
     store.getState().setConnected(connectedLabels())
     store.getState().setVoice(currentVoiceName())

@@ -1,27 +1,37 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore } from '../store'
 
 /**
- * The start-up sequence, rebuilt to the Iron Man boot it is quoting.
+ * The start-up sequence.
  *
- * Four beats, in order, cyan on black:
- *   1. an angular status bar — "INITIATING SYSTEM" — over a scrolling boot log,
- *      with a segmented bar filling left to right;
- *   2. concentric reticle rings assembling inward until "J.A.R.V.I.S" resolves
- *      at the centre;
- *   3. the suit schematic — a wireframe figure with component call-outs;
- *   4. the triangular arc reactor lighting from a dim outline to full glow,
- *      which is the hand-off into the live scene behind it.
+ * One continuous move rather than four chapters. The percent counter is the
+ * spine: it is on screen from the first frame to the last, and everything else
+ * is something happening to it. The loading bar stops being a bar and becomes
+ * a waveform; the waveform rolls into a ring; the counter travels into that
+ * ring, shrinks, reaches a hundred, and lets go of two of its digits. What is
+ * left standing is the mark — 2, the lily, 9.
  *
- * It is one full-frame overlay driven by a small stage clock rather than four
- * components, so the timing is legible in one place. Everything is SVG and CSS
- * — no images to load, nothing that can arrive late and stall the first beat.
+ * The last frame is a circle at rest, in the same place and at the same size as
+ * the live reactor behind this overlay. That is the whole reason the sequence
+ * ends where it does: the hand-off is a cross-fade between two drawings of the
+ * same object, so there is nothing to see at the cut.
+ *
+ * Canvas rather than SVG and CSS. The previous sequence was hand-authored
+ * shapes because it was made of discrete parts; this one is a curve that is
+ * continuously re-evaluated, which is what canvas is for. Still no file to
+ * load, still nothing that can arrive late and stall the first beat.
  */
 
-/** The stage boundaries, in milliseconds from power-on. `done` is when the
- *  overlay dissolves; App owns the actual hand-off, this is only for pacing. */
-const T = { rings: 2600, suit: 5200, reactor: 7200 }
+/**
+ * How long the sequence runs.
+ *
+ * App.tsx waits exactly this before handing over, by importing it rather than
+ * repeating it — the two used to be separate numbers and separate comments,
+ * which is the arrangement where a retimed animation quietly ends up with dead
+ * air or a truncated last beat.
+ */
+export const BOOT_MS = 5500
 
 const LOG = [
   'EINBINDEN F:/BACKUP/GHOST (VERBORGEN)',
@@ -32,39 +42,251 @@ const LOG = [
   'SYSTEMWERKZEUG STARTEN',
 ]
 
-type Stage = 'bar' | 'rings' | 'suit' | 'reactor'
+const CYAN = '#00e5ff'
+const HOT = '#dffbff'
+const DIM = 'rgba(109,148,164,0.85)'
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
+
+/** Progress of a beat that runs from `a` to `b` on the master clock. */
+const span = (t: number, a: number, b: number) => clamp01((t - a) / (b - a))
+
+const ease = (t: number) => 1 - Math.pow(1 - clamp01(t), 3)
+
+const easeIO = (t: number) => {
+  const x = clamp01(t)
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2
+}
+
+/**
+ * The lily.
+ *
+ * A fleur-de-lis: one upright lance, two petals falling away from it, a band
+ * across the waist. Stroked rather than filled, so it belongs to the same
+ * wireframe world as everything around it.
+ *
+ * PLACEHOLDER. This is a drawn-from-scratch lily, not the real mark. When the
+ * actual icon arrives it replaces the body of this function and nothing else —
+ * the sequence around it neither knows nor cares what shape gets drawn here.
+ */
+function lily(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
+  const h = s / 2
+
+  ctx.beginPath()
+  ctx.moveTo(cx, cy - h)
+  ctx.bezierCurveTo(cx + s * 0.17, cy - h * 0.34, cx + s * 0.12, cy + h * 0.12, cx, cy + h * 0.4)
+  ctx.bezierCurveTo(cx - s * 0.12, cy + h * 0.12, cx - s * 0.17, cy - h * 0.34, cx, cy - h)
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.moveTo(cx + s * 0.03, cy - h * 0.1)
+  ctx.bezierCurveTo(cx + s * 0.36, cy - h * 0.52, cx + s * 0.42, cy + h * 0.08, cx + s * 0.15, cy + h * 0.38)
+  ctx.moveTo(cx - s * 0.03, cy - h * 0.1)
+  ctx.bezierCurveTo(cx - s * 0.36, cy - h * 0.52, cx - s * 0.42, cy + h * 0.08, cx - s * 0.15, cy + h * 0.38)
+  ctx.stroke()
+
+  ctx.beginPath()
+  ctx.moveTo(cx - s * 0.26, cy + h * 0.5)
+  ctx.lineTo(cx + s * 0.26, cy + h * 0.5)
+  ctx.stroke()
+}
+
+/** One frame, at normalised time `t` from 0 to 1. */
+function draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
+  const cx = w / 2
+  const cy = h / 2
+  const unit = Math.min(w, h)
+  const R = unit * 0.29
+
+  const climb = easeIO(span(t, 0.02, 0.75))
+  const pct = Math.min(100, Math.round(climb * 100))
+  const toCentre = ease(span(t, 0.5, 0.8))
+  const dissolve = ease(span(t, 0.74, 0.86))
+  const markIn = ease(span(t, 0.84, 1))
+
+  const wave = ease(span(t, 0.2, 0.55))
+  const wrap = easeIO(span(t, 0.5, 0.78))
+  const settle = ease(span(t, 0.74, 0.96))
+  const halfLine = Math.min(w * 0.36, R * 3)
+  const amp = unit * 0.085 * wave * (1 - settle * 0.88)
+
+  // -- the line: loading bar, then waveform, then ring ----------------------
+  ctx.save()
+  ctx.strokeStyle = wrap > 0.55 ? HOT : CYAN
+  ctx.shadowColor = CYAN
+  ctx.shadowBlur = 13
+  ctx.lineWidth = 1.6
+  ctx.beginPath()
+  const STEPS = 220
+  for (let i = 0; i <= STEPS; i++) {
+    const u = i / STEPS
+    // The envelope pins both ends flat, which is what lets the curve close on
+    // itself without a kink once it wraps.
+    const env = Math.sin(u * Math.PI)
+    const wv =
+      Math.sin(u * Math.PI * 9 - t * 7) * 0.6 + Math.sin(u * Math.PI * 17 + t * 4) * 0.4
+    const a = amp * env * wv
+
+    const lx = cx + (u - 0.5) * 2 * halfLine
+    const ly = cy + unit * 0.11 + a
+    const ang = -Math.PI / 2 + u * Math.PI * 2
+    const rr = R + a
+    const kx = cx + Math.cos(ang) * rr
+    const ky = cy + Math.sin(ang) * rr
+
+    const x = lx + (kx - lx) * wrap
+    const y = ly + (ky - ly) * wrap
+    if (i === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+  ctx.stroke()
+  ctx.restore()
+
+  // -- the segment cells, the literal "loading" read ------------------------
+  const cells = (1 - wrap) * (1 - span(t, 0.42, 0.58) * 0.4)
+  if (cells > 0.02) {
+    ctx.save()
+    ctx.globalAlpha = cells
+    const N = 28
+    const gap = (halfLine * 2) / N
+    for (let i = 0; i < N; i++) {
+      const on = i / N < climb
+      ctx.fillStyle = on ? CYAN : 'rgba(0,229,255,0.14)'
+      ctx.shadowBlur = on ? 8 : 0
+      ctx.shadowColor = CYAN
+      ctx.fillRect(cx - halfLine + i * gap, cy + unit * 0.155, gap * 0.62, unit * 0.018)
+    }
+    ctx.restore()
+  }
+
+  // -- the system log, left rail --------------------------------------------
+  const logAlpha = 1 - ease(span(t, 0.55, 0.72))
+  if (logAlpha > 0.02) {
+    ctx.save()
+    ctx.globalAlpha = logAlpha * 0.7
+    ctx.fillStyle = DIM
+    const ls = Math.max(9, unit * 0.03)
+    ctx.font = `400 ${ls}px 'IBM Plex Mono', ui-monospace, monospace`
+    const shown = Math.floor(span(t, 0.03, 0.55) * LOG.length + 0.001)
+    for (let i = 0; i < Math.min(shown, LOG.length); i++) {
+      ctx.fillText(`\u203a  ${LOG[i]}`, unit * 0.06, unit * 0.12 + i * ls * 1.7)
+    }
+    ctx.restore()
+  }
+
+  // -- the counter ----------------------------------------------------------
+  const bigSize = unit * (0.3 - toCentre * 0.16)
+  const ny = cy + (1 - toCentre) * -unit * 0.05
+  if (dissolve < 1) {
+    ctx.save()
+    ctx.globalAlpha = 1 - dissolve
+    ctx.fillStyle = HOT
+    ctx.shadowColor = CYAN
+    ctx.shadowBlur = 20
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.font = `700 ${bigSize}px 'Chakra Petch', system-ui, sans-serif`
+    ctx.fillText(String(pct), cx, ny)
+    ctx.globalAlpha = (1 - dissolve) * 0.55
+    ctx.font = `600 ${bigSize * 0.28}px 'Chakra Petch', system-ui, sans-serif`
+    ctx.fillText('%', cx + bigSize * (pct > 99 ? 0.92 : 0.62), ny + bigSize * 0.26)
+    ctx.restore()
+  }
+
+  // -- the mark, arriving where the digits just were ------------------------
+  if (markIn > 0) {
+    const ms = unit * 0.155
+    ctx.save()
+    ctx.globalAlpha = markIn
+    ctx.strokeStyle = HOT
+    ctx.shadowColor = CYAN
+    ctx.shadowBlur = 16
+    ctx.lineWidth = 1.5
+    lily(ctx, cx, cy, ms * (0.86 + markIn * 0.14))
+
+    ctx.fillStyle = HOT
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.font = `700 ${ms * 0.62}px 'Chakra Petch', system-ui, sans-serif`
+    ctx.fillText('2', cx - ms * 0.6, cy + ms * 0.12)
+    ctx.fillText('9', cx + ms * 0.6, cy + ms * 0.12)
+    ctx.restore()
+  }
+
+  // -- the hand-off glow ----------------------------------------------------
+  if (settle > 0) {
+    ctx.save()
+    ctx.globalAlpha = settle
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R)
+    g.addColorStop(0, 'rgba(0,229,255,0.22)')
+    g.addColorStop(1, 'rgba(0,229,255,0)')
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.arc(cx, cy, R, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
+}
 
 export function Boot() {
   const phase = useStore((s) => s.phase)
   const reduced = useReducedMotion()
-  const [t, setT] = useState(0)
+  const canvas = useRef<HTMLCanvasElement | null>(null)
 
-  // A single clock: elapsed milliseconds since the boot phase began. Every
-  // stage reads from it, so nothing can drift out of step with anything else.
-  //
-  // Driven by setInterval over wall-clock time, NOT requestAnimationFrame —
-  // rAF is throttled to a crawl (and paused outright) whenever the tab is not
-  // the focused one, which froze the sequence on its first beat. An interval
-  // reading Date.now advances by real elapsed time whatever the browser does
-  // with its frame budget: throttling can cost smoothness, never correctness.
   useEffect(() => {
-    if (phase !== 'boot') {
-      setT(0)
-      return
-    }
+    if (phase !== 'boot') return
+    const cv = canvas.current
+    if (!cv) return
+    const ctx = cv.getContext('2d')
+    if (!ctx) return
+
+    /**
+     * The clock is wall-clock, not a frame count.
+     *
+     * requestAnimationFrame is throttled to a crawl in a background tab and
+     * paused outright in a hidden one, so a sequence counted in frames freezes
+     * on whichever beat it was showing and resumes there — mid-boot, seconds
+     * after the interface behind it has already gone live. Reading Date.now
+     * costs smoothness while the tab is away and never costs correctness: come
+     * back at four seconds and you see four seconds.
+     */
     const start = Date.now()
-    setT(0)
-    const id = setInterval(() => setT(Date.now() - start), 50)
-    return () => clearInterval(id)
-  }, [phase])
+    let raf = 0
+    let stopped = false
+
+    const frame = () => {
+      if (stopped) return
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      const w = cv.clientWidth
+      const h = cv.clientHeight
+      const pw = Math.max(1, Math.round(w * dpr))
+      const ph = Math.max(1, Math.round(h * dpr))
+      // Assigning width/height clears the canvas, so only do it when the size
+      // actually changed — otherwise every frame pays for a full reallocation.
+      if (cv.width !== pw || cv.height !== ph) {
+        cv.width = pw
+        cv.height = ph
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, w, h)
+
+      const t = reduced ? 1 : clamp01((Date.now() - start) / BOOT_MS)
+      draw(ctx, w, h, t)
+
+      // Hold the last frame rather than spinning: it is the hand-off, and the
+      // overlay is about to cross-fade out over it.
+      if (t < 1) raf = requestAnimationFrame(frame)
+    }
+
+    frame()
+    return () => {
+      stopped = true
+      cancelAnimationFrame(raf)
+    }
+  }, [phase, reduced])
 
   if (phase !== 'boot') return null
-
-  const stage: Stage =
-    t >= T.reactor ? 'reactor' : t >= T.suit ? 'suit' : t >= T.rings ? 'rings' : 'bar'
-
-  const logShown = Math.min(LOG.length, Math.floor((t / T.rings) * (LOG.length + 1)))
-  const barPct = Math.min(1, t / (T.rings - 300))
 
   return (
     <AnimatePresence>
@@ -74,170 +296,8 @@ export function Boot() {
         exit={{ opacity: 0, filter: 'blur(10px)' }}
         transition={{ duration: 0.8 }}
       >
-        {/* ---- beat 1: the status bar, dimming once its work is done ---- */}
-        <div className={`boot-bar ${stage !== 'bar' ? 'boot-bar-dim' : ''}`}>
-          <div className="boot-bar-frame">
-            <span className="boot-bar-title">
-              INITIATING SYSTEM 1<span className="boot-dots">…</span>
-              <span className="boot-cursor" />
-            </span>
-            <div className="boot-seg">
-              {Array.from({ length: 22 }, (_, i) => (
-                <span
-                  key={i}
-                  className="boot-seg-cell"
-                  data-on={i / 22 < barPct ? '1' : '0'}
-                />
-              ))}
-            </div>
-          </div>
-          <div className="boot-log">
-            {LOG.slice(0, logShown).map((l) => (
-              <div key={l} className="boot-log-line">
-                {l}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* ---- beats 2-4: the centre stage ---- */}
-        <div className="boot-stage">
-          {stage === 'rings' && <Rings reduced={!!reduced} />}
-          {stage === 'suit' && <Suit reduced={!!reduced} />}
-          {stage === 'reactor' && <Reactor reduced={!!reduced} t={t - T.reactor} />}
-        </div>
+        <canvas ref={canvas} className="boot-canvas" />
       </motion.div>
     </AnimatePresence>
-  )
-}
-
-/* ------------------------------------------------------------------ beat 2 */
-
-/** Concentric reticle rings drawing inward, with the name resolving last. */
-function Rings({ reduced }: { reduced: boolean }) {
-  const ease = 'easeOut'
-  const ring = (r: number, delay: number, dash: string, w = 1) => (
-    <motion.circle
-      cx="0"
-      cy="0"
-      r={r}
-      className="boot-ring"
-      strokeDasharray={dash}
-      strokeWidth={w}
-      initial={reduced ? { opacity: 1 } : { opacity: 0, rotate: -40, scale: 1.15 }}
-      animate={{ opacity: 1, rotate: 0, scale: 1 }}
-      transition={{ duration: 0.7, delay, ease }}
-    />
-  )
-  return (
-    <svg className="boot-rings" viewBox="-160 -160 320 320">
-      <g>
-        {ring(150, 0.0, '3 6')}
-        {ring(128, 0.08, '40 8 12 8', 1.4)}
-        {ring(104, 0.16, '2 4')}
-        {ring(84, 0.24, '30 6 6 6', 1.6)}
-        {ring(60, 0.34, '1 3')}
-      </g>
-      <motion.text
-        x="0"
-        y="6"
-        className="boot-name"
-        initial={reduced ? { opacity: 1 } : { opacity: 0, letterSpacing: '1.4em' }}
-        animate={{ opacity: 1, letterSpacing: '0.42em' }}
-        transition={{ duration: 0.7, delay: 0.5, ease }}
-      >
-        J.A.R.V.I.S
-      </motion.text>
-    </svg>
-  )
-}
-
-/* ------------------------------------------------------------------ beat 3 */
-
-/**
- * The suit schematic — a wireframe figure flanked by component call-outs, the
- * way the film flashes the armour blueprint mid-boot. Not the actual Mark VII
- * geometry, but the same read: a lit humanoid outline and exploded diagrams.
- */
-function Suit({ reduced }: { reduced: boolean }) {
-  return (
-    <svg className="boot-suit" viewBox="-200 -150 400 300">
-      <motion.g
-        className="boot-suit-fig"
-        initial={reduced ? { opacity: 1 } : { opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-      >
-        <motion.path
-          className="boot-wire"
-          d="M0,-118 C11,-118 17,-108 17,-96 C17,-86 12,-80 12,-74
-             L22,-64 L30,-30 L26,26 L34,64 L28,66 L18,30 L16,64 L20,110
-             L6,112 L2,66 L-2,66 L-6,112 L-20,110 L-16,64 L-18,30 L-28,66
-             L-34,64 L-26,26 L-30,-30 L-22,-64 L-12,-74 C-12,-80 -17,-86 -17,-96
-             C-17,-108 -11,-118 0,-118 Z"
-          initial={reduced ? { pathLength: 1, opacity: 1 } : { pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ duration: 1.4, ease: 'easeInOut' }}
-        />
-        <path className="boot-wire boot-wire-dim" d="M-9,-104 L9,-104 M-8,-96 L8,-96 M0,-92 L0,-84" />
-        <circle className="boot-wire" cx="0" cy="-40" r="9" />
-        <path className="boot-wire boot-wire-dim" d="M0,-49 L0,-31 M-9,-40 L9,-40" />
-      </motion.g>
-
-      {[-150, 150].map((x, i) => (
-        <motion.g
-          key={x}
-          className="boot-callout"
-          initial={reduced ? { opacity: 1 } : { opacity: 0, x: x > 0 ? 20 : -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.5, delay: 0.3 + i * 0.12 }}
-        >
-          <circle className="boot-wire" cx={x} cy="-10" r="26" strokeDasharray="30 6 6 6" />
-          <circle className="boot-wire boot-wire-dim" cx={x} cy="-10" r="15" />
-          <circle className="boot-wire" cx={x} cy="-10" r="3" />
-          <path
-            className="boot-wire boot-wire-dim"
-            d={x > 0 ? `M${x - 26},-10 L60,-10` : `M${x + 26},-10 L-60,-10`}
-          />
-        </motion.g>
-      ))}
-      <text x="-150" y="34" className="boot-tag">RT / PWR</text>
-      <text x="150" y="34" className="boot-tag">DEP / MK</text>
-    </svg>
-  )
-}
-
-/* ------------------------------------------------------------------ beat 4 */
-
-/** The triangular chest reactor, lighting from a dim outline to full glow. */
-function Reactor({ reduced, t }: { reduced: boolean; t: number }) {
-  const glow = reduced ? 1 : Math.min(1, Math.max(0, t / 1400))
-  const seg = Array.from({ length: 16 }, (_, i) => i)
-  return (
-    <svg
-      className="boot-reactor"
-      viewBox="-120 -120 240 240"
-      style={{ ['--glow' as string]: glow }}
-    >
-      {seg.map((i) => {
-        const a = (i / seg.length) * Math.PI * 2 - Math.PI / 2
-        const on = i / seg.length < glow * 1.05
-        return (
-          <line
-            key={i}
-            x1={Math.cos(a) * 70}
-            y1={Math.sin(a) * 70}
-            x2={Math.cos(a) * 100}
-            y2={Math.sin(a) * 100}
-            className={on ? 'boot-r-seg boot-r-on' : 'boot-r-seg'}
-          />
-        )
-      })}
-      <circle className="boot-r-ring" cx="0" cy="0" r="102" />
-      <circle className="boot-r-ring boot-r-ring-in" cx="0" cy="0" r="66" />
-      <path className="boot-r-tri" d="M0,-52 L46,30 L-46,30 Z" />
-      <path className="boot-r-tri boot-r-tri-in" d="M0,-30 L28,20 L-28,20 Z" />
-      <path className="boot-r-v" d="M-11,-4 L0,14 L11,-4" />
-    </svg>
   )
 }

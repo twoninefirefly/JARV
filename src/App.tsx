@@ -382,7 +382,7 @@ export default function App() {
     // The score. Must be started from inside this click handler for the same
     // reason as the rest of the audio.
     music.enable()
-    music.playBoot(BOOT_MS)
+    music.playBoot()
     music.startAmbient()
 
     s.setPhase('boot')

@@ -148,8 +148,23 @@ function mark(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) 
   ctx.stroke()
 }
 
-/** One frame, at normalised time `t` from 0 to 1. */
-function draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
+/**
+ * One frame, at normalised time `t` from 0 to 1.
+ *
+ * `calm` is prefers-reduced-motion. It does NOT mean "show the last frame and
+ * be done": the sequence is where the counter, the log and the loading bar
+ * live, so skipping it does not calm anything down, it deletes the content.
+ * What it removes is the restlessness — the ripple travelling along the
+ * waveform and the wobble in the ring — while the structure still arrives in
+ * order and at the same pace.
+ */
+function draw(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  t: number,
+  calm: boolean,
+) {
   const cx = w / 2
   const cy = h / 2
   const unit = Math.min(w, h)
@@ -165,7 +180,7 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
   const wrap = easeIO(span(t, 0.5, 0.78))
   const settle = ease(span(t, 0.74, 0.96))
   const halfLine = Math.min(w * 0.36, R * 3)
-  const amp = unit * 0.085 * wave * (1 - settle * 0.88)
+  const amp = unit * (calm ? 0.05 : 0.085) * wave * (1 - settle * 0.88)
 
   // -- the line: loading bar, then waveform, then ring ----------------------
   ctx.save()
@@ -180,8 +195,11 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
     // The envelope pins both ends flat, which is what lets the curve close on
     // itself without a kink once it wraps.
     const env = Math.sin(u * Math.PI)
+    // Frozen phase when calm: the same curve, no longer travelling.
+    const p1 = calm ? 0 : t * 7
+    const p2 = calm ? 0 : t * 4
     const wv =
-      Math.sin(u * Math.PI * 9 - t * 7) * 0.6 + Math.sin(u * Math.PI * 17 + t * 4) * 0.4
+      Math.sin(u * Math.PI * 9 - p1) * 0.6 + Math.sin(u * Math.PI * 17 + p2) * 0.4
     const a = amp * env * wv
 
     const lx = cx + (u - 0.5) * 2 * halfLine
@@ -353,8 +371,8 @@ export function Boot() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, w, h)
 
-      const t = reduced ? 1 : clamp01((Date.now() - start) / BOOT_MS)
-      draw(ctx, w, h, t)
+      const t = clamp01((Date.now() - start) / BOOT_MS)
+      draw(ctx, w, h, t, Boolean(reduced))
 
       // Hold the last frame rather than spinning: it is the hand-off, and the
       // overlay is about to cross-fade out over it.

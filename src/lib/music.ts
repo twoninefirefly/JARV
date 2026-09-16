@@ -163,15 +163,8 @@ function set(cue: Cue, to: number, ms: number) {
 /** The boot cue's own dissolve, held so stopAll can cancel it. */
 let dissolve: ReturnType<typeof setTimeout> | null = null
 
-/**
- * The power-up swell. Plays once, then hands over to the ambient bed.
- *
- * `overMs` is the length of the thing it is playing under. Without it the cue
- * only knows when its own file ends, which is the wrong end to listen to: a
- * seventeen-second track under a five-second sequence keeps swelling for
- * twelve seconds over an interface that has already gone live.
- */
-export function playBoot(overMs?: number) {
+/** The power-up swell. Plays once, then hands over to the ambient bed. */
+export function playBoot() {
   const t = track('boot-music')
   if (!t) return
   t.el.currentTime = 0
@@ -191,9 +184,14 @@ export function playBoot(overMs?: number) {
   const arm = () => {
     const secs = Number.isFinite(t.el.duration) && t.el.duration > 1 ? t.el.duration : 17
     // Start the fade far enough from the end that it is a dissolve rather than
-    // a cut, and never sooner than half a second in. Whichever ends first — the
-    // clip or the sequence it plays under — is the one that decides.
-    const at = Math.max(500, Math.min((secs - 2.6) * 1000, overMs ?? Infinity))
+    // a cut, and never sooner than half a second in.
+    //
+    // The clip decides, not the sequence. Cutting the cue when the animation
+    // ends sounds like the tidier rule and is wrong: whatever is in this file
+    // is a performance with its own ending, and a file that turned out to
+    // carry a spoken line got clipped in the middle of a sentence. A cue that
+    // outlasts the boot is a taste; a cue that stops mid-word is a fault.
+    const at = Math.max(500, (secs - 2.6) * 1000)
     dissolve = setTimeout(() => {
       dissolve = null
       set('boot-music', 0, 2500)

@@ -231,10 +231,17 @@ function draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number) {
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.font = `700 ${bigSize}px 'Chakra Petch', system-ui, sans-serif`
-    ctx.fillText(String(pct), cx, ny)
+    const label = String(pct)
+    ctx.fillText(label, cx, ny)
+    // Hang the sign off the measured right edge rather than a fixed offset.
+    // A guessed offset can only be right for one number of digits, and the
+    // counter passes through one, two and three on its way up — at two it sat
+    // on top of the second digit for most of the sequence.
+    const half = ctx.measureText(label).width / 2
     ctx.globalAlpha = (1 - dissolve) * 0.55
     ctx.font = `600 ${bigSize * 0.28}px 'Chakra Petch', system-ui, sans-serif`
-    ctx.fillText('%', cx + bigSize * (pct > 99 ? 0.92 : 0.62), ny + bigSize * 0.26)
+    ctx.textAlign = 'left'
+    ctx.fillText('%', cx + half + bigSize * 0.06, ny + bigSize * 0.26)
     ctx.restore()
   }
 

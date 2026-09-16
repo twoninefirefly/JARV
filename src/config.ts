@@ -93,6 +93,22 @@ export const LOCALE = str(import.meta.env.VITE_LOCALE) ?? 'de-DE'
 export const LANG = LOCALE.split('-')[0].toLowerCase()
 
 /**
+ * What he says over the start-up sequence, before you have said anything.
+ *
+ * Spoken through the same path as every other line, which means it arrives in
+ * whatever voice is configured — the ElevenLabs one when a key is present. The
+ * alternative, a voice-over baked into the boot audio file, is how this used to
+ * work and it is worse in every way: it was recorded in one language, in
+ * somebody else's voice, and could not be changed without an audio editor.
+ *
+ * Keep it under about four seconds. It plays over the animation, not instead
+ * of it, and the sequence does not wait for it.
+ */
+export const INTRO_LINE =
+  str(import.meta.env.VITE_INTRO_LINE) ??
+  'Guten Tag. Darf ich mich vorstellen \u2014 ich bin JARVIS. Alle Systeme sind bereit.'
+
+/**
  * Speech output engine.
  *
  * false (default) — the browser's own speechSynthesis. Runs on-device, so

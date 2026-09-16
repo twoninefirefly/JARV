@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 import { Scene } from './scene/Scene'
 import { Hud } from './ui/Hud'
 import { Boot, BOOT_MS } from './ui/Boot'
+import { Film } from './ui/Film'
+import { armFilm, playFilm } from './lib/film'
 import { Ignition } from './ui/Ignition'
 import { Diagnostics } from './ui/Diagnostics'
 import { useStore } from './store'
@@ -13,7 +15,7 @@ import * as hands from './lib/hands'
 import { listenForClap } from './lib/clap'
 import * as camera from './lib/camera'
 import * as kokoro from './lib/kokoro'
-import { TTS_ENGINE } from './config'
+import { TTS_ENGINE, INTRO_LINE } from './config'
 import { forTool, attention, working } from './lib/fillers'
 import {
   ask,
@@ -513,11 +515,38 @@ export default function App() {
       }, 200)
     }
 
+    // Ask the bridge which speech engines exist. This has to happen before the
+    // sequence rather than after it: the introduction below is the first thing
+    // he ever says, and asking afterwards meant that one line came out in the
+    // browser's fallback voice while every line after it was ElevenLabs.
+    await probeCapabilities()
+
+    // The introduction, over the sequence rather than instead of it — nothing
+    // below awaits it, so a slow cloud voice costs nothing and a failed one
+    // costs a line rather than the boot.
+    const intro = createSpeaker()
+    speaker.current = intro
+    music.duck(true)
+    intro.say(INTRO_LINE)
+    void intro.end().finally(() => music.duck(false))
+
+    // Decide now whether this start-up includes the film, because the length
+    // of the whole thing depends on the answer and the sequence is about to
+    // begin. Asked once rather than continuously: a clip that finishes
+    // buffering halfway through the sequence has missed its slot, and letting
+    // it join late would mean the boot could not say how long it will last.
+    armFilm()
+
     // Exactly as long as the start-up sequence, which owns the number and
     // exports it. Retiming the animation used to mean remembering to retime
     // this too, and forgetting left either dead air on a shortened sequence or
     // a truncated last beat on a lengthened one.
     await new Promise((r) => setTimeout(r, BOOT_MS))
+
+    // Then the film, if there is one. Resolves immediately when there is not,
+    // and early when someone presses a key or clicks — ten seconds is worth
+    // watching once and worth skipping on the fiftieth start-up.
+    await playFilm()
     await warming
     store.getState().setConnected(connectedLabels())
     store.getState().setVoice(currentVoiceName())
@@ -534,11 +563,6 @@ export default function App() {
           'voice. Speech recognition is unaffected.',
       )
     }
-
-    // Ask the bridge which speech engines exist before the loop starts, so the
-    // first turn already uses ElevenLabs when a key is present and the browser
-    // fallback when it is not — no flag, no reload.
-    await probeCapabilities()
 
     // One voice loop, started once, running until the page closes.
     voice.current = await startVoice({
@@ -726,6 +750,7 @@ export default function App() {
       <Scene />
       <Hud />
       <Boot />
+      <Film />
       <Diagnostics />
       <Ignition onStart={() => void powerOn()} />
     </>

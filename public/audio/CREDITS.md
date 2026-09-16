@@ -7,7 +7,6 @@ audience can see it (a description box is fine).
 
 | File | Track | Used for |
 |---|---|---|
-| `boot-music.mp3` | *Impact Prelude* | The swell when the reactor comes up |
 | `ambient.mp3` | *Ossuary 6 – Air* | Low bed looping under the interface |
 | `work.mp3` | *Mechanolith* | Rises while a tool is running |
 
@@ -15,7 +14,6 @@ audience can see it (a description box is fine).
 
 ```
 Music by Kevin MacLeod (incompetech.com)
-  "Impact Prelude"    — Licensed under Creative Commons: By Attribution 4.0
   "Ossuary 6 - Air"   — Licensed under Creative Commons: By Attribution 4.0
   "Mechanolith"       — Licensed under Creative Commons: By Attribution 4.0
 http://creativecommons.org/licenses/by/4.0/
@@ -27,6 +25,25 @@ Disney/Marvel run one of the most aggressive Content ID operations on YouTube.
 Real film score or JARVIS dialogue in an upload means a near-certain claim,
 demonetisation, or a strike — on a video whose whole point is to be seen. These
 tracks are in the same register and cost you a line of text instead.
+
+## The missing boot cue
+
+`boot-music.mp3` is deliberately absent. The file that shipped here had an
+English voice-over baked into it — "Hello, let me introduce myself, I am
+Jarvis" — which cannot be removed without an audio editor and which fought with
+the spoken introduction the app now produces itself (see `INTRO_LINE` in
+`src/config.ts`, spoken in whatever voice is configured, in whatever language it
+is written in). Rather than ship a recording that talks over the app in the
+wrong language, the file is gone.
+
+Nothing is broken by its absence: `track()` in `src/lib/music.ts` treats a
+missing cue as a layer that simply is not there. The boot still has its
+synthesised start-up sound and the spoken introduction.
+
+To put music back, drop any instrumental MP3 in here named `boot-music.mp3`.
+Around ten seconds suits the sequence. Sources: incompetech.com, Pixabay Music
+(CC0, no attribution required), or the YouTube Audio Library. Make sure it has
+no voice-over in it.
 
 ## Replacing them
 

@@ -20,19 +20,19 @@ function line(tag, msg) {
 }
 
 console.log('');
-console.log('JARVIS preflight — checking your machine (nothing is changed)');
+console.log('JARVIS Vorabprüfung — dein Rechner wird angesehen, nichts verändert');
 console.log('------------------------------------------------------------');
 
 // --- Node version --------------------------------------------------------
 try {
   const major = Number(process.versions.node.split('.')[0]);
   if (Number.isFinite(major) && major >= 20) {
-    line(tick, `Node.js ${process.versions.node} (20+ required).`);
+    line(tick, `Node.js ${process.versions.node} (20 oder neuer nötig).`);
   } else {
-    line(warn, `Node.js ${process.versions.node} is below 20. Please upgrade — the bridge needs Node 20 or newer.`);
+    line(warn, `Node.js ${process.versions.node} ist älter als 20. Bitte aktualisieren — die Bridge braucht 20 oder neuer.`);
   }
 } catch {
-  line(warn, 'Could not read the Node.js version. JARVIS needs Node 20 or newer.');
+  line(warn, 'Node.js-Version nicht lesbar. JARVIS braucht 20 oder neuer.');
 }
 
 // --- Claude CLI on PATH ---------------------------------------------------
@@ -41,16 +41,16 @@ try {
   const res = spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 10000 });
   if (res.status === 0 && res.stdout) {
     claudeFound = true;
-    line(tick, `Claude CLI found: ${res.stdout.trim()}`);
+    line(tick, `Claude CLI gefunden: ${res.stdout.trim()}`);
   }
 } catch {
   // ignore — handled below
 }
 if (!claudeFound) {
-  line(warn, 'Claude CLI not found on your PATH.');
-  line(info, 'Install it: npm install -g @anthropic-ai/claude-code');
-  line(info, '  (or the platform installer at https://docs.claude.com/en/docs/claude-code)');
-  line(info, 'Then run `claude` once and complete login. The bridge uses that login — no API key needed.');
+  line(warn, 'Claude CLI nicht im PATH gefunden.');
+  line(info, 'Empfohlen: curl -fsSL https://claude.ai/install.sh | bash');
+  line(info, '  (oder über npm: npm install -g @anthropic-ai/claude-code)');
+  line(info, 'Dann einmal `claude` starten und einloggen. Die Bridge nutzt diesen Login — kein API-Schlüssel nötig.');
 }
 
 // --- ~/.claude.json and MCP servers --------------------------------------
@@ -67,12 +67,12 @@ try {
   const servers = parsed && typeof parsed.mcpServers === 'object' && parsed.mcpServers ? parsed.mcpServers : {};
   mcpCount = Object.keys(servers).length;
   if (mcpCount > 0) {
-    line(tick, `~/.claude.json found with ${mcpCount} MCP server${mcpCount === 1 ? '' : 's'} configured.`);
+    line(tick, `~/.claude.json gefunden, ${mcpCount} MCP-Server eingerichtet.`);
   } else {
-    line(info, '~/.claude.json found, but no MCP servers are configured yet. JARVIS still answers and drives its own interface.');
+    line(info, '~/.claude.json gefunden, aber noch keine MCP-Server. JARVIS antwortet trotzdem und steuert seine eigene Oberfläche.');
   }
 } catch {
-  line(info, '~/.claude.json not found yet. It appears once you run `claude` and log in. JARVIS works without any MCP servers.');
+  line(info, '~/.claude.json noch nicht da. Sie entsteht, sobald du `claude` startest und dich einloggst. JARVIS läuft auch ohne MCP-Server.');
 }
 
 // --- ElevenLabs key (env or the elevenlabs MCP entry) --------------------
@@ -97,20 +97,23 @@ function findElevenLabsKey() {
 
 const elSource = findElevenLabsKey();
 if (elSource) {
-  line(tick, `Premium voice available — ElevenLabs key found via ${elSource}.`);
+  line(tick, `Bessere Stimme verfügbar — ElevenLabs-Schlüssel gefunden über ${elSource}.`);
 } else {
-  line(info, 'No ElevenLabs key found — JARVIS will use browser speech (that is completely fine).');
-  line(info, '  Optional: add ELEVENLABS_API_KEY for a better voice and Scribe transcription. The free tier is enough for a demo.');
+  line(info, 'Kein ElevenLabs-Schlüssel gefunden — JARVIS nimmt die Browser-Stimme (völlig in Ordnung).');
+  line(info, '  Optional: ELEVENLABS_API_KEY setzen für bessere Stimme und genaueres Gehör. Die kostenlose Stufe reicht.');
 }
 
 // --- How to run ----------------------------------------------------------
 console.log('');
-console.log('To run JARVIS, open two terminals:');
-console.log('  1)  npm run bridge      # the brain (Claude Code, headless)');
-console.log('  2)  npm run dev         # the face (open http://localhost:5173 in Chrome)');
+console.log('Starten mit einem Befehl:');
+console.log('  npm start               # Gehirn und Gesicht zusammen');
 console.log('');
-console.log('Then click INITIALISE and say "Hey Jarvis".');
-console.log('To let JARVIS take real actions (phone, browser, sending), run `npm run bridge:writes` instead of `npm run bridge`.');
+console.log('Oder getrennt, in zwei Fenstern:');
+console.log('  1)  npm run bridge      # das Gehirn (Claude Code, unsichtbar)');
+console.log('  2)  npm run dev         # das Gesicht (http://localhost:5173 in Chrome)');
+console.log('');
+console.log('Dann auf AKTIVIEREN klicken und „Hey Jarvis“ sagen.');
+console.log('Damit JARVIS wirklich handeln darf (Handy, Browser, Senden): `npm run bridge:writes` statt `npm run bridge`.');
 console.log('');
 
 process.exit(0);

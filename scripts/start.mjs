@@ -38,7 +38,7 @@ function vendorWasm() {
   try {
     mkdirSync(to, { recursive: true })
     cpSync(from, to, { recursive: true })
-    console.log('  vendored the hand-tracking runtime into public/mediapipe.')
+    console.log('  Hand-Erkennung nach public/mediapipe kopiert.')
   } catch (err) {
     console.warn(`  could not vendor the hand-tracking runtime: ${err.message}`)
   }
@@ -68,7 +68,7 @@ function run(name, command, args, colour, env) {
   child.on('exit', (code) => {
     // If either half dies the other is useless, so take the whole thing down
     // rather than leave a half-running app that looks alive but cannot answer.
-    console.log(`\x1b[${colour}m${name}\x1b[0m exited (${code}); stopping the rest.`)
+    console.log(`\x1b[${colour}m${name}\x1b[0m beendet (${code}); der Rest wird gestoppt.`)
     shutdown(code ?? 0)
   })
   children.push(child)
@@ -108,18 +108,18 @@ const port = process.env.PORT
 const bridgeEnv = writes ? { JARVIS_ALLOW_WRITES: '1' } : {}
 if (port) {
   bridgeEnv.JARVIS_ALLOWED_ORIGINS = `http://localhost:${port},http://127.0.0.1:${port}`
-  console.log(`  serving the face on port ${port}; the bridge will accept it.\n`)
+  console.log(`  Das Gesicht läuft auf Port ${port}; die Bridge akzeptiert ihn.\n`)
 }
 
 vendorWasm()
 
-console.log('\nJ.A.R.V.I.S. starting — the brain and the face.\n')
+console.log('\nJ.A.R.V.I.S. startet — das Gehirn und das Gesicht.\n')
 run('bridge', 'node', ['bridge/server.mjs'], '36', bridgeEnv)
 // npm is a shell script on most systems; call the vite binary directly so we do
 // not need shell:true (which would break the argument handling above).
 run('face', process.execPath, ['node_modules/vite/bin/vite.js'], '35', {})
 
 console.log(
-  '\nWhen it says the dev server is ready, open the URL it prints in Chrome,\n' +
-    'click INITIALISE, and say "Hey Jarvis". Ctrl-C stops everything.\n',
+  '\nSobald unten eine Adresse steht, diese in Chrome öffnen,\n' +
+    'auf AKTIVIEREN klicken und „Hey Jarvis“ sagen. Strg-C beendet alles.\n',
 )

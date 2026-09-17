@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { Scene } from './scene/Scene'
 import { Hud } from './ui/Hud'
-import { Boot, BOOT_MS } from './ui/Boot'
+import { Boot, BOOT_EXIT_MS, BOOT_MS } from './ui/Boot'
 import { Film } from './ui/Film'
-import { armFilm, filmArmed, playFilm } from './lib/film'
+import { armFilm, filmArmed, playFilm, skipFilm } from './lib/film'
 import { Ignition } from './ui/Ignition'
 import { Diagnostics } from './ui/Diagnostics'
 import { useStore } from './store'
@@ -267,6 +267,12 @@ export default function App() {
   const onWake = (trailing: string) => {
     const phase = store.getState().phase
     if (phase === 'offline' || phase === 'boot') return
+
+    // He can now be awake while the intro film is still running — the loop
+    // starts behind it. An answer delivered from behind a picture is an answer
+    // nobody can see, so his name cuts the picture short. No-op once it is
+    // over, which is every start-up after the first.
+    skipFilm()
 
     store.getState().setError(null)
     sfx.play('wake')
@@ -552,38 +558,68 @@ export default function App() {
     if (filmArmed()) narrator.say(FILM_LINE)
     void narrator.end().finally(() => music.duck(false))
 
+    // The rest of the start-up, started now and running UNDERNEATH the film
+    // rather than after it. Ten seconds of picture is ten seconds in which the
+    // microphone, the analyser and the voice loop can come up unseen.
+    const work = (async () => {
+      await warming
+      store.getState().setConnected(connectedLabels())
+      store.getState().setVoice(currentVoiceName())
+
+      // The analyser is what makes the reactor pulse with your voice. It needs
+      // a getUserMedia stream; speech recognition does not, and gets its own.
+      // So a failure here costs the animation and nothing else — saying "voice
+      // input is unavailable" was both alarming and untrue.
+      try {
+        await startAnalyser()
+      } catch {
+        console.warn(
+          '[jarvis] no microphone stream — the reactor will not pulse with ' +
+            'your voice. Speech recognition is unaffected.',
+        )
+      }
+
+      // One voice loop, started once, running until the page closes.
+      voice.current = await startVoice({
+        mode,
+        onWake,
+        onSpeechStart,
+        onPartial,
+        onUtterance,
+        onError: onVoiceError,
+      })
+    })()
+
+    /**
+     * Leave the boot behind and go live — and this is the hand-over fixed.
+     *
+     * It used to run after the film: the picture faded off to reveal the boot
+     * screen it had been covering — the mark, again, which the viewer had just
+     * watched land — and only then did the mark give way to the sphere. Two
+     * transitions with a redundant frame between them.
+     *
+     * Now the film calls this once it has covered the screen, so the swap
+     * happens behind an opaque picture and the dissolve at the end lands
+     * straight on the live interface. Memoised because there are two callers
+     * and only one of them ever fires: the film, or — when there is no film to
+     * hide behind — the line below.
+     */
+    let live: Promise<void> | null = null
+    const goLive = () =>
+      (live ??= (async () => {
+        await work
+        store.getState().setPhase('dormant')
+        // Not done until the boot overlay has finished leaving. The film waits
+        // on this before it starts dissolving, and dissolving onto a mark that
+        // is itself still fading out would put the old seam back.
+        await new Promise((r) => setTimeout(r, BOOT_EXIT_MS))
+      })())
+
     // Then the film, if there is one. Resolves immediately when there is not,
     // and early when someone presses a key or clicks — ten seconds is worth
     // watching once and worth skipping on the fiftieth start-up.
-    await playFilm()
-    await warming
-    store.getState().setConnected(connectedLabels())
-    store.getState().setVoice(currentVoiceName())
-
-    // The analyser is what makes the reactor pulse with your voice. It needs a
-    // getUserMedia stream; speech recognition does not, and gets its own. So a
-    // failure here costs the animation and nothing else — saying "voice input
-    // is unavailable" was both alarming and untrue.
-    try {
-      await startAnalyser()
-    } catch {
-      console.warn(
-        '[jarvis] no microphone stream — the reactor will not pulse with your ' +
-          'voice. Speech recognition is unaffected.',
-      )
-    }
-
-    // One voice loop, started once, running until the page closes.
-    voice.current = await startVoice({
-      mode,
-      onWake,
-      onSpeechStart,
-      onPartial,
-      onUtterance,
-      onError: onVoiceError,
-    })
-
-    store.getState().setPhase('dormant')
+    await playFilm(goLive)
+    await goLive()
   }
 
   // -- clap to start --------------------------------------------------------

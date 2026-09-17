@@ -33,6 +33,16 @@ import { useStore } from '../store'
  */
 export const BOOT_MS = 5500
 
+/**
+ * How long the overlay takes to leave.
+ *
+ * Exported for the same reason as BOOT_MS: App.tsx has to know when the boot
+ * screen is actually gone, because the film above it waits for that before it
+ * dissolves. Two numbers drifting apart would put the mark back on screen
+ * underneath a fading picture, which is exactly the seam this removed.
+ */
+export const BOOT_EXIT_MS = 800
+
 const LOG = [
   'EINBINDEN F:/BACKUP/GHOST (VERBORGEN)',
   'SYSTEMSPEICHER ERWEITERN ...... OK',
@@ -386,18 +396,30 @@ export function Boot() {
     }
   }, [phase, reduced])
 
-  if (phase !== 'boot') return null
-
+  /**
+   * The overlay leaves by dissolving, and it only actually does that because
+   * the condition is INSIDE the AnimatePresence.
+   *
+   * It used to be an early `if (phase !== 'boot') return null` above this,
+   * which took the AnimatePresence away along with the child — and a presence
+   * that has itself unmounted cannot animate anything out. So the exit here
+   * was written, was correct, and had never once run: the mark cut to the
+   * sphere in a single frame. Which is precisely what the hand-over was
+   * supposed not to do.
+   */
   return (
     <AnimatePresence>
-      <motion.div
-        className="boot"
-        initial={{ opacity: 1 }}
-        exit={{ opacity: 0, filter: 'blur(10px)' }}
-        transition={{ duration: 0.8 }}
-      >
-        <canvas ref={canvas} className="boot-canvas" />
-      </motion.div>
+      {phase === 'boot' && (
+        <motion.div
+          key="boot"
+          className="boot"
+          initial={{ opacity: 1 }}
+          exit={{ opacity: 0, filter: 'blur(10px)' }}
+          transition={{ duration: BOOT_EXIT_MS / 1000 }}
+        >
+          <canvas ref={canvas} className="boot-canvas" />
+        </motion.div>
+      )}
     </AnimatePresence>
   )
 }

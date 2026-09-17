@@ -869,7 +869,18 @@ kbd {
 /* The intro film. Mounted all session so it can buffer during the ignition
    screen; inert and invisible until the boot hands over to it. Sits above the
    boot overlay (z-index 6) so the sequence's last frame is what it fades in
-   over, and over the live scene so the interface is what it fades out to. */
+   over, and over the live scene so the interface is what it fades out to.
+
+   The two directions are deliberately not the same length, and the transition
+   that governs each is the one declared on the state being entered. Arriving
+   (.film-on) is quick: it covers a still mark, and lingering over it only
+   delays the picture. Leaving (.film) is slow: it dissolves onto the live
+   interface, and that dissolve IS the hand-over — see OUT_MS in lib/film.ts,
+   which starts it on the clip's last moments so the image is still moving.
+
+   The visibility rule is what makes the slow one visible at all. Without the
+   delayed step, visibility flipped to hidden the instant the class came off
+   and the element vanished mid-fade: the picture did not dissolve, it cut. */
 
 .film {
   position: fixed;
@@ -882,16 +893,24 @@ kbd {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.4s ease;
+  transition:
+    opacity 0.9s ease,
+    visibility 0s linear 0.9s;
 }
 
 .film-on {
   opacity: 1;
   visibility: visible;
+  transition:
+    opacity 0.45s ease,
+    visibility 0s linear 0s;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .film { transition: none; }
+  .film,
+  .film-on {
+    transition: none;
+  }
 }
 
 @media (max-width: 900px) {

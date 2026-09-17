@@ -41,7 +41,15 @@ missing cue as a layer that simply is not there. The boot still has its
 synthesised start-up sound and the spoken introduction.
 
 To put music back, drop any instrumental MP3 in here named `boot-music.mp3`.
-Around ten seconds suits the sequence. Sources: incompetech.com, Pixabay Music
+Around ten to fifteen seconds suits the sequence — and a generator will hand you
+three minutes, so trim it:
+
+    node scripts/trim-audio.mjs ~/Downloads/track.mp3 public/audio/boot-music.mp3 14
+
+That cuts on a frame boundary without re-encoding and needs nothing installed.
+The seam does not have to be clean: `playBoot` fades the cue out 2.6 seconds
+before the file ends, so the last moment is never heard at full level. Leave a
+couple of seconds of tail and the cut is inaudible. Sources: incompetech.com, Pixabay Music
 (CC0, no attribution required), or the YouTube Audio Library. Make sure it has
 no voice-over in it.
 

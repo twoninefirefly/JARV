@@ -22,7 +22,15 @@ gedeckelt auf 14 Sekunden. Ein Tastendruck oder Klick überspringt ihn.
 
 ## Was für eine Datei
 
-- **H.264/MP4**, das spielt jeder Browser ab
+- **H.264/MP4** ist die sichere Wahl — das spielt jeder Browser ab.
+  Die Datei, die hier liegt, ist **HEVC/H.265** (so liefert Seedance sie aus).
+  Chrome spielt das seit Version 105 über den Systemdecoder, auf macOS 11+ auf
+  jedem Gerät. Falls der Film bei dir trotzdem nie erscheint, ist das der
+  Grund: QuickTime Player öffnen, **Ablage → Exportieren als → 1080p** — das
+  codiert nach H.264 um — und die Datei wieder als `intro.mp4` hier ablegen.
+  Der `moov`-Block liegt am Dateiende statt am Anfang, die Datei muss also
+  vollständig geladen sein, bevor sie startet. Genau deshalb wird sie
+  vorgeladen und nur bei vollständiger Pufferung überhaupt eingeplant.
 - **16:9**, wird formatfüllend beschnitten (`object-fit: cover`)
 - **Ohne Ton.** Das Element ist stumm geschaltet, weil ein unstummer Film gar
   nicht erst automatisch abspielen dürfte. Der Ton beim Start ist der

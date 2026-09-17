@@ -116,13 +116,15 @@ export const INTRO_LINE =
  * entirely when no film is playing — it describes something that would not be
  * on screen.
  *
- * Keep it under about eight seconds. The film runs ten, and a line that fills
- * every one of them leaves no beat before the interface arrives.
+ * Written to the film's three beats — the figure, then the brain, then the
+ * lattice — so it lands with what is on screen rather than running alongside
+ * it. Leave a couple of seconds at the end: a line that fills every second of
+ * the film leaves no beat before the interface arrives.
  */
 export const FILM_LINE =
   str(import.meta.env.VITE_FILM_LINE) ??
-  'Vollständige Abbildung. Sensorik aktiv, Sprachverarbeitung im Abgleich, ' +
-    'Werkzeuge verbunden. Ich höre auf Ihr Wort, Sir.'
+  'Vollständige Abbildung. Sprachverarbeitung, Gedächtnis und Urteil im Abgleich. ' +
+    'Ich bin mit Ihren Werkzeugen verbunden und höre auf Ihr Wort, Sir.'
 
 /**
  * Speech output engine.

@@ -20,8 +20,16 @@ export const FILM_SRC = '/film/intro.mp4'
 /** Fallback length, used only until the element reports its real duration. */
 const FALLBACK_MS = 10000
 
-/** Never hold the boot longer than this, whatever the element claims. */
-const MAX_MS = 14000
+/**
+ * Never hold the boot longer than this, whatever the element claims.
+ *
+ * It is a backstop against a broken element, not a creative limit — so it has
+ * to sit clear of any clip anyone would actually ship. At 14000 it did not: a
+ * fifteen-second film, which is the longest Kling and MiniMax will produce,
+ * would have been cut off one second before its last beat by a guard meant
+ * for a video that never ends.
+ */
+const MAX_MS = 20000
 
 let el: HTMLVideoElement | null = null
 let setVisible: ((on: boolean) => void) | null = null

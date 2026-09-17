@@ -3,7 +3,7 @@ import { Scene } from './scene/Scene'
 import { Hud } from './ui/Hud'
 import { Boot, BOOT_MS } from './ui/Boot'
 import { Film } from './ui/Film'
-import { armFilm, playFilm } from './lib/film'
+import { armFilm, filmArmed, playFilm } from './lib/film'
 import { Ignition } from './ui/Ignition'
 import { Diagnostics } from './ui/Diagnostics'
 import { useStore } from './store'
@@ -15,7 +15,7 @@ import * as hands from './lib/hands'
 import { listenForClap } from './lib/clap'
 import * as camera from './lib/camera'
 import * as kokoro from './lib/kokoro'
-import { TTS_ENGINE, INTRO_LINE } from './config'
+import { TTS_ENGINE, INTRO_LINE, FILM_LINE } from './config'
 import { forTool, attention, working } from './lib/fillers'
 import {
   ask,
@@ -524,11 +524,15 @@ export default function App() {
     // The introduction, over the sequence rather than instead of it — nothing
     // below awaits it, so a slow cloud voice costs nothing and a failed one
     // costs a line rather than the boot.
-    const intro = createSpeaker()
-    speaker.current = intro
+    // One speaker for both lines, not two. A speaker plays one thing at a time,
+    // so queueing the second line on the same one makes overlap impossible by
+    // construction — no timing to tune, and nothing to go wrong on the day the
+    // cloud voice is slow. Which is also why end() is not called here: it means
+    // "no more text is coming", and more text is coming.
+    const narrator = createSpeaker()
+    speaker.current = narrator
     music.duck(true)
-    intro.say(INTRO_LINE)
-    void intro.end().finally(() => music.duck(false))
+    narrator.say(INTRO_LINE)
 
     // Decide now whether this start-up includes the film, because the length
     // of the whole thing depends on the answer and the sequence is about to
@@ -542,6 +546,11 @@ export default function App() {
     // this too, and forgetting left either dead air on a shortened sequence or
     // a truncated last beat on a lengthened one.
     await new Promise((r) => setTimeout(r, BOOT_MS))
+
+    // The second line, only when there is a film to say it over: it describes
+    // what the film shows, and without the film it describes nothing.
+    if (filmArmed()) narrator.say(FILM_LINE)
+    void narrator.end().finally(() => music.duck(false))
 
     // Then the film, if there is one. Resolves immediately when there is not,
     // and early when someone presses a key or clicks — ten seconds is worth

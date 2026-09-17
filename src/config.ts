@@ -106,7 +106,23 @@ export const LANG = LOCALE.split('-')[0].toLowerCase()
  */
 export const INTRO_LINE =
   str(import.meta.env.VITE_INTRO_LINE) ??
-  'Guten Tag. Darf ich mich vorstellen \u2014 ich bin JARVIS. Alle Systeme sind bereit.'
+  'Guten Tag. Darf ich mich vorstellen — ich bin JARVIS. Alle Systeme sind bereit.'
+
+/**
+ * What he says over the film, if there is one.
+ *
+ * Spoken on the same speaker as INTRO_LINE and queued behind it, so the two can
+ * never talk over each other however long the first one takes. Skipped
+ * entirely when no film is playing — it describes something that would not be
+ * on screen.
+ *
+ * Keep it under about eight seconds. The film runs ten, and a line that fills
+ * every one of them leaves no beat before the interface arrives.
+ */
+export const FILM_LINE =
+  str(import.meta.env.VITE_FILM_LINE) ??
+  'Vollständige Abbildung. Sensorik aktiv, Sprachverarbeitung im Abgleich, ' +
+    'Werkzeuge verbunden. Ich höre auf Ihr Wort, Sir.'
 
 /**
  * Speech output engine.

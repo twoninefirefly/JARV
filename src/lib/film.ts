@@ -52,14 +52,17 @@ const OUT_MS = 900
 const IN_MS = 450
 
 /**
- * How long the last frame may be held waiting for the interface to be ready.
+ * How much of the clip's end is deliberately thrown away.
  *
- * Normally zero: the hand-over below starts with the clip, so ten seconds of
- * picture is ten seconds in which the rest of the start-up finishes behind it.
- * This is only the ceiling for the day something is slow, and it is short
- * because a frozen frame reads as a crash.
+ * A generated clip almost always coasts to a halt: the last half second is the
+ * camera arriving somewhere and stopping. Dissolving out of that reads as the
+ * picture hanging, because it IS the picture hanging. So the dissolve is timed
+ * to have finished before it, and the tail is never shown.
  */
-const HANDOVER_MS = 1500
+const TAIL_MS = 500
+
+/** When the dissolve starts, measured back from the end of the clip. */
+const LEAD_MS = OUT_MS + TAIL_MS
 
 let el: HTMLVideoElement | null = null
 let setVisible: ((on: boolean) => void) | null = null
@@ -119,62 +122,75 @@ export function skipFilm(): void {
 /**
  * Show it, play it, resolve when it is over.
  *
- * `handover` is whatever else the start-up still has to do. It is started with
- * the clip rather than after it, and the dissolve waits on it — so the picture
- * covers the last of the set-up, and what it dissolves into is the finished
- * interface. Done the other way round the film faded off onto the boot screen
- * it had been covering, which then faded to the interface: two transitions,
- * with a frame in between that said nothing new.
+ * `onCovered` fires once the picture is opaque, and that is the entire reason
+ * it exists: it is when the rest of the start-up can happen without anyone
+ * seeing it, so the interface is already live behind the film by the time the
+ * film dissolves into it.
+ *
+ * Note what it is NOT: the dissolve does not wait for it. The ending is timed
+ * off the clip and nothing else, because an ending that waits on the slowest
+ * thing the start-up happens to be doing is an ending that sometimes hangs —
+ * and it did, for two or three seconds, on the frozen last frame. A clip that
+ * always ends the same way is worth more than a hand-over that is occasionally
+ * a few hundred milliseconds tidier.
  *
  * Resolves rather than rejects on every failure path — a film that will not
  * play is a missing flourish, never a failed boot. The skip listener is why
- * the clip can be ten seconds without being a tax on the fiftieth start-up.
+ * the clip can be fifteen seconds without being a tax on the fiftieth
+ * start-up.
  */
-export function playFilm(handover?: () => Promise<unknown>): Promise<void> {
+export function playFilm(onCovered?: () => void): Promise<void> {
   if (!armed || !el) return Promise.resolve()
   const video = el
 
   return new Promise<void>((resolve) => {
-    // Started here rather than in finish(): the whole point is that it runs
-    // behind the picture, so that ten seconds of film is ten seconds in which
-    // the interface can come up unseen. Delayed by the fade-in, because "behind
-    // the picture" is only true once the picture is opaque. Its failure is the
-    // caller's business, not the film's.
-    const handing = sleep(IN_MS)
-      .then(handover)
-      .catch(() => undefined)
-
     let done = false
+
     const finish = () => {
       if (done) return
       done = true
       window.clearTimeout(guard)
+      window.clearTimeout(cue)
       video.removeEventListener('ended', finish)
       video.removeEventListener('error', finish)
+      video.removeEventListener('playing', arm)
       video.removeEventListener('timeupdate', leadOut)
       window.removeEventListener('keydown', onSkip)
       window.removeEventListener('pointerdown', onSkip)
       skip = null
 
-      void Promise.race([handing, sleep(HANDOVER_MS)]).then(() => {
-        setVisible?.(false)
-        // Let the dissolve finish before anything else claims the screen.
-        window.setTimeout(resolve, OUT_MS + 60)
-      })
+      setVisible?.(false)
+      // Let the dissolve finish before anything else claims the screen.
+      window.setTimeout(resolve, OUT_MS + 60)
     }
     const onSkip = () => finish()
     skip = finish
 
-    /**
-     * Begin the dissolve on the clip's last moments rather than after them.
-     *
-     * A picture that cross-fades while it is still moving hands over; one that
-     * plays to its end first freezes on its final frame, and then fades a
-     * still. The difference is the whole of what the ending feels like.
-     */
-    const leadOut = () => {
+    /** Milliseconds of clip left, or null when the element cannot say. */
+    const remaining = (): number | null => {
       const left = (video.duration - video.currentTime) * 1000
-      if (Number.isFinite(left) && left <= OUT_MS) finish()
+      return Number.isFinite(left) ? left : null
+    }
+
+    /**
+     * Start the dissolve before the clip stops rather than after it.
+     *
+     * Two mechanisms for one moment, because each covers the other's failure.
+     * The timer is precise — it does not depend on how often the browser feels
+     * like reporting progress — but it drifts if playback stalls. 'timeupdate'
+     * cannot drift, since it reads the true position, but it only fires about
+     * four times a second. Whichever arrives first wins; finish() runs once.
+     */
+    let cue = 0
+    const arm = () => {
+      const left = remaining()
+      if (left === null) return
+      window.clearTimeout(cue)
+      cue = window.setTimeout(finish, Math.max(0, left - LEAD_MS))
+    }
+    const leadOut = () => {
+      const left = remaining()
+      if (left !== null && left <= LEAD_MS) finish()
     }
 
     // A hard ceiling. 'ended' is reliable in every browser that matters, but a
@@ -182,6 +198,7 @@ export function playFilm(handover?: () => Promise<unknown>): Promise<void> {
     // making for a decoration.
     const guard = window.setTimeout(finish, MAX_MS)
 
+    video.addEventListener('playing', arm)
     video.addEventListener('timeupdate', leadOut)
     video.addEventListener('ended', finish, { once: true })
     video.addEventListener('error', finish, { once: true })
@@ -189,15 +206,15 @@ export function playFilm(handover?: () => Promise<unknown>): Promise<void> {
     window.addEventListener('pointerdown', onSkip, { once: true })
 
     setVisible?.(true)
+    // Once the picture is opaque, whatever is underneath may change unseen.
+    window.setTimeout(() => onCovered?.(), IN_MS)
+
     try {
       video.currentTime = 0
     } catch {
       // Seeking can throw on a stream that is not seekable yet. Play anyway.
     }
     void video.play().catch(finish)
+    arm()
   })
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => window.setTimeout(r, ms))
 }

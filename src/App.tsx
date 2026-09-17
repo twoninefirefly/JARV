@@ -57,6 +57,11 @@ const AWAIT_SPEECH_MS = 14000
  *  again to continue a thought. */
 const FOLLOW_UP_MS = 11000
 
+/** How long the start-up may keep the interface behind the intro film before
+ *  going live anyway. Sized to fit well inside any clip worth shipping, so in
+ *  practice the set-up finishes first and this never comes up. */
+const GO_LIVE_MAX_MS = 4000
+
 /** crypto.randomUUID needs a secure context, which a LAN address over plain
  *  http is not. Not worth failing a whole turn over an id. */
 const newId = () =>
@@ -607,7 +612,16 @@ export default function App() {
     let live: Promise<void> | null = null
     const goLive = () =>
       (live ??= (async () => {
-        await work
+        // Capped, and the cap is the point. The film calls this the moment it
+        // covers the screen and then times its ending off the clip alone, so
+        // anything still running here has a fixed budget to finish inside the
+        // picture. Overrun it and the interface simply comes up a moment
+        // early — a voice loop that is still connecting is invisible; a boot
+        // screen still standing when the film dissolves is not.
+        await Promise.race([
+          work,
+          new Promise((r) => setTimeout(r, GO_LIVE_MAX_MS)),
+        ])
         store.getState().setPhase('dormant')
         // Not done until the boot overlay has finished leaving. The film waits
         // on this before it starts dissolving, and dissolving onto a mark that

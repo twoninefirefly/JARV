@@ -8,6 +8,10 @@ import {
   type Agent,
   type Department,
 } from './data'
+import { BRANCHE } from './branche'
+import { HV_KIND_BY_NAME, HV_KPI_OWNER, HV_LAYOUT, HV_WAITING_OWNER, hvMakers, hvSources, type HvKind } from './hausverwaltung'
+
+const HV = BRANCHE === 'hausverwaltung'
 
 /**
  * The window behind every agent, figure and log line.
@@ -60,6 +64,7 @@ export type WsKind =
   | 'protocols'
   | 'log'
   | 'approvals'
+  | HvKind
 
 export type Layout = 'list' | 'board' | 'table' | 'calendar' | 'overview'
 
@@ -151,6 +156,8 @@ const KIND_BY_NAME: Record<string, WsKind> = {
   Budget: 'budget',
 }
 
+if (HV) Object.assign(KIND_BY_NAME, HV_KIND_BY_NAME)
+
 export const kindOf = (a: Agent): WsKind => (a.lead ? 'lead' : (KIND_BY_NAME[a.name] ?? 'docs'))
 
 /** Which agent owns each item in a department's `waiting` list, in order. */
@@ -161,6 +168,7 @@ const WAITING_OWNER: Record<string, string[]> = {
   finanzen: ['Reporting'],
   content: ['Veröffentlichung'],
   marketing: ['Newsletter'],
+  ...HV_WAITING_OWNER,
 }
 
 /** Which agent stands behind each of a department's two headline figures. */
@@ -171,6 +179,7 @@ const KPI_OWNER: Record<string, [string, string]> = {
   finanzen: ['Rechnungen', 'Mahnwesen'],
   content: ['Redaktion', 'Auswertung'],
   marketing: ['Kampagnen', 'Anzeigen'],
+  ...HV_KPI_OWNER,
 }
 
 export function waitingOwner(d: Department, i: number): Agent {
@@ -239,7 +248,7 @@ export function brainTarget(label: string): WsTarget {
 // Data sources — the part that gets connected per customer
 // ---------------------------------------------------------------------------
 
-export const SOURCES: Record<WsKind, Source> = {
+const BASE_SOURCES: Record<Exclude<WsKind, HvKind>, Source> = {
   lead: { system: 'Alle Quellen der Abteilung', examples: 'wird aus den Agenten zusammengeführt', account: domain, does: ['fasst den Stand der Abteilung zusammen', 'verteilt Aufgaben an das Team', 'meldet, was eine Entscheidung braucht'] },
   inbox: { system: 'E-Mail-Postfach', examples: 'Microsoft 365, Google Workspace, IMAP', account: `info@${domain}`, does: ['liest neue Mails alle 30 Minuten', 'sortiert nach Thema und Dringlichkeit', 'legt Antworten als Entwurf an'] },
   chat: { system: 'Chat-Kanäle', examples: 'Website-Chat, WhatsApp Business, Instagram DMs', account: `chat.${domain}`, does: ['beantwortet Standardfragen sofort', 'übergibt Anfragen an den Vertrieb', 'schreibt jeden Chat ins Gedächtnis'] },
@@ -282,11 +291,15 @@ export const SOURCES: Record<WsKind, Source> = {
   approvals: { system: 'Freigaben', examples: 'aus allen Abteilungen', account: domain, does: ['sammelt alles, was eine Entscheidung braucht', 'führt es nach Freigabe aus', 'hält nach, wenn es liegen bleibt'] },
 }
 
+/** The trade's own areas are always known; shared ones are re-dressed only in its office. */
+const hvSrc = hvSources(domain)
+export const SOURCES: Record<WsKind, Source> = HV ? { ...BASE_SOURCES, ...hvSrc } as Record<WsKind, Source> : { ...hvSrc, ...BASE_SOURCES }
+
 // ---------------------------------------------------------------------------
 // Layout of each area
 // ---------------------------------------------------------------------------
 
-export const LAYOUT: Record<WsKind, { layout: Layout; columns?: string[] }> = {
+const BASE_LAYOUT: Record<Exclude<WsKind, HvKind>, { layout: Layout; columns?: string[] }> = {
   lead: { layout: 'overview' },
   inbox: { layout: 'list' },
   chat: { layout: 'list' },
@@ -329,6 +342,8 @@ export const LAYOUT: Record<WsKind, { layout: Layout; columns?: string[] }> = {
   approvals: { layout: 'list' },
 }
 
+export const LAYOUT = (HV ? { ...BASE_LAYOUT, ...HV_LAYOUT } : { ...HV_LAYOUT, ...BASE_LAYOUT }) as Record<WsKind, { layout: Layout; columns?: string[] }>
+
 // ---------------------------------------------------------------------------
 // Placeholder records
 // ---------------------------------------------------------------------------
@@ -351,7 +366,7 @@ type Maker = (r: () => number, pick: <T>(xs: T[]) => T) => WsItem[]
 
 const n = (count: number, f: (i: number) => WsItem) => Array.from({ length: count }, (_, i) => f(i))
 
-const MAKERS: Partial<Record<WsKind, Maker>> = {
+const BASE_MAKERS: Partial<Record<WsKind, Maker>> = {
   inbox: (r, pick) => {
     const subjects = [
       ['Anfrage: Angebot für 20 Arbeitsplätze', 'Guten Tag, wir suchen eine Lösung für unser Büro und hätten gern ein Angebot bis Ende der Woche.', 'Vertrieb'],
@@ -700,6 +715,10 @@ const MAKERS: Partial<Record<WsKind, Maker>> = {
       actions: ['Protokoll öffnen'],
     })),
 }
+
+const MAKERS: Partial<Record<WsKind, Maker>> = HV
+  ? { ...BASE_MAKERS, ...hvMakers({ n, eur, clock: (m) => clock(m), later: (m) => later(m), company: COMPANY.name }) }
+  : BASE_MAKERS
 
 function seedOf(s: string) {
   let h = 2166136261

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY } from './data'
 import { useOffice } from './state'
+import { BRANCHE, BRANCHEN, setBranche } from './branche'
 
 /**
  * The lock screen: logo, clock, password, then a loading bar while the office
@@ -112,6 +113,16 @@ export default function Lock({ onStart }: { onStart: () => void }) {
               <div className="lock__name">{COMPANY.name}</div>
               <div className="eyebrow">Agenten-Büro · geschützter Bereich</div>
             </div>
+
+            {progress === null && (
+              <div className="lock__branche" role="group" aria-label="Branche der Demo">
+                {BRANCHEN.map((b) => (
+                  <button key={b.id} type="button" aria-pressed={b.id === BRANCHE} onClick={() => b.id !== BRANCHE && setBranche(b.id)}>
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {progress === null ? (
               <motion.form key={wrong} className="lock__form" onSubmit={submit} animate={wrong ? { x: [0, -10, 10, -6, 6, 0] } : {}} transition={{ duration: 0.4 }}>

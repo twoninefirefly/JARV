@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { DEPARTMENTS } from './data'
 import { useOffice } from './state'
+import { BRANCHE } from './branche'
+import { HV_CRAFTS, HV_OBJECTS, HV_PEOPLE, HV_ROUTES } from './hausverwaltung'
 
 /**
  * The agents talking to each other, through the brain.
@@ -25,7 +27,7 @@ const FIRMS = ['Kanzlei Brandt', 'Schmidt & Co.', 'Weber Immobilien', 'Hotel See
 const PEOPLE = ['Anna Weber', 'Jonas Schmidt', 'Lea Fischer', 'Paul Wagner', 'Mia Becker']
 
 // [from dept, from agent, to dept, to agent, message, what the brain did]
-const ROUTES: Array<[string, string, string, string, string, string]> = [
+const BASE_ROUTES: Array<[string, string, string, string, string, string]> = [
   ['kommunikation', 'Posteingang', 'vertrieb', 'Lead-Wache', 'Neue Anfrage von {firm}', 'als Lead einsortiert'],
   ['kommunikation', 'Posteingang', 'finanzen', 'Belege', 'Rechnung von {firm} im Postfach', 'Beleg zugeordnet'],
   ['vertrieb', 'Nach-Call', 'finanzen', 'Rechnungen', 'Auftrag {firm} gewonnen, bitte Rechnung vorbereiten', 'Rechnungsentwurf angelegt'],
@@ -42,11 +44,20 @@ const ROUTES: Array<[string, string, string, string, string, string]> = [
   ['vertrieb', 'Lead-Wache', 'kommunikation', 'Terminierung', '{firm} möchte ein Erstgespräch', 'Terminvorschläge verschickt'],
 ]
 
+const HV = BRANCHE === 'hausverwaltung'
+const ROUTES = HV ? HV_ROUTES : BASE_ROUTES
+
 let seq = 0
 
 function make(i: number, at: Date): Message {
   const [fd, fa, td, ta, text, filed] = ROUTES[i % ROUTES.length]
-  const fill = (s: string) => s.replace('{firm}', FIRMS[(i * 7) % FIRMS.length]).replace('{person}', PEOPLE[(i * 3) % PEOPLE.length])
+  const people = HV ? HV_PEOPLE : PEOPLE
+  const fill = (s: string) =>
+    s
+      .replace('{firm}', FIRMS[(i * 7) % FIRMS.length])
+      .replace('{person}', people[(i * 3) % people.length])
+      .replace('{object}', HV_OBJECTS[(i * 5) % HV_OBJECTS.length])
+      .replace('{craft}', HV_CRAFTS[(i * 2) % HV_CRAFTS.length])
   return {
     id: ++seq,
     from: { dept: fd, agent: fa },

@@ -7,10 +7,14 @@
  * pitch — only the hour of day moves, which is what makes it feel live.
  *
  * `?firma=Müller%20GmbH` in the URL swaps the company name without a rebuild,
- * so a personalised demo is a link, not a deploy.
+ * so a personalised demo is a link, not a deploy. `?branche=hausverwaltung`
+ * swaps the whole office for the property-management one (hausverwaltung.ts).
  */
 
-export type IconName = 'chat' | 'megaphone' | 'box' | 'clapper' | 'handshake' | 'euro' | 'brain'
+import { BRANCHE } from './branche'
+import { HV_BRAIN, hvDepartments } from './hausverwaltung'
+
+export type IconName = 'chat' | 'megaphone' | 'box' | 'clapper' | 'handshake' | 'euro' | 'brain' | 'key' | 'wrench' | 'building' | 'meter'
 
 export type AgentStatus = 'arbeitet' | 'bereit' | 'wartet'
 
@@ -49,7 +53,7 @@ export type Department = {
 const params = new URLSearchParams(location.search)
 
 export const COMPANY = {
-  name: params.get('firma')?.slice(0, 40) || 'Beispielfirma',
+  name: params.get('firma')?.slice(0, 40) || (BRANCHE === 'hausverwaltung' ? 'Beispiel Hausverwaltung' : 'Beispielfirma'),
   demo: !params.has('live'),
   assistant: 'Jarvis',
   /**
@@ -96,7 +100,7 @@ function team(prefix: string, members: Array<[string, string, AgentStatus, strin
 
 const step = (Math.PI * 2) / 6
 
-export const DEPARTMENTS: Department[] = [
+const STANDARD: Department[] = [
   {
     id: 'kommunikation',
     name: 'Kommunikation',
@@ -283,9 +287,20 @@ export const DEPARTMENTS: Department[] = [
   },
 ]
 
+export const DEPARTMENTS: Department[] = BRANCHE === 'hausverwaltung' ? hvDepartments(day, team) : STANDARD
+
 export const AGENT_COUNT = DEPARTMENTS.reduce((n, d) => n + d.agents.length, 0)
 
-export const BRAIN = {
+const HV = BRANCHE === 'hausverwaltung'
+
+export const BRAIN = HV
+  ? {
+      about: HV_BRAIN.about,
+      jarvis: HV_BRAIN.jarvis,
+      stats: [{ value: DEPARTMENTS.reduce((n, d) => n + d.docs, 0), label: 'Dokumente' }, ...HV_BRAIN.stats],
+      runs: Array.from({ length: 24 }, (_, h) => (h === 7 || h === 8 ? 3 : h === 10 || h === 13 || h === 16 ? 3 : 2)),
+    }
+  : {
   about:
     'Hier sprechen die Agenten miteinander. Jede Nachricht läuft durchs Gehirn: Es legt sie ab, erkennt, wer sie braucht, und stellt sie dem richtigen Kollegen in der anderen Abteilung zu. Mails und Termine kommen alle 30 Minuten dazu, Wissen jeden Morgen.',
   jarvis:
@@ -314,7 +329,7 @@ export function brainProtocol(now = new Date()): Array<{ time: string; text: str
     if (m === 7 * 60) text = 'Tagesplan geschrieben'
     else if (m === 7 * 60 + 30) text = 'Wissensbibliothek aufgefrischt'
     else if (m === 8 * 60) text = 'Alle Kennzahlen eingesammelt'
-    else if (hour % 3 === 2 && m % 60 === 30) text = 'Zahlen jedes Beitrags eingetragen'
+    else if (hour % 3 === 2 && m % 60 === 30) text = HV ? HV_BRAIN.syncText : 'Zahlen jedes Beitrags eingetragen'
     else if (hour % 3 === 1 && m % 60 === 0) text = `${COMPANY.assistant} liest sich neu ein`
     out.push({ time, text, done: t <= minutes })
   }

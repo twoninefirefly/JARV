@@ -14,6 +14,7 @@ import {
 import { useOffice, type View } from './state'
 import { Icon, Spark } from './Icon'
 import { answer, liveMode, type Who } from './chat'
+import { agentTarget, approvalsTarget, brainTarget, kpiOwner, logTarget, waitingOwner } from './workspaces'
 
 /** Re-render on the minute, so charts and logs follow the clock. */
 function useNow() {
@@ -29,24 +30,26 @@ function useNow() {
 // Pieces
 // ---------------------------------------------------------------------------
 
-function Stat({ value, label, tone }: { value: number; label: string; tone?: string }) {
+function Stat({ value, label, tone, onClick }: { value: number; label: string; tone?: string; onClick?: () => void }) {
   return (
-    <div className="stat">
+    <button className="stat stat--link" onClick={onClick}>
       <div className="stat__value" style={tone ? { color: tone } : undefined}>
         {fmt(value)}
       </div>
-      <div className="stat__label">{label}</div>
-    </div>
+      <div className="stat__label">
+        {label} <span className="stat__go">→</span>
+      </div>
+    </button>
   )
 }
 
-function Runs({ runs, color, title, now }: { runs: number[]; color: string; title: string; now: Date }) {
+function Runs({ runs, color, title, now, onClick }: { runs: number[]; color: string; title: string; now: Date; onClick: () => void }) {
   const { done, total, hour } = split(runs, now)
   const max = Math.max(...runs)
   return (
-    <div className="card">
+    <button className="card card--link" onClick={onClick}>
       <div className="card__row">
-        <span className="eyebrow">{title}</span>
+        <span className="eyebrow">{title} →</span>
         <span className="eyebrow eyebrow--strong">
           {fmt(done)} erledigt · {fmt(total)} geplant
         </span>
@@ -68,7 +71,7 @@ function Runs({ runs, color, title, now }: { runs: number[]; color: string; titl
         <span>18</span>
         <span>24 Uhr</span>
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -78,12 +81,14 @@ function AgentCard({
   about,
   chips,
   onChip,
+  onOpen,
 }: {
   name: string
   sub: string
   about: string
   chips: string[]
   onChip: (q: string) => void
+  onOpen?: () => void
 }) {
   return (
     <div className="card">
@@ -102,18 +107,25 @@ function AgentCard({
           </button>
         ))}
       </div>
+      {onOpen && (
+        <button className="open-ws" onClick={onOpen}>
+          Arbeitsbereich öffnen →
+        </button>
+      )}
     </div>
   )
 }
 
-function Protocol({ items }: { items: Array<{ time: string; text: string; done: boolean }> }) {
+function Protocol({ items, onPick }: { items: Array<{ time: string; text: string; done: boolean }>; onPick: (text: string) => void }) {
   return (
     <ul className="protocol">
       {items.map((p, i) => (
         <li key={i} className={p.done ? '' : 'is-planned'}>
-          <span className="protocol__mark">{p.done ? '✓' : '○'}</span>
-          <span className="protocol__time">{p.time}</span>
-          {p.text}
+          <button onClick={() => onPick(p.text)}>
+            <span className="protocol__mark">{p.done ? '✓' : '○'}</span>
+            <span className="protocol__time">{p.time}</span>
+            {p.text}
+          </button>
         </li>
       ))}
     </ul>
@@ -230,21 +242,23 @@ function Header({ icon, title, sub, color, onClose }: { icon: Parameters<typeof 
 
 function BrainSheet({ now, send }: { now: Date; send: (q: string) => void }) {
   const show = useOffice((s) => s.show)
+  const open = useOffice((s) => s.open)
   return (
     <>
       <p className="body body--lead">{BRAIN.about}</p>
       <div className="stats stats--3">
         {BRAIN.stats.map((s) => (
-          <Stat key={s.label} {...s} />
+          <Stat key={s.label} {...s} onClick={() => open(brainTarget(s.label))} />
         ))}
       </div>
-      <Runs runs={BRAIN.runs} color="#d98a62" title="Was heute hereinkam" now={now} />
+      <Runs runs={BRAIN.runs} color="#d98a62" title="Was heute hereinkam" now={now} onClick={() => open(logTarget(null))} />
       <AgentCard
         name={COMPANY.assistant}
         sub={`Verbunden mit ${DEPARTMENTS.length} Abteilungen · ${AGENT_COUNT} Agenten`}
         about={BRAIN.jarvis}
         chips={['Was kam heute herein?', 'Wie viel weißt du?', 'Wartet etwas auf mich?']}
         onChip={send}
+        onOpen={() => open(brainTarget('Dokumente'))}
       />
       <Section title="Abteilungen" aside={`${DEPARTMENTS.length}`}>
         <div className="dept-list">
@@ -268,7 +282,7 @@ function BrainSheet({ now, send }: { now: Date; send: (q: string) => void }) {
         </div>
       </Section>
       <Section title="Protokoll heute">
-        <Protocol items={brainProtocol(now).slice(0, 10)} />
+        <Protocol items={brainProtocol(now).slice(0, 10)} onPick={(text) => open(logTarget(null, undefined, text))} />
       </Section>
     </>
   )
@@ -276,22 +290,30 @@ function BrainSheet({ now, send }: { now: Date; send: (q: string) => void }) {
 
 function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: string; now: Date; send: (q: string) => void }) {
   const show = useOffice((s) => s.show)
+  const open = useOffice((s) => s.open)
+  const approved = useOffice((s) => s.approved)
   const s = split(dept.runs, now)
   const agent = dept.agents.find((a) => a.id === agentId)
+  const lead = dept.agents.find((a) => a.lead) ?? dept.agents[0]
+  const waiting = dept.waiting.map((w, i) => ({ w, i })).filter(({ w }) => !approved.includes(w))
   const chips = ['Was lief heute?', 'Was kommt als Nächstes?', 'Wartet etwas auf mich?']
+  const pickAgent = (id: string) => {
+    show({ kind: 'dept', id: dept.id, agent: id })
+    open(agentTarget(dept, dept.agents.find((a) => a.id === id)!))
+  }
   return (
     <>
       <div className="stats stats--2">
-        {dept.kpis.map((k) => (
-          <Stat key={k.label} {...k} />
+        {dept.kpis.map((k, i) => (
+          <Stat key={k.label} {...k} onClick={() => open(agentTarget(dept, kpiOwner(dept, i)))} />
         ))}
       </div>
       <div className="stats stats--3">
-        <Stat value={s.done} label="Heute erledigt" tone="#b7cf85" />
-        <Stat value={dept.runs[(s.hour + 1) % 24]} label="Nächste Stunde" tone="#9db8d6" />
-        <Stat value={dept.waiting.length} label="Wartet auf Sie" tone="#e8c170" />
+        <Stat value={s.done} label="Heute erledigt" tone="#b7cf85" onClick={() => open(logTarget(dept, 'done'))} />
+        <Stat value={dept.runs[(s.hour + 1) % 24]} label="Nächste Stunde" tone="#9db8d6" onClick={() => open(logTarget(dept, 'planned'))} />
+        <Stat value={waiting.length} label="Wartet auf Sie" tone="#e8c170" onClick={() => open(approvalsTarget(dept))} />
       </div>
-      <Runs runs={dept.runs} color={dept.color} title="Läufe heute" now={now} />
+      <Runs runs={dept.runs} color={dept.color} title="Läufe heute" now={now} onClick={() => open(logTarget(dept))} />
       {agent && !agent.lead ? (
         <AgentCard
           name={agent.name}
@@ -299,17 +321,28 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
           about={`${agent.doing[0].toUpperCase()}${agent.doing.slice(1)}. Berichtet an den ${dept.lead.title}.`}
           chips={[`Was macht ${agent.name}?`, ...chips.slice(0, 2)]}
           onChip={send}
+          onOpen={() => open(agentTarget(dept, agent))}
         />
       ) : (
-        <AgentCard name={dept.lead.title} sub={`Lead · ${dept.short}`} about={dept.lead.about} chips={chips} onChip={send} />
+        <AgentCard
+          name={dept.lead.title}
+          sub={`Lead · ${dept.short}`}
+          about={dept.lead.about}
+          chips={chips}
+          onChip={send}
+          onOpen={() => open(agentTarget(dept, lead))}
+        />
       )}
-      {dept.waiting.length > 0 && (
-        <Section title="Wartet auf Sie" aside={`${dept.waiting.length}`}>
+      {waiting.length > 0 && (
+        <Section title="Wartet auf Sie" aside={`${waiting.length}`}>
           <ul className="waiting">
-            {dept.waiting.map((w) => (
+            {waiting.map(({ w, i }) => (
               <li key={w}>
-                <span>⚠</span>
-                {w}
+                <button onClick={() => open(agentTarget(dept, waitingOwner(dept, i), w))}>
+                  <span>⚠</span>
+                  {w}
+                  <span className="waiting__go">→</span>
+                </button>
               </li>
             ))}
           </ul>
@@ -318,11 +351,7 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
       <Section title="Team" aside={`${dept.agents.length} Agenten`}>
         <div className="team">
           {dept.agents.map((a) => (
-            <button
-              key={a.id}
-              className={`team__row${a.id === agentId ? ' is-chosen' : ''}`}
-              onClick={() => show({ kind: 'dept', id: dept.id, agent: a.id })}
-            >
+            <button key={a.id} className={`team__row${a.id === agentId ? ' is-chosen' : ''}`} onClick={() => pickAgent(a.id)}>
               <span className={`status status--${a.status}`} />
               <span>
                 <b>
@@ -330,13 +359,13 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
                 </b>
                 <small>{a.doing}</small>
               </span>
-              <span className="eyebrow">{a.status}</span>
+              <span className="eyebrow">Öffnen →</span>
             </button>
           ))}
         </div>
       </Section>
       <Section title="Protokoll heute">
-        <Protocol items={deptProtocol(dept, now).slice(0, 10)} />
+        <Protocol items={deptProtocol(dept, now).slice(0, 10)} onPick={(text) => open(logTarget(dept, undefined, text))} />
       </Section>
     </>
   )
@@ -344,35 +373,45 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
 
 /** The collapsed card in the overview: what's waiting across the office. */
 function OverviewSheet({ now }: { now: Date }) {
-  const [open, setOpen] = useState(false)
-  const show = useOffice((s) => s.show)
-  const waiting = DEPARTMENTS.flatMap((d) => d.waiting.map((w) => ({ d, w })))
+  const [expanded, setExpanded] = useState(false)
+  const open = useOffice((s) => s.open)
+  const approved = useOffice((s) => s.approved)
+  const waiting = DEPARTMENTS.flatMap((d) => d.waiting.map((w, i) => ({ d, w, i }))).filter(({ w }) => !approved.includes(w))
   const done = DEPARTMENTS.reduce((n, d) => n + split(d.runs, now).done, 0)
   return (
     <div className="overview">
-      <button className="overview__tasks" onClick={() => setOpen(!open)} aria-expanded={open}>
+      <button className="overview__tasks" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>
         <span>
           <b>Aufgaben</b>
           <span className="eyebrow">Ganzes Büro · {fmt(done)} heute erledigt</span>
         </span>
         <span className="pill">
-          <i /> {waiting.length} warten {open ? '▾' : '▸'}
+          <i /> {waiting.length} warten {expanded ? '▾' : '▸'}
         </span>
       </button>
       <AnimatePresence>
-        {open && (
+        {expanded && (
           <motion.ul
             className="waiting waiting--overview"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
           >
-            {waiting.map(({ d, w }) => (
-              <li key={w} onClick={() => show({ kind: 'dept', id: d.id })} style={{ ['--c' as string]: d.color }}>
-                <span className="dot" />
-                <b>{d.short}</b> {w}
+            {waiting.map(({ d, w, i }) => (
+              <li key={w} style={{ ['--c' as string]: d.color }}>
+                <button onClick={() => open(agentTarget(d, waitingOwner(d, i), w))}>
+                  <span className="dot" />
+                  <b>{d.short}</b> {w}
+                  <span className="waiting__go">→</span>
+                </button>
               </li>
             ))}
+            <li>
+              <button onClick={() => open(approvalsTarget(null))}>
+                <b>Alle Freigaben öffnen</b>
+                <span className="waiting__go">→</span>
+              </button>
+            </li>
           </motion.ul>
         )}
       </AnimatePresence>

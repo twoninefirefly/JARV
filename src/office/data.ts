@@ -55,7 +55,7 @@ export const COMPANY = {
 }
 
 /** Small deterministic PRNG so the demo figures never change between loads. */
-function rng(seed: number) {
+export function rng(seed: number) {
   return () => {
     seed = (seed * 1664525 + 1013904223) % 4294967296
     return seed / 4294967296

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY } from './data'
 import { useOffice } from './state'
 import Panel from './Panel'
+import Workspace from './Workspace'
 
 const Scene = lazy(() => import('./Scene'))
 
@@ -50,6 +51,7 @@ export default function Office() {
       </AnimatePresence>
 
       <Panel />
+      <Workspace />
     </div>
   )
 }

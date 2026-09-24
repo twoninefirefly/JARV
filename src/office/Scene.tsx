@@ -7,6 +7,7 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { DEPARTMENTS, fmt, BRAIN, type Agent, type Department } from './data'
 import { useOffice } from './state'
 import { Icon, Spark } from './Icon'
+import { agentTarget } from './workspaces'
 
 /**
  * The isometric office: six department floors around a particle brain.
@@ -167,6 +168,7 @@ function Plant() {
 function Floor({ dept }: { dept: Department }) {
   const view = useOffice((s) => s.view)
   const show = useOffice((s) => s.show)
+  const open = useOffice((s) => s.open)
   const [hover, setHover] = useState(false)
   const shade = useRef(1)
   const at = useMemo(() => place(dept.angle), [dept.angle])
@@ -223,7 +225,19 @@ function Floor({ dept }: { dept: Department }) {
           {dept.agents.map((a, i) => {
             const [x, z, r] = SPOTS[i % SPOTS.length]
             return (
-              <group key={a.id} position={[x, 0, z]} rotation={[0, r, 0]}>
+              <group
+                key={a.id}
+                position={[x, 0, z]}
+                rotation={[0, r, 0]}
+                onClick={
+                  active
+                    ? onTap(() => {
+                        show({ kind: 'dept', id: dept.id, agent: a.id })
+                        open(agentTarget(dept, a))
+                      })
+                    : undefined
+                }
+              >
                 <Workstation agent={a} seed={i * 1.7 + dept.angle * 3} />
               </group>
             )
@@ -258,7 +272,10 @@ function Floor({ dept }: { dept: Department }) {
               <Html key={a.id} position={[x, 0.95 + (i % 2) * 0.18, z]} center zIndexRange={[20, 0]}>
                 <button
                   className={`agent-tag${a.lead ? ' is-lead' : ''}${chosen ? ' is-chosen' : ''}`}
-                  onClick={() => show({ kind: 'dept', id: dept.id, agent: a.id })}
+                  onClick={() => {
+                    show({ kind: 'dept', id: dept.id, agent: a.id })
+                    open(agentTarget(dept, a))
+                  }}
                 >
                   {a.status === 'wartet' && <span className="agent-tag__warn">⚠</span>}
                   {a.lead && <Spark size={9} />}

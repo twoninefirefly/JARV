@@ -342,7 +342,7 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
   )
 }
 
-/** The collapsed card in the overview: what's waiting, and the call to action. */
+/** The collapsed card in the overview: what's waiting across the office. */
 function OverviewSheet({ now }: { now: Date }) {
   const [open, setOpen] = useState(false)
   const show = useOffice((s) => s.show)
@@ -376,9 +376,6 @@ function OverviewSheet({ now }: { now: Date }) {
           </motion.ul>
         )}
       </AnimatePresence>
-      <a className="cta" href={COMPANY.contact}>
-        Du willst das auch? →
-      </a>
     </div>
   )
 }

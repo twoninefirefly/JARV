@@ -52,8 +52,6 @@ export const COMPANY = {
   name: params.get('firma')?.slice(0, 40) || 'Beispielfirma',
   demo: !params.has('live'),
   assistant: 'Jarvis',
-  /** Where "Du willst das auch?" goes. */
-  contact: 'mailto:hallo@example.com?subject=Agenten-B%C3%BCro%20f%C3%BCr%20uns',
 }
 
 /** Small deterministic PRNG so the demo figures never change between loads. */

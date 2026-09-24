@@ -320,3 +320,23 @@ This repository is a copy of [adewaskar/jarvis](https://github.com/adewaskar/jar
 at commit `1c4016a`, imported and maintained here. The original work is
 copyright (c) 2026 Aditya Dewaskar and is used under the MIT licence in
 [`LICENSE`](LICENSE).
+
+---
+
+## Agenten-Büro (showroom)
+
+A second page, `office.html`, shows a company as an isometric office: six
+departments, each staffed with AI agents, around one shared brain in the
+middle. Tap a floor to fly in and see its team, today's runs, what is waiting
+for approval, and chat with the department lead; tap the brain for the
+company-wide memory.
+
+```bash
+npm run office     # opens http://localhost:5173/office.html
+```
+
+- **Per customer:** everything shown lives in `src/office/data.ts`. For a quick
+  personalised demo, add `?firma=Müller%20GmbH` to the URL.
+- **Chat:** with the bridge running (`npm start`) questions go to Claude with the
+  office's figures as context. Without it, the page answers from the same
+  figures, so a demo on a phone never dead-ends.

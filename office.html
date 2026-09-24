@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0e0b09" />
+    <meta name="description" content="Das Agenten-Büro: jede Abteilung mit ihren KI-Agenten, ein gemeinsames Gedächtnis in der Mitte." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+    <!-- Same stance as index.html, minus everything the voice stack needed:
+         no frames, no eval, and the only socket is the local bridge (plus
+         Vite's HMR in dev). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        base-uri 'self';
+        object-src 'none';
+        frame-src 'none';
+        img-src 'self' data: blob:;
+        script-src 'self' 'unsafe-inline';
+        style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+        font-src 'self' data: https://fonts.gstatic.com;
+        connect-src 'self' ws: wss: http://localhost:8787 http://127.0.0.1:8787;
+        worker-src 'self' blob:;
+      "
+    />
+    <title>Agenten-Büro</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/office/main.tsx"></script>
+  </body>
+</html>

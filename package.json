@@ -11,6 +11,7 @@
   "scripts": {
     "start": "node scripts/start.mjs",
     "dev": "vite",
+    "office": "vite --open /office.html",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",

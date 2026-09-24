@@ -1,11 +1,31 @@
-import { Suspense, lazy } from 'react'
+import { Component, Suspense, lazy, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY } from './data'
 import { useOffice } from './state'
 import Panel from './Panel'
 import Workspace from './Workspace'
 
-const Scene = lazy(() => import('./Scene'))
+/** One retry: a chunk request that fails once (a flaky connection) usually works the second time. */
+const Scene = lazy(() => import('./Scene').catch(() => import('./Scene')))
+
+/** If the 3D view cannot start, say so and offer a retry, instead of a black screen. */
+class SceneGuard extends Component<{ children: ReactNode; onRetry: () => void }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+  render() {
+    if (!this.state.failed) return this.props.children
+    return (
+      <div className="loading loading--error">
+        <p>Die 3D-Ansicht konnte nicht geladen werden.</p>
+        <button className="btn btn--primary" onClick={this.props.onRetry}>
+          Neu laden
+        </button>
+      </div>
+    )
+  }
+}
 
 /** The mark: a copper ring with a cut, drawn rather than borrowed. */
 function Mark() {
@@ -19,12 +39,15 @@ function Mark() {
 export default function Office() {
   const view = useOffice((s) => s.view)
   const show = useOffice((s) => s.show)
+  const [attempt, setAttempt] = useState(0)
   return (
     <div className={`office${view.kind === 'overview' ? '' : ' is-open'}`}>
       <div className="stage">
-        <Suspense fallback={<div className="loading">Büro wird aufgebaut …</div>}>
-          <Scene />
-        </Suspense>
+        <SceneGuard key={attempt} onRetry={() => setAttempt((n) => n + 1)}>
+          <Suspense fallback={<div className="loading">Büro wird aufgebaut …</div>}>
+            <Scene />
+          </Suspense>
+        </SceneGuard>
       </div>
 
       <header className="topbar">

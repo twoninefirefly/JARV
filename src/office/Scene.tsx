@@ -659,11 +659,29 @@ function Rig() {
 
 // ---------------------------------------------------------------------------
 
+/** Phones get a lighter renderer: less GPU memory, fewer lost contexts. */
+const phone = () => Math.min(window.innerWidth, window.innerHeight) < 600
+
 export default function Scene() {
+  // A phone drops the GPU context when the app goes to the background or the
+  // page is reopened, and a lost context paints black forever. Rebuilding the
+  // canvas is cheap, so that is the recovery.
+  const [generation, setGeneration] = useState(0)
   return (
     <Canvas
+      key={generation}
+      onCreated={({ gl }) => {
+        gl.domElement.addEventListener(
+          'webglcontextlost',
+          (e) => {
+            e.preventDefault()
+            setTimeout(() => setGeneration((g) => g + 1), 250)
+          },
+          { once: true },
+        )
+      }}
       shadows
-      dpr={[1, 2]}
+      dpr={phone() ? [1, 1.5] : [1, 2]}
       camera={{ position: [18, 22, 18], fov: 34, near: 0.1, far: 200 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
     >
@@ -676,7 +694,7 @@ export default function Scene() {
         intensity={1.6}
         color="#fff1e0"
         castShadow
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={phone() ? [1024, 1024] : [2048, 2048]}
         shadow-camera-left={-12}
         shadow-camera-right={12}
         shadow-camera-top={12}

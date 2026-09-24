@@ -253,8 +253,19 @@ function LeadOverview({ target, go }: { target: WsTarget; go: (t: WsTarget) => v
 // The window
 // ---------------------------------------------------------------------------
 
+/**
+ * One AnimatePresence that outlives every window, with the window as its only
+ * child. The window used to return its own AnimatePresence, early, when
+ * closed — which left the exiting backdrop mounted over the page, invisible
+ * but still catching taps, so the next window never opened and the office
+ * sat there dimmed.
+ */
 export default function Workspace() {
   const ws = useOffice((s) => s.ws)
+  return <AnimatePresence>{ws && <Window key="window" ws={ws} />}</AnimatePresence>
+}
+
+function Window({ ws }: { ws: WsTarget }) {
   const openWs = useOffice((s) => s.open)
   const closeWs = useOffice((s) => s.close)
   const approved = useOffice((s) => s.approved)
@@ -269,16 +280,12 @@ export default function Workspace() {
   const [toast, setToast] = useState<string | null>(null)
   const [plug, setPlug] = useState(false)
 
-  const key = ws ? `${ws.kind}:${ws.deptId}:${ws.agentId}:${ws.title}` : ''
-  const layout = ws ? LAYOUT[ws.kind] : null
-  const all = useMemo(() => (ws ? itemsFor(ws, approved) : []), [ws, approved])
+  const key = `${ws.kind}:${ws.deptId}:${ws.agentId}:${ws.title}`
+  const layout = LAYOUT[ws.kind]
+  const all = useMemo(() => itemsFor(ws, approved), [ws, approved])
 
   // A new window starts clean, on the record it was opened for.
   useEffect(() => {
-    if (!ws) {
-      setStack([])
-      return
-    }
     setQuery('')
     setPlug(false)
     setFilter(ws.filter ?? 'alle')
@@ -289,7 +296,6 @@ export default function Workspace() {
   }, [key])
 
   useEffect(() => {
-    if (!ws) return
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && closeWs()
     window.addEventListener('keydown', esc)
     return () => window.removeEventListener('keydown', esc)
@@ -300,8 +306,6 @@ export default function Workspace() {
     const t = setTimeout(() => setToast(null), 2600)
     return () => clearTimeout(t)
   }, [toast])
-
-  if (!ws || !layout) return <AnimatePresence />
 
   const source = SOURCES[ws.kind]
   const q = query.trim().toLowerCase()
@@ -344,10 +348,16 @@ export default function Workspace() {
   ) : null
 
   return (
-    <AnimatePresence>
-      <motion.div className="ws-backdrop" key="bd" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeWs} />
+    <>
+      <motion.div
+        className="ws-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, pointerEvents: 'none' }}
+        transition={{ duration: 0.2 }}
+        onClick={closeWs}
+      />
       <motion.section
-        key="win"
         className="ws"
         role="dialog"
         aria-modal="true"
@@ -355,7 +365,7 @@ export default function Workspace() {
         style={{ ['--c' as string]: ws.color }}
         initial={{ opacity: 0, y: 30, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 30 }}
+        exit={{ opacity: 0, y: 30, pointerEvents: 'none', transition: { duration: 0.18 } }}
         transition={{ type: 'spring', damping: 28, stiffness: 300 }}
       >
         <header className="ws-head">
@@ -447,7 +457,7 @@ export default function Workspace() {
           )}
         </AnimatePresence>
       </motion.section>
-    </AnimatePresence>
+    </>
   )
 }
 

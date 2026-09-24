@@ -14,6 +14,7 @@ import {
 import { useOffice, type View } from './state'
 import { Icon, Spark } from './Icon'
 import { answer, liveMode, type Who } from './chat'
+import { deptOf } from './comms'
 import { agentTarget, approvalsTarget, brainTarget, kpiOwner, logTarget, waitingOwner } from './workspaces'
 
 /** Re-render on the minute, so charts and logs follow the clock. */
@@ -132,6 +133,40 @@ function Protocol({ items, onPick }: { items: Array<{ time: string; text: string
   )
 }
 
+/** Agents talking to each other through the brain, newest first. */
+function Feed({ dept, limit }: { dept?: string; limit: number }) {
+  const feed = useOffice((s) => s.feed)
+  const open = useOffice((s) => s.open)
+  const items = (dept ? feed.filter((m) => m.from.dept === dept || m.to.dept === dept) : feed).slice(0, limit)
+  return (
+    <ul className="feed">
+      <AnimatePresence initial={false}>
+        {items.map((m) => {
+          const from = deptOf(m.from.dept)
+          const to = deptOf(m.to.dept)
+          const agent = to.agents.find((a) => a.name === m.to.agent) ?? to.agents[0]
+          return (
+            <motion.li key={m.id} layout initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <button onClick={() => open(agentTarget(to, agent, m.text))}>
+                <span className="feed__route">
+                  <i style={{ background: from.color }} />
+                  {m.from.agent}
+                  <span className="feed__arrow">→ Gehirn →</span>
+                  <i style={{ background: to.color }} />
+                  {m.to.agent}
+                  <time>{m.time}</time>
+                </span>
+                <span className="feed__text">{m.text}</span>
+                <span className="feed__filed">✓ {m.filed}</span>
+              </button>
+            </motion.li>
+          )
+        })}
+      </AnimatePresence>
+    </ul>
+  )
+}
+
 function Section({ title, aside, children }: { title: string; aside?: string; children: ReactNode }) {
   return (
     <section className="section">
@@ -246,6 +281,9 @@ function BrainSheet({ now, send }: { now: Date; send: (q: string) => void }) {
   return (
     <>
       <p className="body body--lead">{BRAIN.about}</p>
+      <Section title="Live · Agenten sprechen miteinander" aside="durchs Gehirn">
+        <Feed limit={5} />
+      </Section>
       <div className="stats stats--3">
         {BRAIN.stats.map((s) => (
           <Stat key={s.label} {...s} onClick={() => open(brainTarget(s.label))} />
@@ -333,6 +371,9 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
           onOpen={() => open(agentTarget(dept, lead))}
         />
       )}
+      <Section title="Funk mit anderen Abteilungen" aside="live">
+        <Feed dept={dept.id} limit={3} />
+      </Section>
       {waiting.length > 0 && (
         <Section title="Wartet auf Sie" aside={`${waiting.length}`}>
           <ul className="waiting">
@@ -463,7 +504,7 @@ export default function Panel() {
           transition={{ type: 'spring', damping: 26, stiffness: 260 }}
         >
           {who.kind === 'brain' ? (
-            <Header icon="brain" title="Das Gehirn" sub={`Alles, was ${COMPANY.assistant} weiß`} color="#d98a62" onClose={close} />
+            <Header icon="brain" title="Das Gehirn" sub="Zentrale · Agenten-Funk" color="#d98a62" onClose={close} />
           ) : (
             <Header
               icon={who.dept.icon}

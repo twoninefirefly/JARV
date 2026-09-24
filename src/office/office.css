@@ -1284,3 +1284,211 @@ button {
     transition: none !important;
   }
 }
+
+.topbar__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.topbar__actions .icon-btn {
+  margin-left: 0;
+}
+
+/* ------------------------------------------------------------ agent feed */
+
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.feed button {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  text-align: left;
+}
+.feed button:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.feed__route {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font: 10px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #cfc1b3;
+}
+.feed__route i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.feed__route time {
+  margin-left: auto;
+  color: var(--muted);
+}
+.feed__arrow {
+  color: var(--accent);
+}
+.feed__text {
+  font-size: 14px;
+}
+.feed__filed {
+  font: 11px var(--mono);
+  color: #b7cf85;
+}
+
+/* ------------------------------------------------------------ lock screen */
+
+.lock {
+  position: absolute;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background: radial-gradient(ellipse at 50% 40%, #241812 0%, var(--bg) 70%);
+  overflow: hidden;
+}
+.lock__drift {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.lock__glow {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  max-width: 120vw;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(217, 138, 98, 0.18), transparent 65%);
+  animation: pulse 5s ease-in-out infinite;
+}
+.lock__inner {
+  position: relative;
+  width: min(360px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+.lock__time {
+  font-size: clamp(56px, 16vw, 88px);
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.lock__date {
+  font: 12px var(--mono);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.lock__brand {
+  margin: 44px 0 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.lock__logo {
+  max-width: 180px;
+  max-height: 72px;
+  object-fit: contain;
+}
+.lock__name {
+  font-size: 22px;
+  font-weight: 600;
+}
+.lock__form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lock__form input {
+  width: 100%;
+  padding: 15px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(217, 138, 98, 0.4);
+  background: rgba(20, 15, 12, 0.7);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  font: 16px var(--mono);
+  letter-spacing: 0.2em;
+  text-align: center;
+  outline: none;
+}
+.lock__form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(217, 138, 98, 0.15);
+}
+.lock__form button {
+  padding: 14px;
+  border-radius: 14px;
+  border: 0;
+  background: var(--accent);
+  color: #1d130d;
+  font: 600 13px var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.lock__form button:disabled {
+  opacity: 0.45;
+}
+.lock__error {
+  margin: 0;
+  font-size: 13px;
+  color: #f09a86;
+}
+.lock__load {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lock__bar {
+  height: 4px;
+  border-radius: 4px;
+  background: rgba(255, 236, 220, 0.08);
+  overflow: hidden;
+}
+.lock__bar div {
+  height: 100%;
+  background: linear-gradient(90deg, #b8603f, #f0b48e);
+  box-shadow: 0 0 16px #d98a62;
+}
+.lock__steps {
+  display: flex;
+  justify-content: space-between;
+  font: 11px var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #cfc1b3;
+}
+.lock__foot {
+  position: absolute;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  left: 16px;
+  right: 16px;
+  text-align: center;
+  font: 10px var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}

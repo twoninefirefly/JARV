@@ -200,8 +200,21 @@ function Floor({ dept }: { dept: Department }) {
   const pick = () => show({ kind: 'dept', id: dept.id })
   const lead = SPOTS[0]
 
+  // Build-up after unlock: each floor rises into place, one after the other.
+  const rise = useRef<THREE.Group>(null)
+  const order = DEPARTMENTS.indexOf(dept)
+  useFrame(({ clock }) => {
+    if (!rise.current) return
+    const k = THREE.MathUtils.clamp((clock.elapsedTime - 0.3 - order * 0.18) / 0.9, 0, 1)
+    const e = 1 - Math.pow(1 - k, 3)
+    rise.current.position.y = (1 - e) * -3
+    rise.current.scale.setScalar(0.6 + 0.4 * e)
+    rise.current.visible = k > 0
+  })
+
   return (
     <group position={at}>
+    <group ref={rise}>
       <group
         onClick={onTap(pick)}
         onPointerOver={(e) => {
@@ -307,6 +320,7 @@ function Floor({ dept }: { dept: Department }) {
         </group>
       )}
     </group>
+    </group>
   )
 }
 
@@ -345,10 +359,11 @@ const brainFragment = /* glsl */ `
 
 function Brain() {
   const show = useOffice((s) => s.show)
-  const points = useRef<THREE.Points>(null)
+  const spin = useRef<THREE.Group>(null)
+  const light = useRef<THREE.PointLight>(null)
   const dpr = useThree((s) => s.viewport.dpr)
 
-  const { geometry, material } = useMemo(() => {
+  const { geometry, material, synapses, wire } = useMemo(() => {
     const n = 5200
     const pos = new Float32Array(n * 3)
     const col = new Float32Array(n * 3)
@@ -394,13 +409,47 @@ function Brain() {
       blending: THREE.AdditiveBlending,
       toneMapped: false,
     })
-    return { geometry, material }
+    // Neurons: join close pairs of points, so the cloud reads as a network.
+    const seg: number[] = []
+    for (let i = 0; i < 1800 && seg.length < 900 * 6; i += 1) {
+      const j = (i * 37 + 11) % n
+      const ax = pos[i * 3], ay = pos[i * 3 + 1], az = pos[i * 3 + 2]
+      const bx = pos[j * 3], by = pos[j * 3 + 1], bz = pos[j * 3 + 2]
+      if ((ax - bx) ** 2 + (ay - by) ** 2 + (az - bz) ** 2 < 0.09) seg.push(ax, ay, az, bx, by, bz)
+      for (let k = i + 1; k < i + 6 && k < n; k++) {
+        const cx = pos[k * 3], cy = pos[k * 3 + 1], cz = pos[k * 3 + 2]
+        const d = (ax - cx) ** 2 + (ay - cy) ** 2 + (az - cz) ** 2
+        if (d < 0.05 && d > 0.004) seg.push(ax, ay, az, cx, cy, cz)
+      }
+    }
+    const synapses = new THREE.BufferGeometry()
+    synapses.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3))
+    const wire = new THREE.LineBasicMaterial({
+      color: new THREE.Color(1.2, 0.55, 0.3),
+      transparent: true,
+      opacity: 0.22,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    })
+    return { geometry, material, synapses, wire }
   }, [])
 
   useFrame(({ clock }, dt) => {
     material.uniforms.uTime.value = clock.elapsedTime
     material.uniforms.uPixel.value = dpr
-    if (points.current) points.current.rotation.y += dt * 0.12
+    // Fade in after unlock, then turn slowly; flare whenever a message passes through.
+    const born = THREE.MathUtils.clamp((clock.elapsedTime - 0.2) / 1.4, 0, 1)
+    const now = performance.now()
+    const flare = useOffice
+      .getState()
+      .inFlight.reduce((m, f) => Math.max(m, Math.exp(-(((now - f.born) / 1000 - 1.2) ** 2) / 0.02)), 0)
+    if (spin.current) {
+      spin.current.rotation.y += dt * 0.12
+      spin.current.scale.setScalar(born * (1 + flare * 0.08))
+    }
+    wire.opacity = 0.18 + flare * 0.5
+    if (light.current) light.current.intensity = 6 * born + flare * 10
   })
 
   const glow = useMemo(() => {
@@ -432,7 +481,10 @@ function Brain() {
         <meshBasicMaterial color={[1.5, 0.75, 0.45]} toneMapped={false} />
       </mesh>
       <group position={[0, 1.75, 0]} scale={1.35}>
-        <points ref={points} geometry={geometry} material={material} />
+        <group ref={spin}>
+          <points geometry={geometry} material={material} />
+          <lineSegments geometry={synapses} material={wire} />
+        </group>
         {/* an invisible hit target — points are too sparse to click */}
         <mesh
           onClick={onTap(() => show({ kind: 'brain' }))}
@@ -443,7 +495,7 @@ function Brain() {
           <meshBasicMaterial visible={false} />
         </mesh>
       </group>
-      <pointLight position={[0, 1.4, 0]} color="#ff9a5c" intensity={6} distance={7} decay={1.6} />
+      <pointLight ref={light} position={[0, 1.4, 0]} color="#ff9a5c" intensity={6} distance={7} decay={1.6} />
       <BrainBadge />
     </group>
   )
@@ -496,7 +548,42 @@ function Links() {
     return g
   }, [curves])
 
+  // Agent messages: a bright packet runs floor → brain → floor.
+  const MAX = 8
+  const TRAIL = 6
+  const packets = useMemo(() => {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(MAX * TRAIL * 3), 3))
+    return g
+  }, [])
+  const byDept = useMemo(() => Object.fromEntries(DEPARTMENTS.map((d, i) => [d.id, curves[i]])), [curves])
+
   const v = useMemo(() => new THREE.Vector3(), [])
+  useFrame(() => {
+    const attr = packets.getAttribute('position') as THREE.BufferAttribute
+    const now = performance.now()
+    const live = useOffice.getState().inFlight.filter((f) => now - f.born < 2400).slice(-MAX)
+    for (let p = 0; p < MAX; p++) {
+      const f = live[p]
+      for (let k = 0; k < TRAIL; k++) {
+        if (!f) {
+          attr.setXYZ(p * TRAIL + k, 0, -50, 0)
+          continue
+        }
+        const u = (now - f.born) / 1000 / 2.4 - k * 0.012
+        if (u < 0 || u > 1) {
+          attr.setXYZ(p * TRAIL + k, 0, -50, 0)
+          continue
+        }
+        // First half: out of the sender's floor into the brain; second: out to the receiver.
+        if (u < 0.5) byDept[f.msg.from.dept].getPoint(1 - u * 2, v)
+        else byDept[f.msg.to.dept].getPoint((u - 0.5) * 2, v)
+        attr.setXYZ(p * TRAIL + k, v.x, v.y + 0.12, v.z)
+      }
+    }
+    attr.needsUpdate = true
+  })
+
   useFrame(({ clock }) => {
     const attr = pulses.getAttribute('position') as THREE.BufferAttribute
     const t = clock.elapsedTime
@@ -516,6 +603,16 @@ function Links() {
     <group>
       <points geometry={trail}>
         <pointsMaterial color="#8a5a40" size={0.035} transparent opacity={0.55} depthWrite={false} />
+      </points>
+      <points geometry={packets}>
+        <pointsMaterial
+          color={[3.2, 2.4, 1.6]}
+          size={0.2}
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
       </points>
       <points geometry={pulses}>
         <pointsMaterial
@@ -548,7 +645,8 @@ function Ground() {
   }, [])
   return (
     <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
+      {/* No shadows on the ground: the floors' shadows fell far behind them as two black slabs. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
         <planeGeometry args={[80, 80]} />
         <meshStandardMaterial color="#15110e" roughness={1} />
       </mesh>
@@ -708,9 +806,12 @@ export default function Scene() {
         <Floor key={d.id} dept={d} />
       ))}
       <Rig />
-      <EffectComposer multisampling={0}>
-        <Bloom mipmapBlur luminanceThreshold={0.85} intensity={0.9} radius={0.7} />
-      </EffectComposer>
+      {/* Bloom costs the most GPU memory; phones skip it, which is what keeps iOS from dropping the context. */}
+      {!phone() && (
+        <EffectComposer multisampling={0}>
+          <Bloom mipmapBlur luminanceThreshold={0.85} intensity={0.9} radius={0.7} />
+        </EffectComposer>
+      )}
     </Canvas>
   )
 }

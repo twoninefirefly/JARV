@@ -52,6 +52,16 @@ export const COMPANY = {
   name: params.get('firma')?.slice(0, 40) || 'Beispielfirma',
   demo: !params.has('live'),
   assistant: 'Jarvis',
+  /**
+   * Opens the lock screen. This only keeps a demo from being browsed by
+   * accident — the page ships with it. Real customer data needs a server-side
+   * login in front of it, never a password in the page.
+   */
+  password: 'demo',
+  /** Optional logo for the lock screen (an image URL or data: URI); the mark is used without one. */
+  logo: '',
+  /** Minutes without a touch before the office locks itself. */
+  autoLockMinutes: 5,
 }
 
 /** Small deterministic PRNG so the demo figures never change between loads. */
@@ -277,7 +287,7 @@ export const AGENT_COUNT = DEPARTMENTS.reduce((n, d) => n + d.agents.length, 0)
 
 export const BRAIN = {
   about:
-    'Jede Abteilung schreibt hinein und liest daraus. Mails und Termine kommen alle 30 Minuten, Wissen jeden Morgen, und alle drei Stunden liest sich Jarvis neu ein.',
+    'Hier sprechen die Agenten miteinander. Jede Nachricht läuft durchs Gehirn: Es legt sie ab, erkennt, wer sie braucht, und stellt sie dem richtigen Kollegen in der anderen Abteilung zu. Mails und Termine kommen alle 30 Minuten dazu, Wissen jeden Morgen.',
   jarvis:
     'Ein Gedächtnis für das ganze Haus. Wer im Vertrieb fragt, bekommt den Stand aus Mails, Calls und CRM. Wer im Content fragt, die Zahlen jedes Beitrags.',
   stats: [

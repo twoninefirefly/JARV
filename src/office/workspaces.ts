@@ -713,7 +713,12 @@ export function itemsFor(t: WsTarget, approved: string[]): WsItem[] {
 
   if (t.kind === 'log') {
     const now = new Date()
-    const log = dept ? deptProtocol(dept, now) : brainProtocol(now)
+    let log = dept ? deptProtocol(dept, now) : brainProtocol(now)
+    // Late in the day nothing is left to plan; show tomorrow morning instead of an empty list.
+    if (t.filter === 'planned' && !log.some((p) => !p.done)) {
+      const jobs = dept?.jobs ?? ['Mails und Termine ins Gedächtnis', 'Tagesplan geschrieben', 'Wissensbibliothek aufgefrischt']
+      log = jobs.map((text, i) => ({ time: `morgen ${String(7 + i).padStart(2, '0')}:${i % 2 ? '30' : '00'}`, text, done: false }))
+    }
     const r = rng(seedOf(t.sub))
     return log
       .filter((p) => !t.filter || (t.filter === 'done' ? p.done : !p.done))

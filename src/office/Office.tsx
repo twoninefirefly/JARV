@@ -1,9 +1,11 @@
-import { Component, Suspense, lazy, useState, type ReactNode } from 'react'
+import { Component, Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY } from './data'
 import { useOffice } from './state'
 import Panel from './Panel'
 import Workspace from './Workspace'
+import Lock, { Mark } from './Lock'
+import { useComms } from './comms'
 
 /** One retry: a chunk request that fails once (a flaky connection) usually works the second time. */
 const Scene = lazy(() => import('./Scene').catch(() => import('./Scene')))
@@ -27,26 +29,41 @@ class SceneGuard extends Component<{ children: ReactNode; onRetry: () => void },
   }
 }
 
-/** The mark: a copper ring with a cut, drawn rather than borrowed. */
-function Mark() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M19 7.5A8 8 0 1 0 20 13h-7" stroke="#d98a62" strokeWidth="3" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 export default function Office() {
   const view = useOffice((s) => s.view)
   const show = useOffice((s) => s.show)
   const [attempt, setAttempt] = useState(0)
+  const locked = useOffice((s) => s.locked)
+  const lock = useOffice((s) => s.lock)
+  // The scene starts loading the moment the password is right, under the
+  // loading bar, and is torn down again on lock so nothing stays on screen.
+  const [started, setStarted] = useState(false)
+  useEffect(() => {
+    if (locked) setStarted(false)
+  }, [locked])
+  useComms(!locked)
+
+  // Lock by itself after a while without a touch — there are figures in here.
+  useEffect(() => {
+    if (locked) return
+    let t = setTimeout(lock, COMPANY.autoLockMinutes * 60_000)
+    const reset = () => {
+      clearTimeout(t)
+      t = setTimeout(lock, COMPANY.autoLockMinutes * 60_000)
+    }
+    const events = ['pointerdown', 'keydown', 'wheel'] as const
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
+    return () => {
+      clearTimeout(t)
+      events.forEach((e) => window.removeEventListener(e, reset))
+    }
+  }, [locked, lock])
+
   return (
     <div className={`office${view.kind === 'overview' ? '' : ' is-open'}`}>
       <div className="stage">
         <SceneGuard key={attempt} onRetry={() => setAttempt((n) => n + 1)}>
-          <Suspense fallback={<div className="loading">Büro wird aufgebaut …</div>}>
-            <Scene />
-          </Suspense>
+          <Suspense fallback={<div className="loading">Büro wird aufgebaut …</div>}>{started && <Scene />}</Suspense>
         </SceneGuard>
       </div>
 
@@ -58,11 +75,19 @@ export default function Office() {
           {COMPANY.name}
           {COMPANY.demo && ' · Demo'}
         </span>
-        {view.kind !== 'overview' && (
-          <button className="icon-btn icon-btn--lg" onClick={() => show({ kind: 'overview' })} aria-label="Zur Übersicht">
-            ✕
+        <span className="topbar__actions">
+          {view.kind !== 'overview' && (
+            <button className="icon-btn icon-btn--lg" onClick={() => show({ kind: 'overview' })} aria-label="Zur Übersicht">
+              ✕
+            </button>
+          )}
+          <button className="icon-btn icon-btn--lg" onClick={lock} aria-label="Sperren" title="Sperren">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+              <rect x="5" y="11" width="14" height="10" rx="2" />
+              <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+            </svg>
           </button>
-        )}
+        </span>
       </header>
 
       <AnimatePresence>
@@ -73,8 +98,9 @@ export default function Office() {
         )}
       </AnimatePresence>
 
-      <Panel />
-      <Workspace />
+      {!locked && <Panel />}
+      {!locked && <Workspace />}
+      <Lock onStart={() => setStarted(true)} />
     </div>
   )
 }

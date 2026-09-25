@@ -3,8 +3,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY } from './data'
 import { useOffice } from './state'
 import { BRANCHE, BRANCHEN, setBranche } from './branche'
-import { KUNDE } from './kunden'
+import { HV_KUNDE, KUNDE } from './kunden'
 import { DEMO_PASSWORD, USERS, type Role, type User } from './team'
+import { greet, primeAudio } from './sound'
 
 /**
  * The lock screen: logo, clock, password, then a loading bar while the office
@@ -87,6 +88,7 @@ export default function Lock({ onStart }: { onStart: () => void }) {
   const [remember, setRemember] = useState(true)
   // Someone who asked to stay signed in only needs one click; "Anderes Konto" shows the full login.
   const [switching, setSwitching] = useState(false)
+  const [more, setMore] = useState(false)
 
   // A fresh lock clears whatever was typed last time and starts on the last person.
   useEffect(() => {
@@ -105,13 +107,18 @@ export default function Lock({ onStart }: { onStart: () => void }) {
 
   const start = (user: User, keep: boolean) => {
     signIn(user, keep)
+    // The sign-in click is what browsers need before any sound may play.
+    primeAudio()
     onStart()
     const t0 = performance.now()
     const tick = () => {
       const k = Math.min(1, (performance.now() - t0) / 2600)
       setProgress(k)
       if (k < 1) requestAnimationFrame(tick)
-      else setTimeout(unlock, 250)
+      else {
+        setTimeout(unlock, 250)
+        greet(user.name.split(' ')[0])
+      }
     }
     requestAnimationFrame(tick)
   }
@@ -142,10 +149,11 @@ export default function Lock({ onStart }: { onStart: () => void }) {
           <Drift />
           <div className="lock__glow" />
           <div className="lock__inner">
+            {/* Like a phone's lock screen: the date small on top, the time large beneath. */}
+            <div className="lock__date">{now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
             <div className="lock__time">
               {now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
             </div>
-            <div className="lock__date">{now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
 
             <div className="lock__brand">
               {/* A customer logo carries its own name; the text name only goes with our mark. */}
@@ -234,7 +242,15 @@ export default function Lock({ onStart }: { onStart: () => void }) {
           </div>
           <div className="lock__foot">
             🔒 Verschlüsselte Verbindung · automatische Sperre nach {COMPANY.autoLockMinutes} Min.
-            {!KUNDE && progress === null && (
+            {(KUNDE || HV_KUNDE) && progress === null && (
+              // For a customer the other office is not on offer — only a hint that it could be.
+              <span className="lock__demo">
+                <button type="button" className="lock__more" aria-expanded={more} onClick={() => setMore(!more)}>
+                  + Holding · Erweiterung
+                </button>
+              </span>
+            )}
+            {!KUNDE && !HV_KUNDE && progress === null && (
               <span className="lock__demo" role="group" aria-label="Branche der Demo">
                 Demo:
                 {BRANCHEN.map((b) => (
@@ -242,6 +258,12 @@ export default function Lock({ onStart }: { onStart: () => void }) {
                     {b.label}
                   </button>
                 ))}
+              </span>
+            )}
+            {more && (
+              <span className="lock__morenote">
+                Hier kann Ihr nächstes Büro entstehen – zum Beispiel für Ihre Holding oder eine weitere Gesellschaft. Eigene Abteilungen, eigenes Team,
+                ein gemeinsames Gehirn. Auf Wunsch schalten wir es dazu.
               </span>
             )}
           </div>

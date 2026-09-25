@@ -7,6 +7,7 @@ import { USERS, type Decision, type User } from './team'
 // browser. The real system keeps both on the server.
 const KEY_USER = 'office.user'
 const KEY_DECISIONS = 'office.decisions'
+const KEY_SIGNATURE = 'office.signature'
 const load = <T,>(key: string, fallback: T): T => {
   try {
     const raw = localStorage.getItem(key)
@@ -48,7 +49,7 @@ type OfficeState = {
   approved: string[]
   /** Who decided what, and when — for management's overview. */
   decisions: Decision[]
-  approve: (item: string, dept: string, result?: Decision['result']) => void
+  approve: (item: string, dept: string, result?: Decision['result'], signed?: boolean) => void
   /** Who is signed in; remembered on this computer if they asked for it. */
   user: User | null
   remembered: User | null
@@ -69,6 +70,12 @@ type OfficeState = {
   /** Messages whose packet is still travelling through the scene. */
   inFlight: Array<{ msg: Message; born: number }>
   post: (msg: Message, animate: boolean) => void
+  /** An urgent message on screen, until dismissed or it times out. */
+  alert: Message | null
+  raise: (msg: Message | null) => void
+  /** The customer's saved signature for management (a PNG data URL). */
+  signature: string | null
+  setSignature: (png: string | null) => void
 }
 
 export const useOffice = create<OfficeState>((set) => ({
@@ -80,12 +87,12 @@ export const useOffice = create<OfficeState>((set) => ({
   close: () => set({ ws: null }),
   approved: initialDecisions.map((d) => d.text),
   decisions: initialDecisions,
-  approve: (item, dept, result = 'Freigegeben') =>
+  approve: (item, dept, result = 'Freigegeben', signed = false) =>
     set((s) => {
       if (s.approved.includes(item) || !s.user) return s
       const now = new Date()
       const at = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-      const decisions = [...s.decisions, { text: item, dept, by: s.user.id, name: s.user.name, at, result }]
+      const decisions = [...s.decisions, { text: item, dept, by: s.user.id, name: s.user.name, at, result, signed }]
       save(KEY_DECISIONS, { day: today, list: decisions })
       return { approved: [...s.approved, item], decisions }
     }),
@@ -105,7 +112,14 @@ export const useOffice = create<OfficeState>((set) => ({
   showSetup: (setup) => set({ setup, ws: null }),
   locked: true,
   unlock: () => set({ locked: false }),
-  lock: () => set({ locked: true, ws: null, setup: false, cockpit: false, view: { kind: 'overview' } }),
+  lock: () => set({ locked: true, ws: null, setup: false, cockpit: false, alert: null, view: { kind: 'overview' } }),
+  alert: null,
+  raise: (alert) => set({ alert }),
+  signature: load<string | null>(KEY_SIGNATURE, null),
+  setSignature: (signature) => {
+    save(KEY_SIGNATURE, signature)
+    set({ signature })
+  },
   feed: [],
   inFlight: [],
   post: (msg, animate) =>

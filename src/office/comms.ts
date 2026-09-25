@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { DEPARTMENTS } from './data'
 import { useOffice } from './state'
+import { chime } from './sound'
 import { BRANCHE } from './branche'
 import { HV_CRAFTS, HV_OBJECTS, HV_PEOPLE, HV_ROUTES } from './hausverwaltung'
 
@@ -21,6 +22,16 @@ export type Message = {
   /** What the brain did with it. */
   filed: string
   time: string
+  /** 1 = needs attention soon (damage), 2 = emergency. */
+  urgency?: 1 | 2
+}
+
+/** Which messages are urgent, by their template. */
+const URGENT: Record<string, 1 | 2> = {
+  'Wasserfleck an der Decke, {object}': 1,
+  'Heizungsausfall {object}, 8 Parteien': 2,
+  '{person} meldet: Login geht nicht': 1,
+  'Telefonanlage antwortet langsam': 1,
 }
 
 const FIRMS = ['Kanzlei Brandt', 'Schmidt & Co.', 'Weber Immobilien', 'Hotel Seeblick', 'Autohaus Krüger', 'Praxis Dr. Vogel']
@@ -64,6 +75,7 @@ function make(i: number, at: Date): Message {
     to: { dept: td, agent: ta },
     text: fill(text),
     filed,
+    urgency: URGENT[text],
     time: `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`,
   }
 }
@@ -73,13 +85,25 @@ export const deptOf = (id: string) => DEPARTMENTS.find((d) => d.id === id)
 /** Starts the traffic once the office is unlocked; one message every few seconds. */
 export function useComms(running: boolean) {
   const post = useOffice((s) => s.post)
+  const raise = useOffice((s) => s.raise)
   useEffect(() => {
     if (!running) return
     const now = Date.now()
     // A short backlog, so the feed is never empty on first look.
     for (let k = 6; k >= 1; k--) post(make(k * 5, new Date(now - k * 4 * 60_000)), false)
     let i = 0
-    const t = setInterval(() => post(make(i++, new Date()), true), 4200)
+    // Urgent messages sound and show a banner — at most every 90 s, and the
+    // first one not before half a minute in, so the office can be shown first.
+    let lastAlert = Date.now() - 60_000
+    const t = setInterval(() => {
+      const m = make(i++, new Date())
+      post(m, true)
+      if (m.urgency && Date.now() - lastAlert > 90_000) {
+        lastAlert = Date.now()
+        chime(m.urgency)
+        raise(m)
+      }
+    }, 4200)
     return () => clearInterval(t)
-  }, [running, post])
+  }, [running, post, raise])
 }

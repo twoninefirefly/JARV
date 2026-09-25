@@ -6,6 +6,7 @@ import Panel from './Panel'
 import Workspace from './Workspace'
 import Setup from './Setup'
 import Cockpit from './Cockpit'
+import Alert, { SoundToggle } from './Alert'
 import Lock, { Mark } from './Lock'
 import { useComms } from './comms'
 import { Guard } from './Guard'
@@ -127,6 +128,7 @@ export default function Office() {
               ✕
             </button>
           )}
+          {!locked && <SoundToggle />}
           <button className="icon-btn icon-btn--lg" onClick={lock} aria-label="Sperren" title="Sperren">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
               <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -150,7 +152,8 @@ export default function Office() {
 
       {/* A failure in a sheet or window resets to the overview instead of blanking the page. */}
       <Guard name="panel" onError={() => useOffice.setState({ ws: null, view: { kind: 'overview' } })}>
-        {!locked && <Panel />}
+        {!locked && <Alert />}
+      {!locked && <Panel />}
       </Guard>
       <Guard name="window" onError={() => useOffice.setState({ ws: null })}>
         {!locked && <Workspace />}

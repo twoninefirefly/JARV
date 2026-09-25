@@ -89,6 +89,10 @@ export type WsItem = {
   approval?: string
   /** The department the decision belongs to, for who may take it. */
   dept?: string
+  /** Which agent prepared the decision. */
+  preparedBy?: string
+  /** Who decided it, and when — once someone has. */
+  decision?: Decision
   /** Planned rather than done — used by the log's filter. */
   planned?: boolean
   /** The letter or mail this record sends, as it would go out. */
@@ -774,26 +778,35 @@ export function itemsFor(t: WsTarget, approved: string[], decisions: Decision[] 
 
   if (t.kind === 'approvals') {
     const depts = dept ? [dept] : DEPARTMENTS
-    return depts.flatMap((d) =>
+    // Open decisions first; decided ones stay, further down, with who and when.
+    const all = depts.flatMap((d) =>
       d.waiting
-        .filter((w) => !approved.includes(w))
         .map((w, i) => {
-          const owner = waitingOwner(d, d.waiting.indexOf(w))
+          const owner = waitingOwner(d, i)
+          const done = decisions.find((x) => x.text === w)
           return {
             id: `ap-${d.id}-${i}`,
             title: w,
-            sub: `${d.short} · ${owner.name}`,
-            badge: needsLeitung(w) ? { text: 'Unterschrift Leitung', tone: 'bad' as Tone } : { text: 'Wartet auf Freigabe', tone: 'warn' as Tone },
+            sub: done ? `${d.short} · ${done.signed ? 'Unterschrieben' : done.result} von ${done.name}` : `${d.short} · ${owner.name}`,
+            meta: done?.at,
+            badge: done
+              ? { text: done.signed ? 'Unterschrieben' : done.result, tone: (done.result === 'Freigegeben' ? 'ok' : 'muted') as Tone }
+              : needsLeitung(w)
+                ? { text: 'Unterschrift Leitung', tone: 'bad' as Tone }
+                : { text: 'Wartet auf Freigabe', tone: 'warn' as Tone },
+            preparedBy: owner.name,
+            decision: done,
             body: L.approvalLetter(w)
               ? `${owner.name} hat das Schreiben vorbereitet. Nach Ihrer Freigabe geht es genau so raus, wie Sie es hier sehen.`
               : `${owner.name} hat das vorbereitet: ${owner.doing}. Nach Ihrer Freigabe wird es sofort ausgeführt.`,
             approval: w,
             dept: d.id,
             letter: L.approvalLetter(w),
-            actions: ['Freigeben', 'Ändern', 'Ablehnen'],
+            actions: done ? [] : ['Freigeben', 'Ändern', 'Ablehnen'],
           }
         }),
     )
+    return [...all.filter((x) => !x.decision), ...all.filter((x) => x.decision)]
   }
 
   const r = rng(seedOf(`${t.deptId ?? 'brain'}:${t.kind}:${t.title}`))
@@ -822,6 +835,8 @@ export function itemsFor(t: WsTarget, approved: string[], decisions: Decision[] 
           : 'Alles ist vorbereitet. Nach Ihrer Freigabe wird es sofort ausgeführt.',
         approval: w,
         dept: dept.id,
+        preparedBy: t.title,
+        decision: done,
         letter: L.approvalLetter(w),
         actions: approved.includes(w) ? [] : ['Freigeben', 'Ändern', 'Ablehnen'],
         col: LAYOUT[t.kind].columns?.[LAYOUT[t.kind].columns!.length - 2],

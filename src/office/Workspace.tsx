@@ -4,7 +4,8 @@ import { COMPANY, DEPARTMENTS, deptProtocol, fmt, split } from './data'
 import { useOffice } from './state'
 import { Icon, Spark } from './Icon'
 import { day, signature, type Letter } from './letters'
-import { mayDecide } from './team'
+import { DEMO_PASSWORD, USERS, mayDecide, needsLeitung } from './team'
+import { ConfirmDecision, SignaturePad } from './Signature'
 import {
   LAYOUT,
   SOURCES,
@@ -127,7 +128,7 @@ function Filled({ text }: { text: string }) {
 }
 
 /** A letter or mail exactly as it goes out after approval. */
-function LetterView({ letter }: { letter: Letter }) {
+function LetterView({ letter, signed }: { letter: Letter; signed?: { png: string; name: string } }) {
   const mail = letter.channel !== 'Brief'
   return (
     <div className="letter">
@@ -198,6 +199,14 @@ function LetterView({ letter }: { letter: Letter }) {
         <p>
           Mit freundlichen Grüßen
           <br />
+          {signed && (
+            <>
+              <img className="paper__sig" src={signed.png} alt={`Unterschrift ${signed.name}`} />
+              <br />
+              {signed.name}, Geschäftsführung
+              <br />
+            </>
+          )}
           {COMPANY.name}
           <br />
           <span className="paper__dept">{letter.from}</span>
@@ -209,11 +218,56 @@ function LetterView({ letter }: { letter: Letter }) {
   )
 }
 
+/** What happened to a decision so far: prepared, decided by whom and when, sent. */
+function Trail({ item }: { item: WsItem }) {
+  const d = item.decision
+  const who = USERS.filter((u) => u.role === 'team' && item.dept && u.depts.includes(item.dept)).map((u) => u.name)
+  const waitingFor = needsLeitung(item.approval!) ? 'die Leitung (Unterschrift)' : who.join(' oder ') || 'die Abteilung'
+  return (
+    <ol className="trail" aria-label="Verlauf">
+      <li className="is-done">
+        <i />
+        <span>
+          Vorbereitet von <b>{item.preparedBy ?? 'einem Agenten'}</b> (KI-Agent)
+        </span>
+        <small>heute</small>
+      </li>
+      {d ? (
+        <>
+          <li className="is-done">
+            <i />
+            <span>
+              {d.signed ? 'Unterschrieben' : d.result} von <b>{d.name}</b> · mit Passwort bestätigt
+            </span>
+            <small>{d.at} Uhr</small>
+          </li>
+          {d.result === 'Freigegeben' && (
+            <li className="is-done">
+              <i />
+              <span>{item.letter ? (item.letter.channel === 'Brief' ? 'Brief an den Versand übergeben' : 'Mail gesendet') : 'Ausgeführt'} (in der Demo vorgemerkt)</span>
+              <small>{d.at} Uhr</small>
+            </li>
+          )}
+        </>
+      ) : (
+        <li className="is-wait">
+          <i />
+          <span>
+            Wartet auf Freigabe durch <b>{waitingFor}</b>
+          </span>
+          <small>offen</small>
+        </li>
+      )}
+    </ol>
+  )
+}
+
 function Detail({
   item,
   columns,
   done,
   blocked,
+  signed,
   act,
   back,
 }: {
@@ -222,6 +276,7 @@ function Detail({
   done?: string
   /** Why the signed-in person may look but not decide. */
   blocked?: string
+  signed?: { png: string; name: string }
   act: (item: WsItem, action: string) => void
   back?: () => void
 }) {
@@ -262,7 +317,8 @@ function Detail({
           ))}
         </dl>
       )}
-      {item.letter && <LetterView letter={item.letter} />}
+      {item.approval && <Trail item={item} />}
+      {item.letter && <LetterView letter={item.letter} signed={signed} />}
       {!done && blocked && (
         <div className={`ws-actions${item.letter ? ' ws-actions--sticky' : ''}`}>
           <p className="ws-lock">
@@ -374,6 +430,13 @@ function Window({ ws }: { ws: WsTarget }) {
   const decisions = useOffice((s) => s.decisions)
   const user = useOffice((s) => s.user)
   const approve = useOffice((s) => s.approve)
+  const signature = useOffice((s) => s.signature)
+  const setSignature = useOffice((s) => s.setSignature)
+  // Management signs: with the saved signature in one click, or draws it the first time.
+  const [signing, setSigning] = useState<WsItem | null>(null)
+  // Every decision is confirmed by the signed-in person before it counts.
+  const [confirming, setConfirming] = useState<{ it: WsItem; action: string } | null>(null)
+  const remembered = useOffice((s) => s.remembered)
   const showSetup = useOffice((s) => s.showSetup)
   const wide = useWide()
 
@@ -431,7 +494,30 @@ function Window({ ws }: { ws: WsTarget }) {
     if (prev) openWs(prev)
   }
 
+  const sign = (it: WsItem) => {
+    approve(it.approval!, it.dept ?? ws.deptId ?? '', 'Freigegeben', true)
+    setDone((d) => ({ ...d, [`${key}/${it.id}`]: 'Unterschrieben' }))
+    setToast(`Unterschrieben von ${user?.name}: ${it.title.replace(/ (freigeben|durchsehen)$/, '')}. Geht mit Ihrer Unterschrift raus – in der Demo nur vorgemerkt.`)
+    setSigning(null)
+  }
+
+  const decides = (action: string) => /^(Freigeben|Beauftragen|Ablehnen|Unterschreiben)/.test(action)
+
   const act = (it: WsItem, action: string) => {
+    // Deciding asks for confirmation first; the first signature is drawn before that.
+    if (decides(action) && user) {
+      if (action === 'Unterschreiben & freigeben' && !signature) setSigning(it)
+      else setConfirming({ it, action })
+      return
+    }
+    decide(it, action)
+  }
+
+  const decide = (it: WsItem, action: string) => {
+    if (action === 'Unterschreiben & freigeben') {
+      sign(it)
+      return
+    }
     if (it.approval && /Freigeben|Beauftragen|Ablehnen/.test(action))
       approve(it.approval, it.dept ?? ws.deptId ?? '', action === 'Ablehnen' ? 'Abgelehnt' : 'Freigegeben')
     const sends = it.letter && /^(Freigeben|Beauftragen)/.test(action)
@@ -464,9 +550,16 @@ function Window({ ws }: { ws: WsTarget }) {
   else records = <List items={items} chosen={chosen} pick={(i) => setChosen(i.id)} agenda={layout.layout === 'calendar'} />
 
   const perm = item?.approval && !approved.includes(item.approval) ? mayDecide(user, item.dept ?? ws.deptId, item.approval) : { ok: true }
+  // What needs a signature is signed, not just approved, when management decides it.
+  const shown =
+    item && item.approval && user?.role === 'leitung' && needsLeitung(item.approval) && item.actions?.[0] === 'Freigeben'
+      ? { ...item, actions: ['Unterschreiben & freigeben', ...item.actions.slice(1)] }
+      : item
+  const signedBy = item?.approval ? decisions.find((x) => x.text === item.approval && x.signed) : undefined
   const detail = item ? (
     <Detail
-      item={item}
+      item={shown!}
+      signed={signedBy && signature ? { png: signature, name: signedBy.name } : undefined}
       columns={layout.layout === 'table' ? layout.columns : undefined}
       done={done[`${key}/${item.id}`]}
       blocked={perm.ok ? undefined : perm.why}
@@ -580,6 +673,35 @@ function Window({ ws }: { ws: WsTarget }) {
           )}
         </div>
 
+        {confirming && user && (
+          <ConfirmDecision
+            name={user.name}
+            title={user.title}
+            initials={user.initials}
+            role={user.role}
+            action={confirming.action === 'Unterschreiben & freigeben' ? 'Unterschreiben' : confirming.action.replace(/ & senden$/, '')}
+            what={confirming.it.title.replace(/ (freigeben|durchsehen)$/, '')}
+            savedPassword={remembered?.id === user.id ? DEMO_PASSWORD : undefined}
+            png={confirming.action === 'Unterschreiben & freigeben' ? (signature ?? undefined) : undefined}
+            check={(pw) => pw === DEMO_PASSWORD}
+            onConfirm={() => {
+              decide(confirming.it, confirming.action)
+              setConfirming(null)
+            }}
+            onCancel={() => setConfirming(null)}
+          />
+        )}
+        {signing && !signature && (
+          <SignaturePad
+            onSave={(png) => {
+              setSignature(png)
+              // Signature drawn: now confirm it like any other decision.
+              setConfirming({ it: signing, action: 'Unterschreiben & freigeben' })
+              setSigning(null)
+            }}
+            onCancel={() => setSigning(null)}
+          />
+        )}
         <AnimatePresence>
           {toast && (
             <motion.div className="ws-toast" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>

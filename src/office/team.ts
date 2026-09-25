@@ -77,7 +77,16 @@ export function mayDecide(user: User | null, deptId: string | undefined, text: s
   return { ok: false, why: `Zuständig ist ${who.join(' oder ') || 'die Abteilung'}. Sie können es ansehen, aber nicht freigeben.` }
 }
 
-export type Decision = { text: string; dept: string; by: string; name: string; at: string; result: 'Freigegeben' | 'Abgelehnt' }
+export type Decision = {
+  text: string
+  dept: string
+  by: string
+  name: string
+  at: string
+  result: 'Freigegeben' | 'Abgelehnt'
+  /** Signed with management's saved signature. */
+  signed?: boolean
+}
 
 /** What the team decided earlier today, so management's overview is never empty in a demo. */
 export const HISTORY: Decision[] = HV

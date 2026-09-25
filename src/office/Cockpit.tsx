@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { SignaturePad } from './Signature'
 import { AnimatePresence, motion } from 'framer-motion'
 import { DEPARTMENTS } from './data'
 import { useOffice } from './state'
@@ -20,6 +21,9 @@ export default function Cockpit() {
   const user = useOffice((s) => s.user)
   const approved = useOffice((s) => s.approved)
   const decisions = useOffice((s) => s.decisions)
+  const signature = useOffice((s) => s.signature)
+  const setSignature = useOffice((s) => s.setSignature)
+  const [pad, setPad] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -30,7 +34,7 @@ export default function Cockpit() {
 
   const log = [...HISTORY, ...decisions].sort((a, b) => b.at.localeCompare(a.at))
   const waiting = DEPARTMENTS.flatMap((d) => d.waiting.map((w, i) => ({ d, w, i }))).filter(({ w }) => !approved.includes(w))
-  const signature = waiting.filter(({ w }) => needsLeitung(w))
+  const toSign = waiting.filter(({ w }) => needsLeitung(w))
   const team = USERS.filter((u) => u.role === 'team')
 
   const goTo = (d: (typeof DEPARTMENTS)[number], i: number, w: string) => {
@@ -84,11 +88,11 @@ export default function Cockpit() {
               </div>
 
               <h3 className="setup__h">
-                Wartet auf Ihre Unterschrift <span className="eyebrow">{signature.length}</span>
+                Wartet auf Ihre Unterschrift <span className="eyebrow">{toSign.length}</span>
               </h3>
-              {signature.length ? (
+              {toSign.length ? (
                 <ul className="cockpit__list">
-                  {signature.map(({ d, w, i }) => (
+                  {toSign.map(({ d, w, i }) => (
                     <li key={w}>
                       <button onClick={() => goTo(d, i, w)} style={{ ['--c' as string]: d.color }}>
                         <span className="dot" />
@@ -102,6 +106,24 @@ export default function Cockpit() {
               ) : (
                 <p className="ws-note">Alles unterschrieben.</p>
               )}
+
+              <h3 className="setup__h">Ihre Unterschrift</h3>
+              <div className="cockpit__sig">
+                {signature ? <img src={signature} alt={`Unterschrift ${user.name}`} /> : <span className="ws-note">Noch keine Unterschrift hinterlegt.</span>}
+                <div>
+                  <p className="ws-note">
+                    Einmal hinterlegen, danach nur bestätigen: Verträge und Aufträge gehen mit Ihrer Unterschrift raus. Jede Verwendung steht im Protokoll.
+                  </p>
+                  <button className="btn btn--small" onClick={() => setPad(true)}>
+                    {signature ? 'Neu hinterlegen' : 'Unterschrift hinterlegen'}
+                  </button>
+                  {signature && (
+                    <button className="btn btn--small" onClick={() => setSignature(null)}>
+                      Entfernen
+                    </button>
+                  )}
+                </div>
+              </div>
 
               <h3 className="setup__h">Wer hat heute was entschieden</h3>
               <div className="ws-table-wrap">
@@ -123,7 +145,7 @@ export default function Cockpit() {
                         <td>{x.text.replace(/ (freigeben|durchsehen)$/, '')}</td>
                         <td>{deptName(x.dept)}</td>
                         <td>
-                          <span className={`badge badge--${x.result === 'Freigegeben' ? 'ok' : 'muted'}`}>{x.result}</span>
+                          <span className={`badge badge--${x.result === 'Freigegeben' ? 'ok' : 'muted'}`}>{x.signed ? 'Unterschrieben' : x.result}</span>
                         </td>
                       </tr>
                     ))}
@@ -188,6 +210,15 @@ export default function Cockpit() {
                 außer der Leitung ausgeliefert.
               </p>
             </div>
+            {pad && (
+              <SignaturePad
+                onSave={(png) => {
+                  setSignature(png)
+                  setPad(false)
+                }}
+                onCancel={() => setPad(false)}
+              />
+            )}
           </motion.section>
         </>
       )}

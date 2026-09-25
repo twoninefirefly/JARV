@@ -358,8 +358,10 @@ function Floor({ dept }: { dept: Department }) {
     leave.current = setTimeout(() => setTagHover(false), 140)
   }
   useEffect(() => () => clearTimeout(leave.current), [])
-  // The agent under the mouse — from its name tag or its desk — gets a card and a ring.
+  // The tag under the mouse opens its card; a desk under the mouse only lights
+  // its ring — opening cards from desks made stray cards pop up on the way out.
   const [hoverAgent, setHoverAgent] = useState<string | null>(null)
+  const [deskAgent, setDeskAgent] = useState<string | null>(null)
   const shade = useRef(1)
   const at = useMemo(() => place(dept.angle), [dept.angle])
   const active = view.kind === 'dept' && view.id === dept.id
@@ -388,7 +390,10 @@ function Floor({ dept }: { dept: Department }) {
     top.color.set(dept.color).multiplyScalar(shade.current)
   })
 
-  const pick = () => show({ kind: 'dept', id: dept.id })
+  // Inside the brain the floors have sunk away; a click into the dark must not bring one back.
+  const pick = () => {
+    if (useOffice.getState().view.kind !== 'neural') show({ kind: 'dept', id: dept.id })
+  }
   const lead = SPOTS[0]
   const looks = useMemo(() => dept.agents.map((_, i) => lookFor(DEPARTMENTS.indexOf(dept) * 7 + i)), [dept])
 
@@ -410,17 +415,26 @@ function Floor({ dept }: { dept: Department }) {
   return (
     <group position={at}>
     <group ref={rise}>
+      {/* Sunk away inside the brain, the floor takes no clicks at all — they count as empty space there. */}
       <group
-        onClick={onTap(pick)}
-        onPointerOver={(e) => {
-          e.stopPropagation()
-          setHover(true)
-          document.body.style.cursor = 'pointer'
-        }}
-        onPointerOut={() => {
-          setHover(false)
-          document.body.style.cursor = ''
-        }}
+        onClick={inside ? undefined : onTap(pick)}
+        onPointerOver={
+          inside
+            ? undefined
+            : (e) => {
+                e.stopPropagation()
+                setHover(true)
+                document.body.style.cursor = 'pointer'
+              }
+        }
+        onPointerOut={
+          inside
+            ? undefined
+            : () => {
+                setHover(false)
+                document.body.style.cursor = ''
+              }
+        }
       >
         <mesh material={lip} position={[0, 0.06, 0]} receiveShadow castShadow>
           <boxGeometry args={[FLOOR + 0.14, 0.12, FLOOR + 0.14]} />
@@ -441,12 +455,12 @@ function Floor({ dept }: { dept: Department }) {
                   active
                     ? (e) => {
                         e.stopPropagation()
-                        setHoverAgent(a.id)
+                        setDeskAgent(a.id)
                         document.body.style.cursor = 'pointer'
                       }
                     : undefined
                 }
-                onPointerOut={active ? () => setHoverAgent((h) => (h === a.id ? null : h)) : undefined}
+                onPointerOut={active ? () => setDeskAgent((h) => (h === a.id ? null : h)) : undefined}
                 onClick={
                   active
                     ? onTap(() => {
@@ -470,11 +484,11 @@ function Floor({ dept }: { dept: Department }) {
 
       {/* The badge floats over the floor; hidden while you're inside it. */}
       {!active && !inside && (
-        <Html position={[0, 1.35, 0]} center zIndexRange={hover || tagHover ? [45, 35] : [20, 0]}>
+        <Html portal={overlay} position={[0, 1.35, 0]} center zIndexRange={tagHover ? [45, 35] : [20, 0]}>
           {/* Grows, glows and shows what the department does — from the badge or from its floor.
               Resting on the badge fills it like an hourglass, and when full the department opens. */}
           <button
-            className={`floor-badge${hover || tagHover ? ' is-hover' : ''}${tagHover ? ' is-dwell' : ''}`}
+            className={`floor-badge${tagHover ? ' is-hover' : ''}${tagHover && view.kind === 'overview' ? ' is-dwell' : ''}`}
             style={{ ['--c' as string]: dept.color }}
             onClick={pick}
             onMouseEnter={enterTag}
@@ -484,7 +498,7 @@ function Floor({ dept }: { dept: Department }) {
               className="floor-badge__fill"
               aria-hidden
               onTransitionEnd={(e) => {
-                if (e.propertyName === 'transform' && tagHover) pick()
+                if (e.propertyName === 'transform' && tagHover && useOffice.getState().view.kind === 'overview') pick()
               }}
             />
             <span className="floor-badge__icon">
@@ -511,7 +525,7 @@ function Floor({ dept }: { dept: Department }) {
             const on = hoverAgent === a.id
             return (
               // Anchored at the tag's bottom edge, so the card opens upwards, away from the desk.
-              <Html key={a.id} position={[x, 0.85 + (i % 2) * 0.18, z]} zIndexRange={on ? [60, 50] : [20, 0]}>
+              <Html portal={overlay} key={a.id} position={[x, 0.85 + (i % 2) * 0.18, z]} zIndexRange={on ? [60, 50] : [20, 0]}>
                 <button
                   className={`agent-tag${a.lead ? ' is-lead' : ''}${chosen ? ' is-chosen' : ''}${on ? ' is-open' : ''}`}
                   style={{ ['--c' as string]: dept.color }}
@@ -544,9 +558,9 @@ function Floor({ dept }: { dept: Department }) {
             )
           })}
           {/* A ring of light on the floor under the agent you're pointing at. */}
-          {hoverAgent &&
+          {(hoverAgent ?? deskAgent) &&
             (() => {
-              const i = dept.agents.findIndex((a) => a.id === hoverAgent)
+              const i = dept.agents.findIndex((a) => a.id === (hoverAgent ?? deskAgent))
               if (i < 0) return null
               const [x, z] = SPOTS[i % SPOTS.length]
               return (
@@ -934,14 +948,14 @@ function Neurons() {
                 <meshBasicMaterial color={a.status === 'wartet' ? waiting : soft} toneMapped={false} />
               </mesh>
               {inside && hover === a.id && (
-                <Html position={p} center zIndexRange={[30, 0]} style={{ pointerEvents: 'none' }}>
+                <Html portal={overlay} position={p} center zIndexRange={[30, 0]} style={{ pointerEvents: 'none' }}>
                   <div className="neuron-tip">{a.name}</div>
                 </Html>
               )}
             </group>
           ))}
           {inside && (
-            <Html position={at.clone().multiplyScalar(1.28)} center zIndexRange={[25, 0]}>
+            <Html portal={overlay} position={at.clone().multiplyScalar(1.28)} center zIndexRange={[25, 0]}>
               <button className="neuron-tag" style={{ ['--c' as string]: d.color }} onClick={() => show({ kind: 'dept', id: d.id })}>
                 <Icon name={d.icon} size={14} />
                 {d.short}
@@ -960,7 +974,7 @@ function BrainBadge() {
   const show = useOffice((s) => s.show)
   if (view.kind !== 'overview') return null
   return (
-    <Html position={[0, 2.85, 0]} center zIndexRange={[20, 0]}>
+    <Html portal={overlay} position={[0, 2.85, 0]} center zIndexRange={[20, 0]}>
       <button className="brain-badge" onClick={() => show({ kind: 'brain' })}>
         <span className="brain-badge__dot" />
         Das Gehirn · <b>{fmt(BRAIN.stats[0].value)}</b> Dokumente
@@ -1428,7 +1442,16 @@ function pixelRatio(): [number, number] {
   return [1, max]
 }
 
+/**
+ * Where all name tags and badges live: the stage around the canvas, outside
+ * the 3D scene's own wrapper. Inside that wrapper every click on a tag was
+ * also a click into the scene — it could land on a floor behind the tag and
+ * fly off to another department, or count as a click into empty space.
+ */
+const overlay = { current: null as unknown as HTMLElement }
+
 export default function Scene() {
+  overlay.current = document.querySelector('.stage') as HTMLElement
   // A phone drops the GPU context when the app goes to the background or the
   // page is reopened, and a lost context paints black forever. Rebuilding the
   // canvas is cheap, so that is the recovery.
@@ -1437,6 +1460,8 @@ export default function Scene() {
     <Canvas
       key={generation}
       onCreated={({ gl }) => {
+        // Right-click is ours: it zooms back out (see onPointerMissed).
+        gl.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
         gl.domElement.addEventListener(
           'webglcontextlost',
           (e) => {
@@ -1445,6 +1470,13 @@ export default function Scene() {
           },
           { once: true },
         )
+      }}
+      // Right-click or double-click on empty space: back to the whole office.
+      onPointerMissed={(e) => {
+        if (e.type === 'contextmenu' || e.type === 'dblclick') {
+          const { view, show } = useOffice.getState()
+          if (view.kind !== 'overview') show({ kind: 'overview' })
+        }
       }}
       shadows
       dpr={pixelRatio()}

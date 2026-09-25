@@ -207,6 +207,8 @@ function Floor({ dept }: { dept: Department }) {
   const show = useOffice((s) => s.show)
   const open = useOffice((s) => s.open)
   const [hover, setHover] = useState(false)
+  // The agent under the mouse — from its name tag or its desk — gets a card and a ring.
+  const [hoverAgent, setHoverAgent] = useState<string | null>(null)
   const shade = useRef(1)
   const at = useMemo(() => place(dept.angle), [dept.angle])
   const active = view.kind === 'dept' && view.id === dept.id
@@ -284,6 +286,16 @@ function Floor({ dept }: { dept: Department }) {
                 key={a.id}
                 position={[x, 0, z]}
                 rotation={[0, r, 0]}
+                onPointerOver={
+                  active
+                    ? (e) => {
+                        e.stopPropagation()
+                        setHoverAgent(a.id)
+                        document.body.style.cursor = 'pointer'
+                      }
+                    : undefined
+                }
+                onPointerOut={active ? () => setHoverAgent((h) => (h === a.id ? null : h)) : undefined}
                 onClick={
                   active
                     ? onTap(() => {
@@ -323,22 +335,60 @@ function Floor({ dept }: { dept: Department }) {
           {dept.agents.map((a, i) => {
             const [x, z] = SPOTS[i % SPOTS.length]
             const chosen = view.kind === 'dept' && view.agent === a.id
+            const on = hoverAgent === a.id
             return (
-              <Html key={a.id} position={[x, 0.95 + (i % 2) * 0.18, z]} center zIndexRange={[20, 0]}>
+              // Anchored at the tag's bottom edge, so the card opens upwards, away from the desk.
+              <Html key={a.id} position={[x, 0.85 + (i % 2) * 0.18, z]} zIndexRange={on ? [60, 50] : [20, 0]}>
                 <button
-                  className={`agent-tag${a.lead ? ' is-lead' : ''}${chosen ? ' is-chosen' : ''}`}
+                  className={`agent-tag${a.lead ? ' is-lead' : ''}${chosen ? ' is-chosen' : ''}${on ? ' is-open' : ''}`}
+                  style={{ ['--c' as string]: dept.color }}
+                  onMouseEnter={() => setHoverAgent(a.id)}
+                  onMouseLeave={() => setHoverAgent((h) => (h === a.id ? null : h))}
+                  onFocus={() => setHoverAgent(a.id)}
+                  onBlur={() => setHoverAgent((h) => (h === a.id ? null : h))}
                   onClick={() => {
                     show({ kind: 'dept', id: dept.id, agent: a.id })
                     open(agentTarget(dept, a))
                   }}
                 >
-                  {a.status === 'wartet' && <span className="agent-tag__warn">⚠</span>}
-                  {a.lead && <Spark size={9} />}
-                  {a.name}
+                  <span className="agent-tag__more" aria-hidden={!on}>
+                    <span>
+                      <span className="agent-tag__role">
+                        <i className={`status status--${a.status}`} />
+                        {a.role} · {a.status}
+                      </span>
+                      <span className="agent-tag__doing">{a.doing[0].toUpperCase() + a.doing.slice(1)}</span>
+                      <span className="agent-tag__go">Arbeitsbereich öffnen →</span>
+                    </span>
+                  </span>
+                  <span className="agent-tag__name">
+                    {a.status === 'wartet' && <span className="agent-tag__warn">⚠</span>}
+                    {a.lead && <Spark size={10} />}
+                    {a.name}
+                  </span>
                 </button>
               </Html>
             )
           })}
+          {/* A ring of light on the floor under the agent you're pointing at. */}
+          {hoverAgent &&
+            (() => {
+              const i = dept.agents.findIndex((a) => a.id === hoverAgent)
+              if (i < 0) return null
+              const [x, z] = SPOTS[i % SPOTS.length]
+              return (
+                <group position={[x, 0.006, z]} rotation={[-Math.PI / 2, 0, 0]}>
+                  <mesh>
+                    <circleGeometry args={[0.46, 48]} />
+                    <meshBasicMaterial color={dept.color} transparent opacity={0.16} depthWrite={false} />
+                  </mesh>
+                  <mesh>
+                    <ringGeometry args={[0.44, 0.48, 64]} />
+                    <meshBasicMaterial color={new THREE.Color(dept.color).multiplyScalar(1.6)} toneMapped={false} transparent opacity={0.95} depthWrite={false} />
+                  </mesh>
+                </group>
+              )
+            })()}
           {dept.agents.slice(1).map((a, i) => {
             const [x, z] = SPOTS[(i + 1) % SPOTS.length]
             return (

@@ -827,7 +827,7 @@ function Ground() {
 }
 
 // ---------------------------------------------------------------------------
-// The sky: near-black space, a faint Milky Way, crisp stars and a galaxy.
+// The sky: near-black space, a faint Milky Way and crisp stars.
 // Nothing here is a stretched image — the sky is computed per screen pixel
 // and every star is a point, so it stays sharp at any resolution.
 // ---------------------------------------------------------------------------
@@ -942,58 +942,16 @@ function makeStars(n: number) {
   return g
 }
 
-/** A two-armed spiral galaxy made of points, in its own flat plane. */
-function makeGalaxy(n: number) {
-  const pos = new Float32Array(n * 3)
-  const col = new Float32Array(n * 3)
-  const size = new Float32Array(n)
-  const seed = new Float32Array(n)
-  const core = new THREE.Color('#ffe9cf')
-  const arm = new THREE.Color('#aebfff')
-  const dust = new THREE.Color('#e3895a')
-  const c = new THREE.Color()
-  let s = 5
-  const r = () => ((s = (s * 16807) % 2147483647) / 2147483647)
-  const gauss = () => (r() + r() + r() - 1.5) / 1.5
-  for (let i = 0; i < n; i++) {
-    const t = Math.pow(r(), 0.7) // radius 0..1, denser inside
-    const armAngle = (i % 2) * Math.PI
-    const a = armAngle + t * 7.5 + gauss() * (0.35 + 0.25 * (1 - t))
-    const rad = t * 20
-    const spread = 0.8 + 2.2 * (1 - t) * (1 - t)
-    const x = Math.cos(a) * rad + gauss() * spread * 0.6
-    const z = Math.sin(a) * rad + gauss() * spread * 0.6
-    const y = gauss() * (0.5 + 1.6 * (1 - t) * (1 - t))
-    pos.set([x, y, z], i * 3)
-    c.copy(core).lerp(arm, Math.min(1, t * 1.4))
-    if (r() < 0.08) c.copy(dust)
-    const b = ((1 - t) * 0.6 + 0.25 + r() * 0.15) * 0.55
-    c.multiplyScalar(b)
-    col.set([c.r, c.g, c.b], i * 3)
-    size[i] = 1.1 + r() * 1.1 + (1 - t) * 0.8
-    seed[i] = r() * 0.3
-  }
-  const g = new THREE.BufferGeometry()
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-  g.setAttribute('aColor', new THREE.BufferAttribute(col, 3))
-  g.setAttribute('aSize', new THREE.BufferAttribute(size, 1))
-  g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1))
-  return g
-}
-
 function Cosmos() {
   const sky = useRef<THREE.Group>(null)
-  const galaxy = useRef<THREE.Group>(null)
   const dpr = useThree((s) => s.viewport.dpr)
 
-  const { dome, stars, spiral, starMat, galaxyMat } = useMemo(() => {
+  const { dome, stars, starMat } = useMemo(() => {
     const dome = new THREE.ShaderMaterial({ vertexShader: skyVertex, fragmentShader: skyFragment, side: THREE.BackSide, depthWrite: false, fog: false })
     return {
       dome,
       stars: makeStars(phone() ? 1800 : 3600),
-      spiral: makeGalaxy(phone() ? 5000 : 9000),
       starMat: pointsMaterial(),
-      galaxyMat: pointsMaterial(),
     }
   }, [])
 
@@ -1009,12 +967,9 @@ function Cosmos() {
 
   useFrame(({ clock }, dt) => {
     const t = clock.elapsedTime
-    for (const m of [starMat, galaxyMat]) {
-      m.uniforms.uTime.value = t
-      m.uniforms.uPixel.value = dpr
-    }
+    starMat.uniforms.uTime.value = t
+    starMat.uniforms.uPixel.value = dpr
     if (sky.current) sky.current.rotation.y += dt * 0.004
-    if (galaxy.current) galaxy.current.rotation.y += dt * 0.012
 
     const p = path.current
     const attr = trail.getAttribute('position') as THREE.BufferAttribute
@@ -1045,12 +1000,6 @@ function Cosmos() {
       </mesh>
       <group ref={sky}>
         <points geometry={stars} material={starMat} frustumCulled={false} />
-        {/* The galaxy: far off, below and to one side, tilted so its spiral shows. */}
-        <group position={[-25, -45, -105]} rotation={[0.9, 0.3, 0.35]} scale={0.6}>
-          <group ref={galaxy}>
-            <points geometry={spiral} material={galaxyMat} frustumCulled={false} />
-          </group>
-        </group>
       </group>
       <points geometry={trail} frustumCulled={false}>
         <pointsMaterial color={[1.4, 1.2, 1.0]} size={1.6} sizeAttenuation={false} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} fog={false} />

@@ -4,8 +4,9 @@ import bormannLogo from './kunden/bormann.png?inline'
  * Personalised demos for one prospect: name, logo and trade in one place.
  *
  * `?kunde=bormann` picks one and the browser remembers it; `?kunde=` clears it.
- * A build can bake one in with `VITE_KUNDE=bormann`, for hosts that drop the
- * query string. The logo is inlined, so the page stays a single bundle.
+ * For hosts that drop the query string, a build can make one the face of the
+ * Hausverwaltung demo with `VITE_HV_KUNDE=bormann`, while "Firma" stays the
+ * neutral example. The logo is inlined, so the page stays a single bundle.
  */
 
 export type Kunde = { name: string; logo: string; branche: 'standard' | 'hausverwaltung' }
@@ -29,8 +30,11 @@ function read(): Kunde | null {
   } catch {
     // Storage can be blocked; the link still works for this visit.
   }
-  if (id === null || id === undefined) id = import.meta.env.VITE_KUNDE as string | undefined
   return (id && KUNDEN[id.toLowerCase()]) || null
 }
 
+/** Chosen by link: fixes the trade and hides the switch. */
 export const KUNDE = read()
+
+/** Built in: shown whenever the Hausverwaltung demo runs without a choice of its own. */
+export const HV_KUNDE: Kunde | null = KUNDEN[String(import.meta.env.VITE_HV_KUNDE ?? '').toLowerCase()] ?? null

@@ -12,7 +12,7 @@
  */
 
 import { BRANCHE } from './branche'
-import { KUNDE } from './kunden'
+import { HV_KUNDE, KUNDE as CHOSEN } from './kunden'
 import { HV_BRAIN, hvDepartments } from './hausverwaltung'
 
 export type IconName = 'chat' | 'megaphone' | 'box' | 'clapper' | 'handshake' | 'euro' | 'brain' | 'key' | 'wrench' | 'building' | 'meter'
@@ -52,6 +52,7 @@ export type Department = {
 }
 
 const params = new URLSearchParams(location.search)
+const KUNDE = CHOSEN ?? (BRANCHE === 'hausverwaltung' ? HV_KUNDE : null)
 
 export const COMPANY = {
   name: params.get('firma')?.slice(0, 40) || KUNDE?.name || (BRANCHE === 'hausverwaltung' ? 'Beispiel Hausverwaltung' : 'Beispielfirma'),

@@ -56,6 +56,9 @@ type OfficeState = {
   remembered: User | null
   signIn: (user: User, remember: boolean) => void
   signOut: () => void
+  /** Secret Garden: lawn and roses under the office. */
+  garden: boolean
+  setGarden: (on: boolean) => void
   /** The search, on top of everything. */
   search: boolean
   showSearch: (open: boolean) => void
@@ -114,8 +117,10 @@ export const useOffice = create<OfficeState>((set) => ({
   },
   signOut: () => {
     save(KEY_USER, null)
-    set({ user: null, remembered: null, locked: true, ws: null, setup: false, cockpit: false, view: { kind: 'overview' } })
+    set({ user: null, remembered: null, locked: true, ws: null, setup: false, cockpit: false, garden: false, view: { kind: 'overview' } })
   },
+  garden: false,
+  setGarden: (garden) => set({ garden }),
   search: false,
   showSearch: (search) => set(search ? { search, ws: null, setup: false, cockpit: false } : { search }),
   cockpit: false,

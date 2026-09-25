@@ -3235,3 +3235,63 @@ button {
   font: 10.5px var(--mono);
   color: var(--muted);
 }
+
+/* ------------------------------------------------------------ secret garden */
+
+.office.is-garden {
+  --accent: #ec6fa6;
+}
+.office.is-garden .topbar h1,
+.office.is-garden .hint {
+  color: #ffd6e8;
+}
+.office.is-garden .hint {
+  border-color: rgba(236, 111, 166, 0.45);
+}
+.office.is-garden .floor-badge {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(236, 111, 166, 0.5);
+}
+.garden-exit {
+  position: absolute;
+  z-index: 60;
+  left: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(236, 111, 166, 0.55);
+  background: rgba(30, 20, 26, 0.94);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5), 0 0 24px rgba(236, 111, 166, 0.2);
+}
+.garden-exit > span:first-child {
+  font-size: 22px;
+}
+.garden-exit span:last-child {
+  display: flex;
+  flex-direction: column;
+}
+.garden-exit b {
+  font-size: 13.5px;
+}
+.garden-exit small {
+  font: 10.5px var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #f7a8c8;
+}
+.search__secret .search__icon {
+  font-size: 17px;
+  background: rgba(236, 111, 166, 0.16);
+  border-color: rgba(236, 111, 166, 0.5);
+}
+@media (max-width: 900px) {
+  .garden-exit {
+    bottom: auto;
+    top: 118px;
+  }
+}

@@ -1122,8 +1122,9 @@ function Ground() {
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
     return g
   }, [])
+  const garden = useOffice((s) => s.garden)
   return (
-    <group>
+    <group visible={!garden}>
       {/* No solid ground any more: the office floats in space; the dotted grid stays as a floor plan. */}
       <points geometry={geometry}>
         <pointsMaterial color="#4a382b" size={0.03} depthWrite={false} />
@@ -1531,6 +1532,184 @@ function Romp() {
 }
 
 // ---------------------------------------------------------------------------
+// Secret Garden: typed into the search, a lawn spreads out under the office
+// and pink roses grow out of the ground between the departments.
+// ---------------------------------------------------------------------------
+
+const LAWN_R = 15
+
+/** Is this ground point free — not under a floor, the landing pad or too close to either? */
+function free(x: number, z: number, margin: number) {
+  if (Math.hypot(x, z) < 2.4 + margin) return false
+  for (const d of DEPARTMENTS) {
+    const c = place(d.angle)
+    if (Math.abs(x - c.x) < FLOOR / 2 + 0.12 + margin && Math.abs(z - c.z) < FLOOR / 2 + 0.12 + margin) return false
+  }
+  return true
+}
+
+function lawnTexture() {
+  const S = 1024
+  const cv = document.createElement('canvas')
+  cv.width = cv.height = S
+  const g = cv.getContext('2d')!
+  g.fillStyle = '#3f7a33'
+  g.fillRect(0, 0, S, S)
+  // Thousands of short strokes in a few greens: reads as mown grass up close.
+  let s = 3
+  const r = () => ((s = (s * 16807) % 2147483647) / 2147483647)
+  const greens = ['#4a8a3b', '#35692b', '#5a9a44', '#2f5f27', '#6aa84f']
+  for (let i = 0; i < 26000; i++) {
+    const x = r() * S
+    const y = r() * S
+    g.strokeStyle = greens[Math.floor(r() * greens.length)]
+    g.globalAlpha = 0.35 + r() * 0.4
+    g.lineWidth = 1 + r() * 1.5
+    g.beginPath()
+    g.moveTo(x, y)
+    g.lineTo(x + (r() - 0.5) * 4, y - 3 - r() * 6)
+    g.stroke()
+  }
+  const t = new THREE.CanvasTexture(cv)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.wrapS = t.wrapT = THREE.RepeatWrapping
+  t.repeat.set(9, 9)
+  t.anisotropy = 8
+  return t
+}
+
+const ROSE = {
+  stem: std('#2f5a26', 0.8),
+  leaf: std('#3e7a30', 0.7),
+  petals: ['#f06ba8', '#e2508f', '#f58fbf', '#d6427f'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, emissive: c, emissiveIntensity: 0.08 })),
+  heart: std('#b8336c', 0.6),
+}
+const ROSE_G = {
+  stem: new THREE.CylinderGeometry(0.012, 0.016, 1, 6),
+  leaf: new THREE.SphereGeometry(0.05, 8, 6),
+  petal: new THREE.SphereGeometry(0.07, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62),
+  heart: new THREE.SphereGeometry(0.035, 10, 8),
+}
+
+/** One garden rose: a stem, two leaves, and a cup of layered petals. */
+function Rose({ h, tint }: { h: number; tint: number }) {
+  const petal = ROSE.petals[tint % ROSE.petals.length]
+  const inner = ROSE.petals[(tint + 1) % ROSE.petals.length]
+  return (
+    <group>
+      <mesh geometry={ROSE_G.stem} material={ROSE.stem} position={[0, h / 2, 0]} scale={[1, h, 1]} />
+      <mesh geometry={ROSE_G.leaf} material={ROSE.leaf} position={[0.045, h * 0.45, 0]} rotation={[0, 0, -0.8]} scale={[1, 0.35, 0.6]} />
+      <mesh geometry={ROSE_G.leaf} material={ROSE.leaf} position={[-0.04, h * 0.65, 0.01]} rotation={[0, 0, 0.8]} scale={[0.9, 0.32, 0.55]} />
+      <group position={[0, h, 0]}>
+        {/* outer petals open out, inner ones stay closed round the heart */}
+        {[0, 1, 2, 3, 4].map((k) => (
+          <mesh key={k} geometry={ROSE_G.petal} material={petal} rotation={[0.75, (k / 5) * Math.PI * 2, 0]} scale={[0.95, 0.8, 0.95]} castShadow />
+        ))}
+        {[0, 1, 2].map((k) => (
+          <mesh key={`i${k}`} geometry={ROSE_G.petal} material={inner} position={[0, 0.012, 0]} rotation={[0.35, (k / 3) * Math.PI * 2 + 0.5, 0]} scale={[0.62, 0.75, 0.62]} />
+        ))}
+        <mesh geometry={ROSE_G.heart} material={ROSE.heart} position={[0, 0.03, 0]} scale={[1, 0.8, 1]} />
+      </group>
+    </group>
+  )
+}
+
+function Garden() {
+  const on = useOffice((s) => s.garden)
+  const [shown, setShown] = useState(false)
+  const k = useRef(0)
+  const lawn = useRef<THREE.Mesh>(null)
+  const grassRef = useRef<THREE.InstancedMesh>(null)
+  const roseRefs = useRef<(THREE.Group | null)[]>([])
+  const tex = useMemo(lawnTexture, [])
+
+  const { tufts, roses } = useMemo(() => {
+    let s = 17
+    const r = () => ((s = (s * 16807) % 2147483647) / 2147483647)
+    const tufts: Array<[number, number, number, number]> = []
+    while (tufts.length < (phone() ? 1600 : 3600)) {
+      const a = r() * Math.PI * 2
+      const d = Math.sqrt(r()) * (LAWN_R - 0.3)
+      const x = Math.cos(a) * d
+      const z = Math.sin(a) * d
+      if (free(x, z, 0)) tufts.push([x, z, 0.6 + r() * 0.8, r() * Math.PI])
+    }
+    const roses: Array<{ x: number; z: number; h: number; tint: number; dist: number }> = []
+    let tries = 0
+    while (roses.length < (phone() ? 45 : 85) && tries++ < 5000) {
+      const a = r() * Math.PI * 2
+      const d = 2.7 + Math.sqrt(r()) * 9.5
+      const x = Math.cos(a) * d
+      const z = Math.sin(a) * d
+      if (!free(x, z, 0.15) || roses.some((o) => Math.hypot(o.x - x, o.z - z) < 0.35)) continue
+      roses.push({ x, z, h: 0.28 + r() * 0.3, tint: Math.floor(r() * 4), dist: d })
+    }
+    return { tufts, roses }
+  }, [])
+
+  const grassGeo = useMemo(() => new THREE.ConeGeometry(0.035, 0.2, 4).translate(0, 0.1, 0), [])
+  const grassMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#4f9a3e', roughness: 0.9 }), [])
+  const m = useMemo(() => new THREE.Matrix4(), [])
+  const q = useMemo(() => new THREE.Quaternion(), [])
+  const sc = useMemo(() => new THREE.Vector3(), [])
+  const pos = useMemo(() => new THREE.Vector3(), [])
+
+  useEffect(() => {
+    if (on) setShown(true)
+  }, [on])
+
+  useFrame((_, dt) => {
+    if (!shown) return
+    // Grows out from the brain in ~3 s; shrinks back faster when the mode ends.
+    const target = on ? 1 : 0
+    const was = k.current
+    k.current = THREE.MathUtils.clamp(k.current + (on ? dt / 3 : -dt / 1.4), 0, 1)
+    if (!on && k.current === 0) {
+      setShown(false)
+      return
+    }
+    if (was === k.current && was === target) return
+    const ease = 1 - Math.pow(1 - k.current, 3)
+    const front = ease * (LAWN_R + 2)
+    if (lawn.current) lawn.current.scale.setScalar(Math.max(0.001, Math.min(1, front / LAWN_R)))
+    const g = grassRef.current
+    if (g) {
+      tufts.forEach(([x, z, h, rot], i) => {
+        const grow = THREE.MathUtils.clamp((front - Math.hypot(x, z)) / 2.5, 0, 1)
+        q.setFromEuler(new THREE.Euler(0, rot, 0))
+        g.setMatrixAt(i, m.compose(pos.set(x, 0, z), q, sc.set(1, Math.max(0.001, grow * h), 1)))
+      })
+      g.instanceMatrix.needsUpdate = true
+    }
+    roses.forEach((o, i) => {
+      const gr = roseRefs.current[i]
+      if (!gr) return
+      const grow = THREE.MathUtils.clamp((front - o.dist - 1) / 2, 0, 1)
+      gr.scale.setScalar(Math.max(0.001, 1 - Math.pow(1 - grow, 2)))
+      gr.visible = grow > 0.01
+    })
+  })
+
+  if (!shown) return null
+  return (
+    <group>
+      <mesh ref={lawn} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} scale={0.001} receiveShadow>
+        <circleGeometry args={[LAWN_R, 96]} />
+        <meshStandardMaterial map={tex} roughness={1} color="#9fd07f" />
+      </mesh>
+      <instancedMesh ref={grassRef} args={[grassGeo, grassMat, tufts.length]} frustumCulled={false} />
+      {roses.map((o, i) => (
+        <group key={i} ref={(g) => void (roseRefs.current[i] = g)} position={[o.x, 0, o.z]} rotation={[0, o.dist * 3, 0]} visible={false}>
+          <group scale={1.9}>
+            <Rose h={o.h} tint={o.tint} />
+          </group>
+        </group>
+      ))}
+    </group>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Camera
 // ---------------------------------------------------------------------------
 
@@ -1732,6 +1911,7 @@ export default function Scene() {
       />
       <Cosmos />
       <Ground />
+      <Garden />
       <Links />
       <Brain />
       {DEPARTMENTS.map((d) => (

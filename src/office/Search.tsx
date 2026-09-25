@@ -87,6 +87,7 @@ export default function Search() {
   const show = useOffice((s) => s.show)
   const openWs = useOffice((s) => s.open)
   const approved = useOffice((s) => s.approved)
+  const setGarden = useOffice((s) => s.setGarden)
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const list = useRef<HTMLDivElement>(null)
@@ -103,6 +104,15 @@ export default function Search() {
       .slice(0, 40)
       .map((x) => x.h)
   }, [q, index])
+
+  // The secret: "secret garden" in the search — and only for Kim Bormann.
+  const user = useOffice((s) => s.user)
+  const secret = user?.id === 'leitung2' && /^secret\s*garden:?$/.test(norm(q).trim())
+  const bloom = () => {
+    setOpen(false)
+    show({ kind: 'overview' })
+    setGarden(true)
+  }
 
   useEffect(() => setSel(0), [q, open])
   useEffect(() => {
@@ -126,7 +136,8 @@ export default function Search() {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setSel((s) => Math.max(0, s - 1))
-    } else if (e.key === 'Enter' && results[sel]) go(results[sel])
+    } else if (e.key === 'Enter' && secret) bloom()
+    else if (e.key === 'Enter' && results[sel]) go(results[sel])
     else if (e.key === 'Escape') setOpen(false)
   }
 
@@ -155,7 +166,17 @@ export default function Search() {
               <kbd>Esc</kbd>
             </div>
             <div className="search__list" ref={list} role="listbox">
-              {results.length === 0 && <p className="search__empty">Nichts gefunden.</p>}
+              {secret && (
+                <button className="search__hit search__secret" aria-selected onClick={bloom}>
+                  <span className="search__icon">🌹</span>
+                  <span className="search__text">
+                    <b>Secret Garden</b>
+                    <small>Rasen und Rosen unter dem ganzen Büro</small>
+                  </span>
+                  <span className="search__go">Erblühen lassen →</span>
+                </button>
+              )}
+              {!secret && results.length === 0 && <p className="search__empty">Nichts gefunden.</p>}
               {results.map((h, i) => {
                 const head = h.group !== lastGroup ? h.group : null
                 lastGroup = h.group

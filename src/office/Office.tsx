@@ -52,6 +52,8 @@ export default function Office() {
   const showCockpit = useOffice((s) => s.showCockpit)
   const user = useOffice((s) => s.user)
   const signOut = useOffice((s) => s.signOut)
+  const garden = useOffice((s) => s.garden)
+  const setGarden = useOffice((s) => s.setGarden)
   // The scene starts loading the moment the password is right, under the
   // loading bar, and is torn down again on lock so nothing stays on screen.
   const [started, setStarted] = useState(false)
@@ -110,7 +112,7 @@ export default function Office() {
 
   return (
     // No native drag anywhere: holding and moving on a label used to pull out a ghost copy of it.
-    <div className={`office${view.kind === 'overview' ? '' : ' is-open'}`} onDragStart={(e) => e.preventDefault()}>
+    <div className={`office${view.kind === 'overview' ? '' : ' is-open'}${garden ? ' is-garden' : ''}`} onDragStart={(e) => e.preventDefault()}>
       <div className="stage">
         <SceneGuard key={attempt} attempt={attempt} onRetry={() => setAttempt((n) => n + 1)}>
           <Suspense fallback={<div className="loading">Büro wird aufgebaut …</div>}>{started && <Scene />}</Suspense>
@@ -196,6 +198,23 @@ export default function Office() {
       {/* A failure in a sheet or window resets to the overview instead of blanking the page. */}
       <Guard name="panel" onError={() => useOffice.setState({ ws: null, view: { kind: 'overview' } })}>
         {!locked && <Alert />}
+      <AnimatePresence>
+        {garden && !locked && (
+          <motion.button
+            className="garden-exit"
+            onClick={() => setGarden(false)}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+          >
+            <span aria-hidden>🌹</span>
+            <span>
+              <b>Secret Garden</b>
+              <small>Modus beenden</small>
+            </span>
+          </motion.button>
+        )}
+      </AnimatePresence>
       {!locked && <Panel />}
       </Guard>
       <Guard name="window" onError={() => useOffice.setState({ ws: null })}>

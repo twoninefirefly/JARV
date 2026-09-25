@@ -1187,6 +1187,127 @@ button {
   gap: 8px;
   margin-top: 4px;
 }
+/* The ws-detail scrolls; the decision stays in reach under a long letter. */
+.ws-actions--sticky {
+  position: sticky;
+  bottom: -18px;
+  margin: 0 -18px -18px;
+  padding: 12px 18px 18px;
+  background: linear-gradient(to top, #15110e 75%, rgba(21, 17, 14, 0));
+}
+
+/* ---- Letters: what goes out after approval -------------------------------- */
+.letter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+.letter__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  font: 11px var(--mono);
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.letter__legend {
+  margin-left: auto;
+}
+.letter mark,
+.paper mark {
+  background: rgba(217, 138, 98, 0.22);
+  color: inherit;
+  border-bottom: 1.5px solid rgba(190, 100, 60, 0.7);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+.letter__meta mark {
+  color: var(--text);
+}
+.paper {
+  background: #fbf8f3;
+  color: #2a211b;
+  border-radius: 6px;
+  padding: 28px 30px 26px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  font: 13.5px/1.6 var(--sans);
+}
+.paper p {
+  margin: 0 0 10px;
+  white-space: pre-line;
+}
+.paper__head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 18px;
+}
+.paper__head img {
+  height: 64px;
+  width: auto;
+}
+.paper__head b {
+  font-size: 17px;
+  letter-spacing: 0.02em;
+}
+.paper__sender {
+  font-size: 10px;
+  color: #8a7a6c;
+  border-bottom: 1px solid #d9cfc3;
+  display: inline-block;
+  padding-bottom: 2px;
+  margin-bottom: 6px;
+}
+.paper__to {
+  font-style: normal;
+  margin-bottom: 18px;
+}
+.paper__date {
+  text-align: right;
+  margin-bottom: 16px;
+}
+.paper__subject {
+  font-weight: 700;
+}
+.paper__dept,
+.paper__attach {
+  color: #7a6a5c;
+  font-size: 12px;
+}
+.paper__mailhead {
+  margin: -8px -10px 16px;
+  padding: 0 10px 12px;
+  border-bottom: 1px solid #e3d9cd;
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.paper__mailhead div {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+}
+.paper__mailhead dt {
+  color: #8a7a6c;
+}
+.paper__mailhead dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .paper {
+    padding: 20px 18px;
+    font-size: 13px;
+  }
+  .paper__head img {
+    height: 48px;
+  }
+  .letter__legend {
+    margin-left: 0;
+  }
+}
 .ws-back {
   align-self: flex-start;
   padding: 6px 0;
@@ -1507,4 +1628,215 @@ button {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+/* ------------------------------------------------------------ setup plan */
+
+.topbar__setup {
+  pointer-events: auto;
+  padding: 0 14px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(217, 138, 98, 0.35);
+  background: rgba(20, 16, 13, 0.92);
+  color: var(--text);
+  font: 500 12px var(--mono);
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.topbar__setup:hover {
+  border-color: var(--accent);
+}
+.setup .ws-head h2 {
+  font-size: 18px;
+}
+.setup__body {
+  flex: 1;
+  overflow: auto;
+  padding: 22px clamp(16px, 4vw, 44px) 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.setup__logo {
+  align-self: flex-start;
+  height: 72px;
+  width: auto;
+  filter: brightness(1.45) saturate(1.1);
+}
+.setup__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.setup__steps > li {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  gap: 14px;
+  padding-bottom: 18px;
+  position: relative;
+}
+/* The line joining the steps. */
+.setup__steps > li:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 36px;
+  bottom: 0;
+  width: 2px;
+  background: rgba(217, 138, 98, 0.25);
+}
+.setup__num {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(217, 138, 98, 0.16);
+  border: 1px solid rgba(217, 138, 98, 0.55);
+  color: var(--accent);
+  font: 600 14px var(--mono);
+}
+.setup__steptitle {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 6px 0 8px;
+  font-size: 16px;
+}
+.setup__cols {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 10px;
+}
+.setup__cols > div {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+.setup__cols ul,
+.setup__rule ul,
+.setup__list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.setup__h {
+  margin: 10px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.setup__rules {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.setup__rule {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--rc);
+  background: var(--card);
+}
+.setup__rule--warn {
+  --rc: #e8c170;
+}
+.setup__rule--ok {
+  --rc: #b7cf85;
+}
+.setup__rule--bad {
+  --rc: #e08a73;
+}
+.setup__two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 760px) {
+  .setup__cols,
+  .setup__rules,
+  .setup__two {
+    grid-template-columns: 1fr;
+  }
+  .setup__print {
+    display: none;
+  }
+}
+
+/* Printing the plan gives a clean document to send on: only the plan, on white. */
+@media print {
+  @page {
+    margin: 16mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+    color: #1d1712 !important;
+  }
+  html,
+  body,
+  #root,
+  .office {
+    position: static !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  .office > *:not(.setup):not(:has(.setup)) {
+    display: none !important;
+  }
+  .setup {
+    position: static !important;
+    inset: auto !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    color: #1d1712 !important;
+    overflow: visible !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+  .ws-backdrop {
+    display: none !important;
+  }
+  .setup,
+  .setup * {
+    color: #1d1712 !important;
+  }
+  .setup .icon-btn,
+  .setup__print {
+    display: none !important;
+  }
+  .setup {
+    display: block !important;
+  }
+  .setup__body {
+    display: block !important;
+    overflow: visible !important;
+    padding: 12px 0 0 !important;
+  }
+  .setup__body > * {
+    margin-bottom: 14px;
+  }
+  .setup .eyebrow,
+  .setup .ws-note {
+    color: #6b5d50 !important;
+  }
+  .setup__cols > div,
+  .setup__rule {
+    background: #faf6f1 !important;
+    border-color: #e2d8cc !important;
+    break-inside: avoid;
+  }
+  .setup__steps > li {
+    break-inside: avoid;
+  }
+  .setup__logo {
+    filter: none;
+  }
 }

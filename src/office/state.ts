@@ -20,6 +20,9 @@ type OfficeState = {
   /** Decisions made this session; they drop out of every waiting list. */
   approved: string[]
   approve: (item: string) => void
+  /** The setup plan, on top of everything. */
+  setup: boolean
+  showSetup: (open: boolean) => void
   /** Behind the lock screen until the password is entered. */
   locked: boolean
   unlock: () => void
@@ -40,9 +43,11 @@ export const useOffice = create<OfficeState>((set) => ({
   close: () => set({ ws: null }),
   approved: [],
   approve: (item) => set((s) => (s.approved.includes(item) ? s : { approved: [...s.approved, item] })),
+  setup: false,
+  showSetup: (setup) => set({ setup, ws: null }),
   locked: true,
   unlock: () => set({ locked: false }),
-  lock: () => set({ locked: true, ws: null, view: { kind: 'overview' } }),
+  lock: () => set({ locked: true, ws: null, setup: false, view: { kind: 'overview' } }),
   feed: [],
   inFlight: [],
   post: (msg, animate) =>

@@ -9,6 +9,7 @@ import {
   type Department,
 } from './data'
 import { BRANCHE } from './branche'
+import * as L from './letters'
 import { HV_KIND_BY_NAME, HV_KPI_OWNER, HV_LAYOUT, HV_WAITING_OWNER, hvMakers, hvSources, type HvKind } from './hausverwaltung'
 
 const HV = BRANCHE === 'hausverwaltung'
@@ -87,6 +88,8 @@ export type WsItem = {
   approval?: string
   /** Planned rather than done — used by the log's filter. */
   planned?: boolean
+  /** The letter or mail this record sends, as it would go out. */
+  letter?: L.Letter
 }
 
 export type Source = {
@@ -423,15 +426,20 @@ const BASE_MAKERS: Partial<Record<WsKind, Maker>> = {
       actions: ['Verschieben', 'Absagen'],
     })),
   drafts: (_r, pick) =>
-    n(5, (i) => ({
-      id: `d${i}`,
-      title: `Re: ${pick(['Ihre Anfrage', 'Terminvorschlag', 'Rechnung', 'Lieferstatus', 'Angebot'])}`,
-      sub: `an ${pick(PEOPLE)}`,
-      meta: clock(30 + i * 40),
-      badge: { text: 'Entwurf', tone: 'info' },
-      body: `Guten Tag,\n\nvielen Dank für Ihre Nachricht. Wir haben uns das angesehen und melden uns bis morgen mit einer verbindlichen Antwort.\n\nViele Grüße\n${COMPANY.name}`,
-      actions: ['Freigeben', 'Ändern', 'Verwerfen'],
-    })),
+    n(5, (i) => {
+      const topic = pick(['Ihre Anfrage', 'Terminvorschlag', 'Rechnung', 'Lieferstatus', 'Angebot'])
+      const person = pick(PEOPLE)
+      return {
+        id: `d${i}`,
+        title: `Re: ${topic}`,
+        sub: `an ${person}`,
+        meta: clock(30 + i * 40),
+        badge: { text: 'Entwurf', tone: 'info' },
+        body: 'Antwort im Ton der Firma, mit den Daten aus Postfach und CRM.',
+        letter: L.customerReply({ person, topic }),
+        actions: ['Freigeben', 'Ändern', 'Verwerfen'],
+      }
+    }),
   escalation: () => [
     { id: 'e0', title: 'Beschwerde: Lieferung verspätet', sub: 'Posteingang · seit 2 Std.', badge: { text: 'Hoch', tone: 'bad' }, body: 'Kunde wartet seit Montag. Technik-Lead und Geschäftsführung informiert.', actions: ['Übernehmen', 'Erledigt'] },
     { id: 'e1', title: 'Frist: Angebot Kanzlei Brandt', sub: 'Vertrieb · Freitag 12:00', badge: { text: 'Mittel', tone: 'warn' }, body: 'Angebot liegt zur Freigabe vor.', actions: ['Zur Freigabe'] },
@@ -535,6 +543,7 @@ const BASE_MAKERS: Partial<Record<WsKind, Maker>> = {
       id: `o${i}`,
       title: `Angebot #${118 - i}`,
       cells: [`#${118 - i}`, FIRMS[i], eur(3000 + Math.floor(r() * 30) * 500), i === 0 ? 'Freigabe' : i < 3 ? 'Versendet' : 'Angenommen'],
+      letter: L.offerCover({ firm: FIRMS[i], person: PEOPLE[i], no: `#${118 - i}`, amount: 3000 + i * 1500 }),
       badge: i === 0 ? { text: 'Freigabe', tone: 'warn' } : i < 3 ? { text: 'Versendet', tone: 'info' } : { text: 'Angenommen', tone: 'ok' },
       actions: ['PDF ansehen', 'Nachfassen'],
     })),
@@ -546,11 +555,12 @@ const BASE_MAKERS: Partial<Record<WsKind, Maker>> = {
       badge: i < 2 ? { text: 'Entwurf', tone: 'info' } : i < 6 ? { text: 'Offen', tone: 'warn' } : { text: 'Bezahlt', tone: 'ok' },
       actions: ['PDF ansehen', 'Versenden'],
     })),
-  dunning: (r) =>
+  dunning: () =>
     n(4, (i) => ({
       id: `du${i}`,
       title: `Rechnung 2026-${870 + i}`,
-      cells: [`2026-${870 + i}`, FIRMS[(i + 5) % FIRMS.length], eur(600 + Math.floor(r() * 40) * 100), `${7 + i * 6} Tage`, i === 3 ? '2. Mahnung' : 'Erinnerung'],
+      cells: [`2026-${870 + i}`, FIRMS[(i + 5) % FIRMS.length], eur(600 + i * 350), `${7 + i * 6} Tage`, i === 3 ? '2. Mahnung' : 'Erinnerung'],
+      letter: L.invoiceReminder({ firm: FIRMS[(i + 5) % FIRMS.length], no: `2026-${870 + i}`, amount: 600 + i * 350, days: 7 + i * 6, stage: i === 3 ? 2 : 1 }),
       badge: i === 3 ? { text: '2. Mahnung', tone: 'bad' } : { text: 'Erinnerung', tone: 'warn' },
       actions: ['Erinnerung senden', 'Anrufen'],
     })),
@@ -717,7 +727,7 @@ const BASE_MAKERS: Partial<Record<WsKind, Maker>> = {
 }
 
 const MAKERS: Partial<Record<WsKind, Maker>> = HV
-  ? { ...BASE_MAKERS, ...hvMakers({ n, eur, clock: (m) => clock(m), later: (m) => later(m), company: COMPANY.name }) }
+  ? { ...BASE_MAKERS, ...hvMakers({ n, eur, clock: (m) => clock(m), later: (m) => later(m), company: COMPANY.name, L }) }
   : BASE_MAKERS
 
 function seedOf(s: string) {
@@ -771,8 +781,11 @@ export function itemsFor(t: WsTarget, approved: string[]): WsItem[] {
             title: w,
             sub: `${d.short} · ${owner.name}`,
             badge: { text: 'Wartet auf Sie', tone: 'warn' as Tone },
-            body: `${owner.name} hat das vorbereitet: ${owner.doing}. Nach Ihrer Freigabe wird es sofort ausgeführt.`,
+            body: L.approvalLetter(w)
+              ? `${owner.name} hat das Schreiben vorbereitet. Nach Ihrer Freigabe geht es genau so raus, wie Sie es hier sehen.`
+              : `${owner.name} hat das vorbereitet: ${owner.doing}. Nach Ihrer Freigabe wird es sofort ausgeführt.`,
             approval: w,
+            letter: L.approvalLetter(w),
             actions: ['Freigeben', 'Ändern', 'Ablehnen'],
           }
         }),
@@ -794,8 +807,11 @@ export function itemsFor(t: WsTarget, approved: string[]): WsItem[] {
         sub: 'Vorbereitet vom Agenten',
         meta: 'jetzt',
         badge: approved.includes(w) ? { text: 'Freigegeben', tone: 'ok' as Tone } : { text: 'Wartet auf Sie', tone: 'warn' as Tone },
-        body: 'Alles ist vorbereitet. Nach Ihrer Freigabe wird es sofort ausgeführt.',
+        body: L.approvalLetter(w)
+          ? 'Das Schreiben ist fertig. Nach Ihrer Freigabe geht es genau so raus, wie Sie es hier sehen.'
+          : 'Alles ist vorbereitet. Nach Ihrer Freigabe wird es sofort ausgeführt.',
         approval: w,
+        letter: L.approvalLetter(w),
         actions: approved.includes(w) ? [] : ['Freigeben', 'Ändern', 'Ablehnen'],
         col: LAYOUT[t.kind].columns?.[LAYOUT[t.kind].columns!.length - 2],
         cells: LAYOUT[t.kind].columns?.map((_, ci) => (ci === 0 ? w : ci === LAYOUT[t.kind].columns!.length - 1 ? 'Wartet auf Sie' : '–')),

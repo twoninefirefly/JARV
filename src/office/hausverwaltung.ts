@@ -1,5 +1,6 @@
 import type { AgentStatus, Agent, Department } from './data'
 import type { Layout, Source, WsItem } from './workspaces'
+import type * as Letters from './letters'
 
 /**
  * The office dressed for a property manager (`?branche=hausverwaltung`).
@@ -410,11 +411,13 @@ export type Helpers = {
   clock: (minutesAgo: number) => string
   later: (minutes: number) => string
   company: string
+  /** Letter templates, passed in so this file stays out of import cycles. */
+  L: typeof Letters
 }
 
 type Maker = (r: () => number, pick: <T>(xs: T[]) => T) => WsItem[]
 
-export function hvMakers({ n, eur, clock, later, company }: Helpers): Partial<Record<string, Maker>> {
+export function hvMakers({ n, eur, clock, later, L }: Helpers): Partial<Record<string, Maker>> {
   const O = HV_OBJECTS
   const P = HV_PEOPLE
   const C = HV_CRAFTS
@@ -474,16 +477,21 @@ export function hvMakers({ n, eur, clock, later, company }: Helpers): Partial<Re
         fields: [['Ort', pick(O)], ['Dauer', `${pick([30, 45, 60, 90])} Minuten`]],
         actions: ['Verschieben', 'Absagen'],
       })),
-    drafts: (_r, pick) =>
-      n(5, (i) => ({
-        id: `d${i}`,
-        title: `Re: ${pick(['Mieterhöhung nach Mietspiegel', 'Ihr Wasserschaden', 'Nebenkostenabrechnung 2025', 'Kündigungsbestätigung', 'Lärmbeschwerde'])}`,
-        sub: `an ${pick(P)}`,
-        meta: clock(25 + i * 40),
-        badge: { text: 'Entwurf', tone: 'info' },
-        body: `Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihre Nachricht. Wir haben den Vorgang geprüft und melden uns bis Freitag mit einer verbindlichen Antwort.\n\nMit freundlichen Grüßen\n${company}`,
-        actions: ['Freigeben', 'Ändern', 'Verwerfen'],
-      })),
+    drafts: (r, pick) =>
+      n(5, (i) => {
+        const topic = pick(['Ihr Wasserschaden', 'Nebenkostenabrechnung 2025', 'Ihre Kündigung', 'Lärm im Haus', 'Zweitschlüssel'])
+        const person = pick(P)
+        return {
+          id: `d${i}`,
+          title: `Re: ${topic}`,
+          sub: `an ${person}`,
+          meta: clock(25 + i * 40),
+          badge: { text: 'Entwurf', tone: 'info' },
+          body: 'Antwort im Ton des Hauses, mit den Daten aus Mieterakte und Vorgang.',
+          letter: L.tenantReply({ person, object: pick(O), unit: unit(r), topic }),
+          actions: ['Freigeben', 'Ändern', 'Verwerfen'],
+        }
+      }),
     escalation: () => [
       { id: 'e0', title: 'Heizungsausfall Parkallee 21', sub: 'Posteingang · 8 Parteien betroffen', badge: { text: 'Notfall', tone: 'bad' }, body: 'Notdienst Heizung Meyer ist unterwegs, Ankunft 11:30. Aushang an alle Mieter verschickt.', actions: ['Status ansehen'] },
       { id: 'e1', title: 'Frist: Einladung ETV Parkallee 21', sub: 'WEG · Versand bis Freitag', badge: { text: 'Mittel', tone: 'warn' }, body: 'Einladung liegt zur Freigabe vor, Frist nach WEG-Gesetz 3 Wochen.', actions: ['Zur Freigabe'] },
@@ -501,16 +509,23 @@ export function hvMakers({ n, eur, clock, later, company }: Helpers): Partial<Re
         actions: ['Handwerker beauftragen', 'Rückfrage an Mieter'],
       })),
     dispatch: (r, pick) =>
-      n(5, (i) => ({
-        id: `hv${i}`,
-        title: `${pick(['Dachrinne erneuern', 'Fassade ausbessern', 'Treppenhaus streichen', 'Heizungswartung', 'Klingelanlage tauschen'])} · ${pick(O)}`,
-        sub: `${2 + Math.floor(r() * 2)} Angebote verglichen`,
-        meta: eur(400 + Math.floor(r() * 40) * 100),
-        badge: i === 0 ? { text: 'Freigabe', tone: 'warn' } : { text: 'Beauftragt', tone: 'ok' },
-        body: 'Günstigstes vollständiges Angebot mit dem frühesten Termin vorgeschlagen.',
-        fields: [['Empfehlung', pick(C)], ['Termin', `ab ${1 + Math.floor(r() * 20)}.10.`]],
-        actions: ['Angebote ansehen', 'Beauftragen'],
-      })),
+      n(5, (i) => {
+        const job = pick(['Dachrinne erneuern', 'Fassade ausbessern', 'Treppenhaus streichen', 'Heizungswartung', 'Klingelanlage tauschen'])
+        const object = pick(O)
+        const amount = 400 + Math.floor(r() * 40) * 100
+        const craft = pick(C)
+        return {
+          id: `hv${i}`,
+          title: `${job} · ${object}`,
+          sub: `${2 + Math.floor(r() * 2)} Angebote verglichen`,
+          meta: eur(amount),
+          badge: i === 0 ? { text: 'Freigabe', tone: 'warn' } : { text: 'Beauftragt', tone: 'ok' },
+          body: 'Günstigstes vollständiges Angebot mit dem frühesten Termin vorgeschlagen. Nach Freigabe geht dieser Auftrag raus:',
+          fields: [['Empfehlung', craft], ['Termin', `ab ${1 + Math.floor(r() * 20)}.10.`]],
+          letter: L.craftOrder({ craft, object, job, amount, no: `A-2026-${298 + i}` }),
+          actions: i === 0 ? ['Beauftragen', 'Angebote ansehen'] : ['Angebote ansehen'],
+        }
+      }),
     workorders: (r, pick) =>
       n(10, (i) => ({
         id: `wo${i}`,
@@ -597,16 +612,21 @@ export function hvMakers({ n, eur, clock, later, company }: Helpers): Partial<Re
         fields: [['Treffpunkt', pick(['Haustür', 'Hof', 'Treppenhaus'])]],
         actions: ['Teilnehmer', 'Verschieben'],
       })),
-    leases: (_r, pick) =>
-      n(4, (i) => ({
-        id: `mv${i}`,
-        title: `Mietvertrag ${O[(i + 2) % O.length]}, WE 0${4 + i}`,
-        sub: pick(['Laura Brandt', 'Sven Richter', 'Julia Haas', 'Familie Petrović']),
-        meta: `Beginn 1.${11 + (i % 2)}.`,
-        badge: i === 0 ? { text: 'Freigabe', tone: 'warn' } : i === 1 ? { text: 'Zur Unterschrift', tone: 'info' } : { text: 'Unterschrieben', tone: 'ok' },
-        body: 'Aus der Vorlage erstellt: Miete, Nebenkostenvorauszahlung, Kaution, Hausordnung und Anlagen.',
-        actions: ['Vertrag ansehen', 'Zur Unterschrift'],
-      })),
+    leases: (r, pick) =>
+      n(4, (i) => {
+        const name = pick(['Laura Brandt', 'Sven Richter', 'Julia Haas', 'Tobias Engel'])
+        const object = O[(i + 2) % O.length]
+        return {
+          id: `mv${i}`,
+          title: `Mietvertrag ${object}, WE 0${4 + i}`,
+          sub: name,
+          meta: `Beginn 1.${11 + (i % 2)}.`,
+          badge: i === 0 ? { text: 'Freigabe', tone: 'warn' } : i === 1 ? { text: 'Zur Unterschrift', tone: 'info' } : { text: 'Unterschrieben', tone: 'ok' },
+          body: 'Aus der Vorlage erstellt: Miete, Nebenkostenvorauszahlung, Kaution, Hausordnung und Anlagen.',
+          letter: L.leaseCover({ person: `${name.startsWith('Laura') || name.startsWith('Julia') ? 'Frau' : 'Herr'} ${name.split(' ')[1]}`, object, unit: `WE 0${4 + i}`, start: `1. ${i % 2 ? 'Dezember' : 'November'}`, rent: 780 + Math.floor(r() * 50) * 10 }),
+          actions: ['Vertrag ansehen', 'Zur Unterschrift'],
+        }
+      }),
     handovers: (_r, pick) =>
       n(4, (i) => ({
         id: `ug${i}`,
@@ -630,13 +650,20 @@ export function hvMakers({ n, eur, clock, later, company }: Helpers): Partial<Re
         }
       }),
     dunning: (r) =>
-      n(4, (i) => ({
-        id: `du${i}`,
-        title: P[(i * 3 + 2) % P.length],
-        cells: [`${O[i]}, ${unit(r)}`, P[(i * 3 + 2) % P.length], eur(700 + Math.floor(r() * 20) * 100), `${1 + (i % 3)} Monate`, i === 0 ? '2. Mahnung' : 'Erinnerung'],
-        badge: i === 0 ? { text: '2. Mahnung', tone: 'bad' } : { text: 'Erinnerung', tone: 'warn' },
-        actions: ['Schreiben ansehen', 'Ratenzahlung anbieten'],
-      })),
+      n(4, (i) => {
+        const person = P[(i * 3 + 2) % P.length]
+        const rent = 620 + Math.floor(r() * 40) * 10
+        const months = i === 0 ? 2 : 1
+        const t = { person, object: O[i], unit: unit(r) }
+        return {
+          id: `du${i}`,
+          title: person,
+          cells: [`${t.object}, ${t.unit}`, person, eur(rent * months), `${months} ${months === 1 ? 'Monat' : 'Monate'}`, i === 0 ? '2. Mahnung' : 'Erinnerung'],
+          badge: i === 0 ? { text: '2. Mahnung', tone: 'bad' } : { text: 'Erinnerung', tone: 'warn' },
+          letter: i === 0 ? L.dunning2({ ...t, rent, months }) : L.reminder({ ...t, rent }),
+          actions: ['Freigeben & senden', 'Ratenzahlung anbieten'],
+        }
+      }),
     deposits: (r) =>
       n(6, (i) => ({
         id: `ka${i}`,
@@ -691,29 +718,43 @@ export function hvMakers({ n, eur, clock, later, company }: Helpers): Partial<Re
         sub: `${6 + (i % 5) * 3} Einheiten`,
         meta: pick(['Nachzahlung Ø 84 €', 'Guthaben Ø 57 €', 'Nachzahlung Ø 212 €']),
         badge: i === 1 ? { text: 'Freigabe', tone: 'warn' } : undefined,
-        body: 'Kosten je Kostenart, Verteilerschlüssel, Verbrauchswerte und Vorjahresvergleich.',
+        body: 'Kosten je Kostenart, Verteilerschlüssel, Verbrauchswerte und Vorjahresvergleich. Jede Einheit bekommt dieses Anschreiben mit ihrer Abrechnung:',
+        letter: L.statementCover({ person: pick(P), object: O[i % O.length], unit: `WE 0${1 + (i % 9)}`, result: i % 3 === 1 ? -57.4 : 84.2 + i * 11 }),
         actions: ['Abrechnung öffnen'],
       })),
     prepayments: (r, pick) =>
-      n(5, (i) => ({
-        id: `vz${i}`,
-        title: `${pick(P)} · ${pick(O)}`,
-        sub: `Vorauszahlung ${eur(180 + i * 15)} → ${eur(180 + i * 15 + 10 + Math.floor(r() * 50))}`,
-        meta: 'ab 1.1.',
-        badge: { text: 'Berechnet', tone: 'info' },
-        body: 'Neue Vorauszahlung aus der letzten Abrechnung und der Preisentwicklung, Schreiben an den Mieter vorbereitet.',
-        actions: ['Schreiben ansehen'],
-      })),
-    objections: (_r, pick) =>
-      n(4, (i) => ({
+      n(5, (i) => {
+        const person = pick(P)
+        const object = pick(O)
+        const before = 180 + i * 15
+        const after = before + 10 + Math.floor(r() * 50)
+        return {
+          id: `vz${i}`,
+          title: `${person} · ${object}`,
+          sub: `Vorauszahlung ${eur(before)} → ${eur(after)}`,
+          meta: 'ab 1.1.',
+          badge: { text: 'Berechnet', tone: 'info' },
+          body: 'Neue Vorauszahlung aus der letzten Abrechnung und der Preisentwicklung, Schreiben an den Mieter vorbereitet.',
+          letter: L.prepayment({ person, object, unit: unit(r), before, after }),
+          actions: ['Freigeben & senden', 'Ändern'],
+        }
+      }),
+    objections: (r, pick) =>
+      n(4, (i) => {
+        const topic = pick(['Hausmeisterkosten zu hoch', 'Belegeinsicht gewünscht', 'Verteilerschlüssel falsch', 'Heizkosten unplausibel'])
+        const person = pick(P)
+        const object = pick(O)
+        return {
         id: `ew${i}`,
-        title: pick(['Hausmeisterkosten zu hoch', 'Belegeinsicht gewünscht', 'Verteilerschlüssel falsch', 'Heizkosten unplausibel']),
-        sub: `${pick(P)} · ${pick(O)}`,
+        title: topic,
+        sub: `${person} · ${object}`,
+        letter: L.tenantReply({ person, object, unit: unit(r), topic: `Ihre Rückfrage „${topic}“`, from: 'Nebenkosten' }),
         meta: clock(120 + i * 600),
         badge: i === 0 ? { text: 'In Klärung', tone: 'warn' } : { text: 'Beantwortet', tone: 'ok' },
         body: 'Antwort mit Belegen und Vorjahresvergleich entworfen. Bei einem Fehler wird die Abrechnung korrigiert.',
         actions: ['Antwort ansehen'],
-      })),
+        }
+      }),
     assemblies: () =>
       [
         ['ETV Parkallee 21', 'Dachsanierung, Wirtschaftsplan 2027', 24 * 60 * 18],
@@ -727,6 +768,7 @@ export function hvMakers({ n, eur, clock, later, company }: Helpers): Partial<Re
         meta: later(Number(m)),
         badge: i === 0 ? { text: 'Einladung Freigabe', tone: 'warn' } : { text: 'Geplant', tone: 'ok' },
         body: 'Tagesordnung, Beschlussvorlagen und Vollmachten vorbereitet. Online-Teilnahme möglich.',
+        letter: L.etvInvite({ object: String(t).replace(/^(ETV|Beiratssitzung) /, ''), date: L.day(Number(m) / 1440), agenda: String(s).split(', ').concat(['Verschiedenes']) }),
         actions: ['Tagesordnung', 'Einladung ansehen'],
       })),
     resolutions: () =>
@@ -766,16 +808,22 @@ export function hvMakers({ n, eur, clock, later, company }: Helpers): Partial<Re
         body: 'Mieteingang 98 %, zwei Schäden reguliert, keine Leerstände, Rücklage im Plan.',
         actions: ['Bericht öffnen'],
       })),
-    ownerrequests: (_r, pick) =>
-      n(5, (i) => ({
+    ownerrequests: (r, pick) =>
+      n(5, (i) => {
+        const topic = pick(['Anteil Sonderumlage?', 'Jahresabrechnung Hausgeld', 'Vermietung meiner Wohnung', 'Protokoll letzte ETV', 'Wallbox beantragen'])
+        const person = pick(['Herr Albrecht', 'Frau Lorenz', 'Herr Jansen', 'Frau Krause'])
+        const object = pick(O)
+        return {
         id: `ea${i}`,
-        title: pick(['Anteil Sonderumlage?', 'Jahresabrechnung Hausgeld', 'Vermietung meiner Wohnung', 'Protokoll letzte ETV', 'Wallbox beantragen']),
-        sub: `${pick(['Herr Albrecht', 'Frau Lorenz', 'Herr Jansen', 'Frau Krause'])} · ${pick(O)}`,
+        title: topic,
+        sub: `${person} · ${object}`,
+        letter: L.tenantReply({ person, object, unit: unit(r), topic: `Ihre Anfrage „${topic.replace('?', '')}“`, from: 'WEG-Verwaltung' }),
         meta: clock(60 + i * 300),
         badge: i === 0 ? { text: 'Offen', tone: 'warn' } : { text: 'Beantwortet', tone: 'ok' },
         body: 'Antwort aus Beschlusssammlung, Wirtschaftsplan und Teilungserklärung.',
         actions: ['Antworten'],
-      })),
+        }
+      }),
     library: (r, pick) =>
       n(10, (i) => ({
         id: `lib${i}`,

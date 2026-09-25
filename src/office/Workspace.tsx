@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY, DEPARTMENTS, deptProtocol, fmt, split } from './data'
 import { useOffice } from './state'
 import { Icon, Spark } from './Icon'
+import { day, signature, type Letter } from './letters'
 import {
   LAYOUT,
   SOURCES,
@@ -118,6 +119,95 @@ function Table({ items, columns, chosen, pick }: { items: WsItem[]; columns: str
   )
 }
 
+/** `[[field]]` → a highlighted field, so you see exactly what the agent filled in. */
+function Filled({ text }: { text: string }) {
+  const parts = text.split(/\[\[(.+?)\]\]/g)
+  return <>{parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : p))}</>
+}
+
+/** A letter or mail exactly as it goes out after approval. */
+function LetterView({ letter }: { letter: Letter }) {
+  const mail = letter.channel !== 'Brief'
+  return (
+    <div className="letter">
+      <div className="letter__meta">
+        <span className="badge badge--info">{letter.channel}</span>
+        <span>Vorlage: {letter.template}</span>
+        <span className="letter__legend">
+          <mark>markiert</mark> = vom Agenten eingesetzt
+        </span>
+      </div>
+      <article className={`paper${mail ? ' paper--mail' : ''}`}>
+        {mail ? (
+          <dl className="paper__mailhead">
+            <div>
+              <dt>Von</dt>
+              <dd>{signature(letter)}</dd>
+            </div>
+            <div>
+              <dt>An</dt>
+              <dd>
+                <Filled text={`[[${letter.to.join(', ')}]]`} />
+              </dd>
+            </div>
+            <div>
+              <dt>Betreff</dt>
+              <dd>
+                <b>
+                  <Filled text={letter.subject} />
+                </b>
+              </dd>
+            </div>
+            {letter.attachments && (
+              <div>
+                <dt>Anhang</dt>
+                <dd>{letter.attachments.map((a) => `📎 ${a}`).join('  ')}</dd>
+              </div>
+            )}
+          </dl>
+        ) : (
+          <>
+            <header className="paper__head">
+              {COMPANY.logo ? <img src={COMPANY.logo} alt={COMPANY.name} /> : <b>{COMPANY.name}</b>}
+            </header>
+            <div className="paper__sender">{signature(letter)}</div>
+            <address className="paper__to">
+              {letter.to.map((l, i) => (
+                <div key={i}>
+                  <Filled text={`[[${l}]]`} />
+                </div>
+              ))}
+            </address>
+            <div className="paper__date">
+              Musterstadt, <Filled text={`[[${day()}]]`} />
+            </div>
+            <p className="paper__subject">
+              <Filled text={letter.subject} />
+            </p>
+          </>
+        )}
+        <p>
+          <Filled text={letter.salutation} />
+        </p>
+        {letter.body.map((b, i) => (
+          <p key={i}>
+            <Filled text={b} />
+          </p>
+        ))}
+        <p>
+          Mit freundlichen Grüßen
+          <br />
+          {COMPANY.name}
+          <br />
+          <span className="paper__dept">{letter.from}</span>
+        </p>
+        {!mail && letter.attachments && <p className="paper__attach">Anlagen: {letter.attachments.join(', ')}</p>}
+      </article>
+      {letter.basis && <p className="ws-note">Rechtsgrundlage der Vorlage: {letter.basis}. Die Vorlagen werden bei der Einrichtung durch Ihre eigenen ersetzt und einmal juristisch geprüft.</p>}
+    </div>
+  )
+}
+
 function Detail({
   item,
   columns,
@@ -168,8 +258,9 @@ function Detail({
           ))}
         </dl>
       )}
+      {item.letter && <LetterView letter={item.letter} />}
       {!done && item.actions && item.actions.length > 0 && (
-        <div className="ws-actions">
+        <div className={`ws-actions${item.letter ? ' ws-actions--sticky' : ''}`}>
           {item.actions.map((a, i) => (
             <button key={a} className={i === 0 ? 'btn btn--primary' : 'btn'} onClick={() => act(item, a)}>
               {a}
@@ -270,6 +361,7 @@ function Window({ ws }: { ws: WsTarget }) {
   const closeWs = useOffice((s) => s.close)
   const approved = useOffice((s) => s.approved)
   const approve = useOffice((s) => s.approve)
+  const showSetup = useOffice((s) => s.showSetup)
   const wide = useWide()
 
   const [stack, setStack] = useState<WsTarget[]>([])
@@ -327,11 +419,23 @@ function Window({ ws }: { ws: WsTarget }) {
   }
 
   const act = (it: WsItem, action: string) => {
-    if (it.approval && /Freigeben|Ablehnen/.test(action)) approve(it.approval)
-    const label =
-      action === 'Freigeben' ? 'Freigegeben' : action === 'Ablehnen' ? 'Abgelehnt' : action === 'Erledigt' ? 'Erledigt' : `${action} vorgemerkt`
+    if (it.approval && /Freigeben|Beauftragen|Ablehnen/.test(action)) approve(it.approval)
+    const sends = it.letter && /^(Freigeben|Beauftragen)/.test(action)
+    const label = sends
+      ? `Freigegeben – ${it.letter!.channel === 'Brief' ? 'Brief geht in den Versand' : 'Mail wird gesendet'}`
+      : action === 'Freigeben'
+        ? 'Freigegeben'
+        : action === 'Ablehnen'
+          ? 'Abgelehnt'
+          : action === 'Erledigt'
+            ? 'Erledigt'
+            : `${action} vorgemerkt`
     setDone((d) => ({ ...d, [`${key}/${it.id}`]: label }))
-    setToast(`${label}: ${it.title}. Nach der Anbindung an „${source.system}“ passiert das wirklich.`)
+    setToast(
+      sends
+        ? `${label}: ${it.title}. In der Demo nur vorgemerkt – nach der Einrichtung geht es wirklich raus.`
+        : `${label}: ${it.title}. Nach der Anbindung an „${source.system}“ passiert das wirklich.`,
+    )
   }
 
   const showDetail = item && (wide || layout.layout !== 'overview')
@@ -408,6 +512,9 @@ function Window({ ws }: { ws: WsTarget }) {
                   ))}
                 </ul>
                 <p className="ws-note">Zugangsdaten werden nicht hier eingegeben, sondern sicher bei der Einrichtung hinterlegt.</p>
+                <button className="btn btn--small" onClick={() => showSetup(true)}>
+                  So läuft die Einrichtung →
+                </button>
               </div>
             </motion.div>
           )}

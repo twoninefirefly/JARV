@@ -4,6 +4,7 @@ import { COMPANY } from './data'
 import { useOffice } from './state'
 import Panel from './Panel'
 import Workspace from './Workspace'
+import Setup from './Setup'
 import Lock, { Mark } from './Lock'
 import { useComms } from './comms'
 import { Guard } from './Guard'
@@ -44,6 +45,7 @@ export default function Office() {
   const [attempt, setAttempt] = useState(0)
   const locked = useOffice((s) => s.locked)
   const lock = useOffice((s) => s.lock)
+  const showSetup = useOffice((s) => s.showSetup)
   // The scene starts loading the moment the password is right, under the
   // loading bar, and is torn down again on lock so nothing stays on screen.
   const [started, setStarted] = useState(false)
@@ -86,6 +88,11 @@ export default function Office() {
           {COMPANY.demo && ' · Demo'}
         </span>
         <span className="topbar__actions">
+          {!locked && (
+            <button className="topbar__setup" onClick={() => showSetup(true)}>
+              Einrichtung
+            </button>
+          )}
           {view.kind !== 'overview' && (
             <button className="icon-btn icon-btn--lg" onClick={() => show({ kind: 'overview' })} aria-label="Zur Übersicht">
               ✕
@@ -114,6 +121,9 @@ export default function Office() {
       </Guard>
       <Guard name="window" onError={() => useOffice.setState({ ws: null })}>
         {!locked && <Workspace />}
+      </Guard>
+      <Guard name="setup" onError={() => useOffice.setState({ setup: false })}>
+        {!locked && <Setup />}
       </Guard>
       <Lock onStart={() => setStarted(true)} />
     </div>

@@ -5,6 +5,7 @@ import { useOffice } from './state'
 import Panel from './Panel'
 import Workspace from './Workspace'
 import Setup from './Setup'
+import Cockpit from './Cockpit'
 import Lock, { Mark } from './Lock'
 import { useComms } from './comms'
 import { Guard } from './Guard'
@@ -46,6 +47,9 @@ export default function Office() {
   const locked = useOffice((s) => s.locked)
   const lock = useOffice((s) => s.lock)
   const showSetup = useOffice((s) => s.showSetup)
+  const showCockpit = useOffice((s) => s.showCockpit)
+  const user = useOffice((s) => s.user)
+  const signOut = useOffice((s) => s.signOut)
   // The scene starts loading the moment the password is right, under the
   // loading bar, and is torn down again on lock so nothing stays on screen.
   const [started, setStarted] = useState(false)
@@ -98,6 +102,26 @@ export default function Office() {
               <span>Einrichtung</span>
             </button>
           )}
+          {!locked && user?.role === 'leitung' && (
+            <button className="topbar__setup topbar__leitung" onClick={() => showCockpit(true)} aria-label="Leitung" title="Bereich der Leitung">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6l-8-3Z" />
+                <path d="m9 12 2 2 4-4" />
+              </svg>
+              <span>Leitung</span>
+            </button>
+          )}
+          {!locked && user && (
+            <button className="topbar__user" onClick={signOut} title={`${user.name} · Abmelden / Person wechseln`} aria-label={`${user.name} abmelden`}>
+              <span className={`avatar avatar--${user.role}`} aria-hidden>
+                {user.initials}
+              </span>
+              <span className="topbar__username">
+                <b>{user.name}</b>
+                <small>Abmelden</small>
+              </span>
+            </button>
+          )}
           {view.kind !== 'overview' && (
             <button className="icon-btn icon-btn--lg" onClick={() => show({ kind: 'overview' })} aria-label="Zur Übersicht">
               ✕
@@ -133,6 +157,9 @@ export default function Office() {
       </Guard>
       <Guard name="setup" onError={() => useOffice.setState({ setup: false })}>
         {!locked && <Setup />}
+      </Guard>
+      <Guard name="cockpit" onError={() => useOffice.setState({ cockpit: false })}>
+        {!locked && user?.role === 'leitung' && <Cockpit />}
       </Guard>
       <Lock onStart={() => setStarted(true)} />
     </div>

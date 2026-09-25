@@ -14,11 +14,13 @@ export type Kunde = {
   logo: string
   /** Where the bare mark sits inside the logo image, [x, y, w, h] — used on the landing pad. */
   mark?: [number, number, number, number]
+  /** Who signs in to the management area. */
+  chef?: string
   branche: 'standard' | 'hausverwaltung'
 }
 
 export const KUNDEN: Record<string, Kunde> = {
-  bormann: { name: 'Bormann Immobilien', logo: bormannLogo, mark: [92, 0, 233, 283], branche: 'hausverwaltung' },
+  bormann: { name: 'Bormann Immobilien', logo: bormannLogo, mark: [92, 0, 233, 283], chef: 'Martin Bormann', branche: 'hausverwaltung' },
 }
 
 const KEY = 'office.kunde'

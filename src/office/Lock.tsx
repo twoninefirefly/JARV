@@ -4,6 +4,7 @@ import { COMPANY } from './data'
 import { useOffice } from './state'
 import { BRANCHE, BRANCHEN, setBranche } from './branche'
 import { KUNDE } from './kunden'
+import { DEMO_PASSWORD, USERS, type Role, type User } from './team'
 
 /**
  * The lock screen: logo, clock, password, then a loading bar while the office
@@ -61,29 +62,49 @@ function useClock() {
   return now
 }
 
+function Avatar({ user, size = 34 }: { user: User; size?: number }) {
+  return (
+    <span className={`avatar avatar--${user.role}`} style={{ width: size, height: size, fontSize: size * 0.38 }} aria-hidden>
+      {user.initials}
+    </span>
+  )
+}
+
 export default function Lock({ onStart }: { onStart: () => void }) {
   const locked = useOffice((s) => s.locked)
   const unlock = useOffice((s) => s.unlock)
+  const signIn = useOffice((s) => s.signIn)
+  const remembered = useOffice((s) => s.remembered)
+  const current = useOffice((s) => s.user)
   const now = useClock()
   const [pw, setPw] = useState('')
   const [wrong, setWrong] = useState(0)
   const [progress, setProgress] = useState<number | null>(null)
+  const [area, setArea] = useState<Role>('team')
+  const team = USERS.filter((x) => x.role === 'team')
+  const leitung = USERS.filter((x) => x.role === 'leitung')
+  const [chosen, setChosen] = useState<User>(team[0])
+  const [remember, setRemember] = useState(true)
+  // Someone who asked to stay signed in only needs one click; "Anderes Konto" shows the full login.
+  const [switching, setSwitching] = useState(false)
 
-  // A fresh lock clears whatever was typed last time.
+  // A fresh lock clears whatever was typed last time and starts on the last person.
   useEffect(() => {
     if (locked) {
       setPw('')
       setProgress(null)
+      setSwitching(false)
+      const last = current ?? remembered
+      if (last) {
+        setArea(last.role)
+        setChosen(last)
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked])
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (pw !== COMPANY.password) {
-      setWrong((n) => n + 1)
-      setPw('')
-      return
-    }
+  const start = (user: User, keep: boolean) => {
+    signIn(user, keep)
     onStart()
     const t0 = performance.now()
     const tick = () => {
@@ -95,7 +116,24 @@ export default function Lock({ onStart }: { onStart: () => void }) {
     requestAnimationFrame(tick)
   }
 
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (pw !== DEMO_PASSWORD) {
+      setWrong((n) => n + 1)
+      setPw('')
+      return
+    }
+    start(chosen, remember)
+  }
+
+  const pickArea = (r: Role) => {
+    setArea(r)
+    setChosen(r === 'leitung' ? leitung[0] : team[0])
+    setPw('')
+  }
+
   const step = progress === null ? -1 : Math.min(STEPS.length - 1, Math.floor(progress * STEPS.length))
+  const welcome = remembered && !switching
 
   return (
     <AnimatePresence>
@@ -122,35 +160,9 @@ export default function Lock({ onStart }: { onStart: () => void }) {
               <div className="eyebrow">Agenten-Büro · geschützter Bereich</div>
             </div>
 
-            {progress === null && !KUNDE && (
-              <div className="lock__branche" role="group" aria-label="Branche der Demo">
-                {BRANCHEN.map((b) => (
-                  <button key={b.id} type="button" aria-pressed={b.id === BRANCHE} onClick={() => b.id !== BRANCHE && setBranche(b.id)}>
-                    {b.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {progress === null ? (
-              <motion.form key={wrong} className="lock__form" onSubmit={submit} animate={wrong ? { x: [0, -10, 10, -6, 6, 0] } : {}} transition={{ duration: 0.4 }}>
-                <input
-                  id="lock-password"
-                  type="password"
-                  value={pw}
-                  onChange={(e) => setPw(e.target.value)}
-                  placeholder="Passwort"
-                  aria-label="Passwort"
-                  autoComplete="current-password"
-                  autoFocus
-                />
-                <button type="submit" disabled={!pw}>
-                  Entsperren
-                </button>
-                {wrong > 0 && <p className="lock__error">Passwort falsch. Bitte erneut versuchen.</p>}
-              </motion.form>
-            ) : (
+            {progress !== null ? (
               <div className="lock__load" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
+                <div className="lock__hello">Guten {now.getHours() < 11 ? 'Morgen' : now.getHours() < 18 ? 'Tag' : 'Abend'}, {(current ?? chosen).name.split(' ')[0]}</div>
                 <div className="lock__bar">
                   <div style={{ width: `${progress * 100}%` }} />
                 </div>
@@ -159,9 +171,80 @@ export default function Lock({ onStart }: { onStart: () => void }) {
                   <span>{Math.round(progress * 100)} %</span>
                 </div>
               </div>
+            ) : welcome ? (
+              <div className="lock__welcome">
+                <Avatar user={remembered} size={52} />
+                <div className="lock__who">
+                  <span className="eyebrow">Willkommen zurück</span>
+                  <b>{remembered.name}</b>
+                  <small>
+                    {remembered.role === 'leitung' ? 'Leitung · ' : ''}
+                    {remembered.title}
+                  </small>
+                </div>
+                <button type="button" className="lock__go" onClick={() => start(remembered, true)} autoFocus>
+                  Weiter
+                </button>
+                <button type="button" className="lock__link" onClick={() => setSwitching(true)}>
+                  Anderes Konto
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="lock__areas" role="tablist" aria-label="Anmeldebereich">
+                  {(['team', 'leitung'] as const).map((r) => (
+                    <button key={r} type="button" role="tab" aria-selected={area === r} onClick={() => pickArea(r)}>
+                      {r === 'team' ? 'Team' : 'Leitung'}
+                    </button>
+                  ))}
+                </div>
+                <div className={`lock__people${area === 'leitung' ? ' lock__people--one' : ''}`} role="listbox" aria-label="Person">
+                  {(area === 'team' ? team : leitung).map((x) => (
+                    <button key={x.id} type="button" role="option" aria-selected={chosen.id === x.id} className="lock__person" onClick={() => setChosen(x)}>
+                      <Avatar user={x} />
+                      <span>
+                        <b>{x.name}</b>
+                        <small>{x.title}</small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <motion.form key={wrong} className="lock__form" onSubmit={submit} animate={wrong ? { x: [0, -10, 10, -6, 6, 0] } : {}} transition={{ duration: 0.4 }}>
+                  <input
+                    id="lock-password"
+                    type="password"
+                    value={pw}
+                    onChange={(e) => setPw(e.target.value)}
+                    placeholder={`Passwort für ${chosen.name}`}
+                    aria-label="Passwort"
+                    autoComplete="current-password"
+                    autoFocus
+                  />
+                  <label className="lock__remember">
+                    <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+                    Auf diesem Computer angemeldet bleiben
+                  </label>
+                  <button type="submit" disabled={!pw}>
+                    Anmelden
+                  </button>
+                  {wrong > 0 && <p className="lock__error">Passwort falsch. Bitte erneut versuchen.</p>}
+                </motion.form>
+              </>
             )}
           </div>
-          <div className="lock__foot">🔒 Verschlüsselte Verbindung · automatische Sperre nach {COMPANY.autoLockMinutes} Min.</div>
+          <div className="lock__foot">
+            🔒 Verschlüsselte Verbindung · automatische Sperre nach {COMPANY.autoLockMinutes} Min.
+            {!KUNDE && progress === null && (
+              <span className="lock__demo" role="group" aria-label="Branche der Demo">
+                Demo:
+                {BRANCHEN.map((b) => (
+                  <button key={b.id} type="button" aria-pressed={b.id === BRANCHE} onClick={() => b.id !== BRANCHE && setBranche(b.id)}>
+                    {b.label}
+                  </button>
+                ))}
+              </span>
+            )}
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

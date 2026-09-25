@@ -41,7 +41,12 @@ const STEPS: Array<{ title: string; when: string; we: string[]; you: string[] }>
   {
     title: 'Anbindung',
     when: 'Woche 2–3',
-    we: ['Systeme anbinden – zuerst nur lesend', 'Vertrag zur Auftragsverarbeitung (DSGVO) vor dem ersten Datensatz', 'Rollen festlegen: wer sieht was, wer gibt was frei'],
+    we: [
+      'Systeme anbinden – zuerst nur lesend',
+      'Vertrag zur Auftragsverarbeitung (DSGVO) vor dem ersten Datensatz',
+      'Anmeldung für jede Person im Team und für die Leitung: wer sieht was, wer gibt was frei',
+      'Das Agenten-Büro startet morgens mit dem Rechner – einmal anmelden, dann gemerkt',
+    ],
     you: ['Zugänge über Ihre IT oder den Hersteller freigeben', 'Auftragsverarbeitungsvertrag unterschreiben'],
   },
   {
@@ -90,7 +95,8 @@ const SAFETY = [
   'Vertrag zur Auftragsverarbeitung nach DSGVO, bevor die erste Mail gelesen wird',
   'Zugänge zuerst nur lesend – schreiben dürfen die Agenten erst nach dem Schattenbetrieb',
   'Jede Aktion protokolliert: wer hat was wann freigegeben',
-  'Rollen und Rechte: jede Abteilung sieht nur ihren Bereich',
+  'Zwei Bereiche: das Team entscheidet in seinen Abteilungen, die Leitung unterschreibt und sieht die sensiblen Zahlen',
+  'Jede Freigabe mit Namen und Uhrzeit – nachvollziehbar, wer was entschieden hat',
   'Jederzeit abschaltbar – Ihr Team kann alles wie bisher selbst erledigen',
 ]
 

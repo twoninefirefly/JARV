@@ -14,6 +14,7 @@ import {
 import { useOffice, type View } from './state'
 import { Icon, Spark } from './Icon'
 import { answer, liveMode, type Who } from './chat'
+import { mayDecide, needsLeitung } from './team'
 import { deptOf } from './comms'
 import { agentTarget, approvalsTarget, brainTarget, kpiOwner, logTarget, waitingOwner } from './workspaces'
 
@@ -335,6 +336,7 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
   const show = useOffice((s) => s.show)
   const open = useOffice((s) => s.open)
   const approved = useOffice((s) => s.approved)
+  const user = useOffice((s) => s.user)
   const s = split(dept.runs, now)
   const agent = dept.agents.find((a) => a.id === agentId)
   const lead = dept.agents.find((a) => a.lead) ?? dept.agents[0]
@@ -354,7 +356,12 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
       <div className="stats stats--3">
         <Stat value={s.done} label="Heute erledigt" tone="#b7cf85" onClick={() => open(logTarget(dept, 'done'))} />
         <Stat value={dept.runs[(s.hour + 1) % 24]} label="Nächste Stunde" tone="#9db8d6" onClick={() => open(logTarget(dept, 'planned'))} />
-        <Stat value={waiting.length} label="Wartet auf Sie" tone="#e8c170" onClick={() => open(approvalsTarget(dept))} />
+        <Stat
+          value={waiting.filter(({ w }) => mayDecide(user, dept.id, w).ok).length}
+          label={waiting.length ? 'Wartet auf Sie' : 'Nichts offen'}
+          tone="#e8c170"
+          onClick={() => open(approvalsTarget(dept))}
+        />
       </div>
       <Runs runs={dept.runs} color={dept.color} title="Läufe heute" now={now} onClick={() => open(logTarget(dept))} />
       {agent && !agent.lead ? (
@@ -380,13 +387,14 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
         <Feed dept={dept.id} limit={3} />
       </Section>
       {waiting.length > 0 && (
-        <Section title="Wartet auf Sie" aside={`${waiting.length}`}>
+        <Section title="Wartet auf Freigabe" aside={`${waiting.length}`}>
           <ul className="waiting">
             {waiting.map(({ w, i }) => (
               <li key={w}>
                 <button onClick={() => open(agentTarget(dept, waitingOwner(dept, i), w))}>
-                  <span>⚠</span>
+                  <span>{mayDecide(user, dept.id, w).ok ? '⚠' : '🔒'}</span>
                   {w}
+                  {needsLeitung(w) && <span className="badge badge--bad">Leitung</span>}
                   <span className="waiting__go">→</span>
                 </button>
               </li>

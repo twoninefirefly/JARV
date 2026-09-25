@@ -4,6 +4,7 @@ import { COMPANY, DEPARTMENTS, deptProtocol, fmt, split } from './data'
 import { useOffice } from './state'
 import { Icon, Spark } from './Icon'
 import { day, signature, type Letter } from './letters'
+import { mayDecide } from './team'
 import {
   LAYOUT,
   SOURCES,
@@ -212,12 +213,15 @@ function Detail({
   item,
   columns,
   done,
+  blocked,
   act,
   back,
 }: {
   item: WsItem
   columns?: string[]
   done?: string
+  /** Why the signed-in person may look but not decide. */
+  blocked?: string
   act: (item: WsItem, action: string) => void
   back?: () => void
 }) {
@@ -259,7 +263,14 @@ function Detail({
         </dl>
       )}
       {item.letter && <LetterView letter={item.letter} />}
-      {!done && item.actions && item.actions.length > 0 && (
+      {!done && blocked && (
+        <div className={`ws-actions${item.letter ? ' ws-actions--sticky' : ''}`}>
+          <p className="ws-lock">
+            <span aria-hidden>🔒</span> {blocked}
+          </p>
+        </div>
+      )}
+      {!done && !blocked && item.actions && item.actions.length > 0 && (
         <div className={`ws-actions${item.letter ? ' ws-actions--sticky' : ''}`}>
           {item.actions.map((a, i) => (
             <button key={a} className={i === 0 ? 'btn btn--primary' : 'btn'} onClick={() => act(item, a)}>
@@ -360,6 +371,8 @@ function Window({ ws }: { ws: WsTarget }) {
   const openWs = useOffice((s) => s.open)
   const closeWs = useOffice((s) => s.close)
   const approved = useOffice((s) => s.approved)
+  const decisions = useOffice((s) => s.decisions)
+  const user = useOffice((s) => s.user)
   const approve = useOffice((s) => s.approve)
   const showSetup = useOffice((s) => s.showSetup)
   const wide = useWide()
@@ -374,7 +387,7 @@ function Window({ ws }: { ws: WsTarget }) {
 
   const key = `${ws.kind}:${ws.deptId}:${ws.agentId}:${ws.title}`
   const layout = LAYOUT[ws.kind]
-  const all = useMemo(() => itemsFor(ws, approved), [ws, approved])
+  const all = useMemo(() => itemsFor(ws, approved, decisions), [ws, approved, decisions])
 
   // A new window starts clean, on the record it was opened for.
   useEffect(() => {
@@ -419,7 +432,8 @@ function Window({ ws }: { ws: WsTarget }) {
   }
 
   const act = (it: WsItem, action: string) => {
-    if (it.approval && /Freigeben|Beauftragen|Ablehnen/.test(action)) approve(it.approval)
+    if (it.approval && /Freigeben|Beauftragen|Ablehnen/.test(action))
+      approve(it.approval, it.dept ?? ws.deptId ?? '', action === 'Ablehnen' ? 'Abgelehnt' : 'Freigegeben')
     const sends = it.letter && /^(Freigeben|Beauftragen)/.test(action)
     const label = sends
       ? `Freigegeben – ${it.letter!.channel === 'Brief' ? 'Brief geht in den Versand' : 'Mail wird gesendet'}`
@@ -431,9 +445,11 @@ function Window({ ws }: { ws: WsTarget }) {
             ? 'Erledigt'
             : `${action} vorgemerkt`
     setDone((d) => ({ ...d, [`${key}/${it.id}`]: label }))
+    const by = it.approval && user ? ` von ${user.name}` : ''
+    const what = it.title.replace(/ (freigeben|durchsehen)$/, '')
     setToast(
       sends
-        ? `${label}: ${it.title}. In der Demo nur vorgemerkt – nach der Einrichtung geht es wirklich raus.`
+        ? `${action === 'Ablehnen' ? 'Abgelehnt' : 'Freigegeben'}${by}: ${what}. ${it.letter!.channel === 'Brief' ? 'Der Brief geht in den Versand' : 'Die Mail wird gesendet'} – in der Demo nur vorgemerkt.`
         : `${label}: ${it.title}. Nach der Anbindung an „${source.system}“ passiert das wirklich.`,
     )
   }
@@ -447,8 +463,16 @@ function Window({ ws }: { ws: WsTarget }) {
   else if (layout.layout === 'table') records = <Table items={items} columns={layout.columns!} chosen={chosen} pick={(i) => setChosen(i.id)} />
   else records = <List items={items} chosen={chosen} pick={(i) => setChosen(i.id)} agenda={layout.layout === 'calendar'} />
 
+  const perm = item?.approval && !approved.includes(item.approval) ? mayDecide(user, item.dept ?? ws.deptId, item.approval) : { ok: true }
   const detail = item ? (
-    <Detail item={item} columns={layout.layout === 'table' ? layout.columns : undefined} done={done[`${key}/${item.id}`]} act={act} back={wide ? undefined : () => setChosen(undefined)} />
+    <Detail
+      item={item}
+      columns={layout.layout === 'table' ? layout.columns : undefined}
+      done={done[`${key}/${item.id}`]}
+      blocked={perm.ok ? undefined : perm.why}
+      act={act}
+      back={wide ? undefined : () => setChosen(undefined)}
+    />
   ) : null
 
   return (

@@ -10,6 +10,7 @@ import {
 } from './data'
 import { BRANCHE } from './branche'
 import * as L from './letters'
+import { needsLeitung, type Decision } from './team'
 import { HV_KIND_BY_NAME, HV_KPI_OWNER, HV_LAYOUT, HV_WAITING_OWNER, hvMakers, hvSources, type HvKind } from './hausverwaltung'
 
 const HV = BRANCHE === 'hausverwaltung'
@@ -86,6 +87,8 @@ export type WsItem = {
   cells?: string[]
   /** A decision that only a human can make; approving it clears it everywhere. */
   approval?: string
+  /** The department the decision belongs to, for who may take it. */
+  dept?: string
   /** Planned rather than done — used by the log's filter. */
   planned?: boolean
   /** The letter or mail this record sends, as it would go out. */
@@ -227,7 +230,7 @@ export function approvalsTarget(d: Department | null): WsTarget {
   return {
     kind: 'approvals',
     title: 'Freigaben',
-    sub: d ? `${d.short} · wartet auf Sie` : 'Ganzes Büro · wartet auf Sie',
+    sub: d ? `${d.short} · wartet auf Freigabe` : 'Ganzes Büro · wartet auf Freigabe',
     color: d?.color ?? '#e8c170',
     deptId: d?.id,
   }
@@ -737,7 +740,7 @@ function seedOf(s: string) {
 }
 
 /** Everything a window lists, including approvals owned by that agent. */
-export function itemsFor(t: WsTarget, approved: string[]): WsItem[] {
+export function itemsFor(t: WsTarget, approved: string[], decisions: Decision[] = []): WsItem[] {
   const dept = DEPARTMENTS.find((d) => d.id === t.deptId)
 
   if (t.kind === 'log') {
@@ -780,11 +783,12 @@ export function itemsFor(t: WsTarget, approved: string[]): WsItem[] {
             id: `ap-${d.id}-${i}`,
             title: w,
             sub: `${d.short} · ${owner.name}`,
-            badge: { text: 'Wartet auf Sie', tone: 'warn' as Tone },
+            badge: needsLeitung(w) ? { text: 'Unterschrift Leitung', tone: 'bad' as Tone } : { text: 'Wartet auf Freigabe', tone: 'warn' as Tone },
             body: L.approvalLetter(w)
               ? `${owner.name} hat das Schreiben vorbereitet. Nach Ihrer Freigabe geht es genau so raus, wie Sie es hier sehen.`
               : `${owner.name} hat das vorbereitet: ${owner.doing}. Nach Ihrer Freigabe wird es sofort ausgeführt.`,
             approval: w,
+            dept: d.id,
             letter: L.approvalLetter(w),
             actions: ['Freigeben', 'Ändern', 'Ablehnen'],
           }
@@ -801,21 +805,29 @@ export function itemsFor(t: WsTarget, approved: string[]): WsItem[] {
     const mine = dept.waiting
       .map((w, i) => ({ w, owner: waitingOwner(dept, i) }))
       .filter(({ owner }) => owner.id === t.agentId)
-      .map(({ w }, i) => ({
+      .map(({ w }, i) => {
+        const done = decisions.find((x) => x.text === w)
+        return {
         id: `wait${i}`,
         title: w,
-        sub: 'Vorbereitet vom Agenten',
-        meta: 'jetzt',
-        badge: approved.includes(w) ? { text: 'Freigegeben', tone: 'ok' as Tone } : { text: 'Wartet auf Sie', tone: 'warn' as Tone },
+        sub: done ? `${done.result} von ${done.name} · ${done.at}` : 'Vorbereitet vom Agenten',
+        meta: done ? done.at : 'jetzt',
+        badge: done
+          ? { text: done.result, tone: (done.result === 'Freigegeben' ? 'ok' : 'muted') as Tone }
+          : needsLeitung(w)
+            ? { text: 'Unterschrift Leitung', tone: 'bad' as Tone }
+            : { text: 'Wartet auf Freigabe', tone: 'warn' as Tone },
         body: L.approvalLetter(w)
           ? 'Das Schreiben ist fertig. Nach Ihrer Freigabe geht es genau so raus, wie Sie es hier sehen.'
           : 'Alles ist vorbereitet. Nach Ihrer Freigabe wird es sofort ausgeführt.',
         approval: w,
+        dept: dept.id,
         letter: L.approvalLetter(w),
         actions: approved.includes(w) ? [] : ['Freigeben', 'Ändern', 'Ablehnen'],
         col: LAYOUT[t.kind].columns?.[LAYOUT[t.kind].columns!.length - 2],
-        cells: LAYOUT[t.kind].columns?.map((_, ci) => (ci === 0 ? w : ci === LAYOUT[t.kind].columns!.length - 1 ? 'Wartet auf Sie' : '–')),
-      }))
+        cells: LAYOUT[t.kind].columns?.map((_, ci) => (ci === 0 ? w : ci === LAYOUT[t.kind].columns!.length - 1 ? (done ? done.result : 'Wartet auf Freigabe') : '–')),
+        }
+      })
     return [...mine, ...base]
   }
   return base

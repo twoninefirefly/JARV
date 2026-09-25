@@ -58,16 +58,12 @@ export const COMPANY = {
   name: params.get('firma')?.slice(0, 40) || KUNDE?.name || (BRANCHE === 'hausverwaltung' ? 'Beispiel Hausverwaltung' : 'Beispielfirma'),
   demo: !params.has('live'),
   assistant: 'Jarvis',
-  /**
-   * Opens the lock screen. This only keeps a demo from being browsed by
-   * accident — the page ships with it. Real customer data needs a server-side
-   * login in front of it, never a password in the page.
-   */
-  password: 'demo',
   /** Optional logo for the lock screen (an image URL or data: URI); the mark is used without one. */
   logo: KUNDE?.logo ?? '',
   /** The bare mark inside the logo, for the landing pad under the brain. */
   logoMark: KUNDE?.mark,
+  /** The person in the management login. */
+  chef: KUNDE?.chef,
   /** Minutes without a touch before the office locks itself. */
   autoLockMinutes: 5,
 }

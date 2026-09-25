@@ -5,7 +5,10 @@ import { deptOf } from './comms'
 import { agentTarget } from './workspaces'
 import { isMuted, setMuted } from './sound'
 
-/** An urgent message slides in at the top; tap it to go straight to the case. */
+/**
+ * An urgent message pops in at the top right, like a message on a phone:
+ * who it is from, what happened, "jetzt". Tap it to go straight to the case.
+ */
 export default function Alert() {
   const alert = useOffice((s) => s.alert)
   const raise = useOffice((s) => s.raise)
@@ -33,31 +36,40 @@ export default function Alert() {
   return (
     <AnimatePresence>
       {alert && (
-        <motion.button
+        <motion.div
           key={alert.id}
-          className={`alert${emergency ? ' alert--sos' : ''}`}
-          onClick={go}
-          initial={{ opacity: 0, y: -24, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -16 }}
-          transition={{ type: 'spring', damping: 24, stiffness: 280 }}
+          className={`notice${emergency ? ' notice--sos' : ''}`}
+          role="alert"
+          initial={{ opacity: 0, x: 60, scale: 0.96 }}
+          animate={{ opacity: 1, x: 0, scale: 1 }}
+          exit={{ opacity: 0, x: 60 }}
+          transition={{ type: 'spring', damping: 24, stiffness: 260 }}
         >
-          <span className="alert__pulse" aria-hidden />
-          <span className="alert__label">{emergency ? 'Notfall' : 'Dringend'}</span>
-          <span className="alert__text">
-            {alert.text}
-            <small>
-              {alert.from.agent} → {alert.to.agent} · {alert.filed}
-            </small>
-          </span>
-          <span className="alert__go">Ansehen →</span>
-        </motion.button>
+          <button className="notice__body" onClick={go}>
+            <span className="notice__app" aria-hidden>
+              {emergency ? '!' : '⚠'}
+            </span>
+            <span className="notice__main">
+              <span className="notice__head">
+                <b>{emergency ? 'Notfall' : 'Dringend'}</b> · {alert.from.agent}
+                <time>jetzt</time>
+              </span>
+              <span className="notice__text">{alert.text}</span>
+              <span className="notice__sub">
+                {alert.filed} · an {alert.to.agent} · tippen zum Öffnen
+              </span>
+            </span>
+          </button>
+          <button className="notice__close" onClick={() => raise(null)} aria-label="Benachrichtigung schließen">
+            ✕
+          </button>
+        </motion.div>
       )}
     </AnimatePresence>
   )
 }
 
-/** Sound on/off, remembered on this computer. */
+/** Voice on/off (the greeting), remembered on this computer. */
 export function SoundToggle() {
   const [off, setOff] = useState(isMuted())
   return (

@@ -298,5 +298,38 @@ export function approvalLetter(text: string): Letter | undefined {
   return map[text]?.()
 }
 
+// ---------------------------------------------------------------------------
+// Mail merge: one letter per recipient, for the post
+// ---------------------------------------------------------------------------
+
+const OWNERS = [
+  'Herr Albrecht', 'Frau Lorenz', 'Herr Jansen', 'Frau Krause', 'Fam. Petersen', 'Herr Dr. Brandt', 'Frau Wagner',
+  'Herr Keller', 'Fam. Yıldız', 'Frau Sommer', 'Herr Richter', 'Frau Engel', 'Herr Vogt', 'Fam. Lange',
+]
+const unitNo = (i: number) => `WE ${String(i + 1).padStart(2, '0')}`
+
+/** The owners' meeting invitation, once per owner, each with their own unit and salutation. */
+function etvBatch(o: { object: string; date: string; agenda: string[] }): Letter[] {
+  const base = etvInvite(o)
+  return OWNERS.map((p, i) => ({ ...base, to: [p, `${o.object}, ${unitNo(i)}`, '12345 Musterstadt'], salutation: greet(p) }))
+}
+
+/** Service-charge statements for one building, one per tenant with their own result. */
+function statementBatch(object: string): Letter[] {
+  return [
+    ['Frau Nowak', 84.2],
+    ['Herr Becker', -57.4],
+    ['Fam. Kowalski', 212.9],
+  ].map(([person, result], i) => statementCover({ person: String(person), object, unit: unitNo(i + 1), result: Number(result) }))
+}
+
+/** Decisions whose letter goes to many people at once. */
+export function approvalBatch(text: string): Letter[] | undefined {
+  if (text === 'Einladung ETV Parkallee 21 freigeben')
+    return etvBatch({ object: 'Parkallee 21', date: day(24), agenda: ['Jahresabrechnung 2025', 'Wirtschaftsplan 2027', 'Dachsanierung: Beschluss über die Angebote', 'Entlastung des Verwaltungsbeirats', 'Verschiedenes'] })
+  if (text === 'Nebenkostenabrechnungen Birkenweg 3 (3 Stück) freigeben') return statementBatch('Birkenweg 3')
+  return undefined
+}
+
 /** Who signs, for the footer of a letter. */
 export const signature = (l: Letter) => `${COMPANY.name} · ${l.from}`

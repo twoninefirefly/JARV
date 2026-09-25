@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { DEPARTMENTS } from './data'
 import { useOffice } from './state'
-import { chime } from './sound'
 import { BRANCHE } from './branche'
 import { HV_CRAFTS, HV_OBJECTS, HV_PEOPLE, HV_ROUTES } from './hausverwaltung'
 
@@ -92,7 +91,7 @@ export function useComms(running: boolean) {
     // A short backlog, so the feed is never empty on first look.
     for (let k = 6; k >= 1; k--) post(make(k * 5, new Date(now - k * 4 * 60_000)), false)
     let i = 0
-    // Urgent messages sound and show a banner — at most every 90 s, and the
+    // Urgent messages pop up as a notification — at most every 90 s, and the
     // first one not before half a minute in, so the office can be shown first.
     let lastAlert = Date.now() - 60_000
     const t = setInterval(() => {
@@ -100,7 +99,6 @@ export function useComms(running: boolean) {
       post(m, true)
       if (m.urgency && Date.now() - lastAlert > 90_000) {
         lastAlert = Date.now()
-        chime(m.urgency)
         raise(m)
       }
     }, 4200)

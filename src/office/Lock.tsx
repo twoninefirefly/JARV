@@ -5,7 +5,7 @@ import { useOffice } from './state'
 import { BRANCHE, BRANCHEN, setBranche } from './branche'
 import { HV_KUNDE, KUNDE } from './kunden'
 import { DEMO_PASSWORD, USERS, type Role, type User } from './team'
-import { greet, primeAudio } from './sound'
+import { greet } from './sound'
 
 /**
  * The lock screen: logo, clock, password, then a loading bar while the office
@@ -107,8 +107,6 @@ export default function Lock({ onStart }: { onStart: () => void }) {
 
   const start = (user: User, keep: boolean) => {
     signIn(user, keep)
-    // The sign-in click is what browsers need before any sound may play.
-    primeAudio()
     onStart()
     const t0 = performance.now()
     const tick = () => {

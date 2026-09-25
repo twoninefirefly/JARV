@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { WsTarget } from './workspaces'
 import type { Message } from './comms'
 import { USERS, type Decision, type User } from './team'
+import type { PrintJob } from './Print'
 
 // Demo persistence: the remembered login and today's decisions live in this
 // browser. The real system keeps both on the server.
@@ -73,6 +74,9 @@ type OfficeState = {
   /** An urgent message on screen, until dismissed or it times out. */
   alert: Message | null
   raise: (msg: Message | null) => void
+  /** Letters sent to the office printer today. */
+  prints: PrintJob[]
+  addPrint: (job: PrintJob) => void
   /** The customer's saved signature for management (a PNG data URL). */
   signature: string | null
   setSignature: (png: string | null) => void
@@ -113,6 +117,8 @@ export const useOffice = create<OfficeState>((set) => ({
   locked: true,
   unlock: () => set({ locked: false }),
   lock: () => set({ locked: true, ws: null, setup: false, cockpit: false, alert: null, view: { kind: 'overview' } }),
+  prints: [],
+  addPrint: (job) => set((s) => ({ prints: [...s.prints, job] })),
   alert: null,
   raise: (alert) => set({ alert }),
   signature: load<string | null>(KEY_SIGNATURE, null),

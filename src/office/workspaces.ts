@@ -97,6 +97,8 @@ export type WsItem = {
   planned?: boolean
   /** The letter or mail this record sends, as it would go out. */
   letter?: L.Letter
+  /** Every copy of a mail merge — one letter per recipient, for printing. */
+  batch?: L.Letter[]
 }
 
 export type Source = {
@@ -801,7 +803,8 @@ export function itemsFor(t: WsTarget, approved: string[], decisions: Decision[] 
               : `${owner.name} hat das vorbereitet: ${owner.doing}. Nach Ihrer Freigabe wird es sofort ausgeführt.`,
             approval: w,
             dept: d.id,
-            letter: L.approvalLetter(w),
+            batch: L.approvalBatch(w),
+            letter: L.approvalBatch(w)?.[0] ?? L.approvalLetter(w),
             actions: done ? [] : ['Freigeben', 'Ändern', 'Ablehnen'],
           }
         }),
@@ -837,7 +840,8 @@ export function itemsFor(t: WsTarget, approved: string[], decisions: Decision[] 
         dept: dept.id,
         preparedBy: t.title,
         decision: done,
-        letter: L.approvalLetter(w),
+        batch: L.approvalBatch(w),
+        letter: L.approvalBatch(w)?.[0] ?? L.approvalLetter(w),
         actions: approved.includes(w) ? [] : ['Freigeben', 'Ändern', 'Ablehnen'],
         col: LAYOUT[t.kind].columns?.[LAYOUT[t.kind].columns!.length - 2],
         cells: LAYOUT[t.kind].columns?.map((_, ci) => (ci === 0 ? w : ci === LAYOUT[t.kind].columns!.length - 1 ? (done ? done.result : 'Wartet auf Freigabe') : '–')),

@@ -3,7 +3,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY, DEPARTMENTS, deptProtocol, fmt, split } from './data'
 import { useOffice } from './state'
 import { Icon, Spark } from './Icon'
-import { day, signature, type Letter } from './letters'
+import { LetterView } from './LetterPaper'
+import { PrintDialog, type PrintJob } from './Print'
 import { DEMO_PASSWORD, USERS, mayDecide, needsLeitung } from './team'
 import { ConfirmDecision, SignaturePad } from './Signature'
 import {
@@ -121,105 +122,8 @@ function Table({ items, columns, chosen, pick }: { items: WsItem[]; columns: str
   )
 }
 
-/** `[[field]]` → a highlighted field, so you see exactly what the agent filled in. */
-function Filled({ text }: { text: string }) {
-  const parts = text.split(/\[\[(.+?)\]\]/g)
-  return <>{parts.map((p, i) => (i % 2 ? <mark key={i}>{p}</mark> : p))}</>
-}
-
-/** A letter or mail exactly as it goes out after approval. */
-function LetterView({ letter, signed }: { letter: Letter; signed?: { png: string; name: string } }) {
-  const mail = letter.channel !== 'Brief'
-  return (
-    <div className="letter">
-      <div className="letter__meta">
-        <span className="badge badge--info">{letter.channel}</span>
-        <span>Vorlage: {letter.template}</span>
-        <span className="letter__legend">
-          <mark>markiert</mark> = vom Agenten eingesetzt
-        </span>
-      </div>
-      <article className={`paper${mail ? ' paper--mail' : ''}`}>
-        {mail ? (
-          <dl className="paper__mailhead">
-            <div>
-              <dt>Von</dt>
-              <dd>{signature(letter)}</dd>
-            </div>
-            <div>
-              <dt>An</dt>
-              <dd>
-                <Filled text={`[[${letter.to.join(', ')}]]`} />
-              </dd>
-            </div>
-            <div>
-              <dt>Betreff</dt>
-              <dd>
-                <b>
-                  <Filled text={letter.subject} />
-                </b>
-              </dd>
-            </div>
-            {letter.attachments && (
-              <div>
-                <dt>Anhang</dt>
-                <dd>{letter.attachments.map((a) => `📎 ${a}`).join('  ')}</dd>
-              </div>
-            )}
-          </dl>
-        ) : (
-          <>
-            <header className="paper__head">
-              {COMPANY.logo ? <img src={COMPANY.logo} alt={COMPANY.name} /> : <b>{COMPANY.name}</b>}
-            </header>
-            <div className="paper__sender">{signature(letter)}</div>
-            <address className="paper__to">
-              {letter.to.map((l, i) => (
-                <div key={i}>
-                  <Filled text={`[[${l}]]`} />
-                </div>
-              ))}
-            </address>
-            <div className="paper__date">
-              Musterstadt, <Filled text={`[[${day()}]]`} />
-            </div>
-            <p className="paper__subject">
-              <Filled text={letter.subject} />
-            </p>
-          </>
-        )}
-        <p>
-          <Filled text={letter.salutation} />
-        </p>
-        {letter.body.map((b, i) => (
-          <p key={i}>
-            <Filled text={b} />
-          </p>
-        ))}
-        <p>
-          Mit freundlichen Grüßen
-          <br />
-          {signed && (
-            <>
-              <img className="paper__sig" src={signed.png} alt={`Unterschrift ${signed.name}`} />
-              <br />
-              {signed.name}, Geschäftsführung
-              <br />
-            </>
-          )}
-          {COMPANY.name}
-          <br />
-          <span className="paper__dept">{letter.from}</span>
-        </p>
-        {!mail && letter.attachments && <p className="paper__attach">Anlagen: {letter.attachments.join(', ')}</p>}
-      </article>
-      {letter.basis && <p className="ws-note">Rechtsgrundlage der Vorlage: {letter.basis}. Die Vorlagen werden bei der Einrichtung durch Ihre eigenen ersetzt und einmal juristisch geprüft.</p>}
-    </div>
-  )
-}
-
 /** What happened to a decision so far: prepared, decided by whom and when, sent. */
-function Trail({ item }: { item: WsItem }) {
+function Trail({ item, printed, onPrint }: { item: WsItem; printed?: PrintJob; onPrint?: () => void }) {
   const d = item.decision
   const who = USERS.filter((u) => u.role === 'team' && item.dept && u.depts.includes(item.dept)).map((u) => u.name)
   const waitingFor = needsLeitung(item.approval!) ? 'die Leitung (Unterschrift)' : who.join(' oder ') || 'die Abteilung'
@@ -248,6 +152,26 @@ function Trail({ item }: { item: WsItem }) {
               <small>{d.at} Uhr</small>
             </li>
           )}
+          {d.result === 'Freigegeben' && printed && (
+            <li className="is-done">
+              <i />
+              <span>
+                Gedruckt: <b>{printed.count} {printed.count === 1 ? 'Brief' : 'Briefe'}</b> · {printed.printer} · {printed.name}
+              </span>
+              <small>{printed.at} Uhr</small>
+            </li>
+          )}
+          {d.result === 'Freigegeben' && !printed && onPrint && (
+            <li className="is-wait">
+              <i />
+              <span>
+                <button className="btn btn--small trail__print" onClick={onPrint}>
+                  🖨 Postversand: {item.batch?.length ?? 1} {(item.batch?.length ?? 1) === 1 ? 'Brief' : 'Briefe'} drucken
+                </button>
+              </span>
+              <small>optional</small>
+            </li>
+          )}
         </>
       ) : (
         <li className="is-wait">
@@ -268,6 +192,8 @@ function Detail({
   done,
   blocked,
   signed,
+  printed,
+  onPrint,
   act,
   back,
 }: {
@@ -277,6 +203,8 @@ function Detail({
   /** Why the signed-in person may look but not decide. */
   blocked?: string
   signed?: { png: string; name: string }
+  printed?: PrintJob
+  onPrint?: () => void
   act: (item: WsItem, action: string) => void
   back?: () => void
 }) {
@@ -317,8 +245,8 @@ function Detail({
           ))}
         </dl>
       )}
-      {item.approval && <Trail item={item} />}
-      {item.letter && <LetterView letter={item.letter} signed={signed} />}
+      {item.approval && <Trail item={item} printed={printed} onPrint={onPrint} />}
+      {item.letter && <LetterView letter={item.letter} signed={signed} count={item.batch?.length} />}
       {!done && blocked && (
         <div className={`ws-actions${item.letter ? ' ws-actions--sticky' : ''}`}>
           <p className="ws-lock">
@@ -437,6 +365,9 @@ function Window({ ws }: { ws: WsTarget }) {
   // Every decision is confirmed by the signed-in person before it counts.
   const [confirming, setConfirming] = useState<{ it: WsItem; action: string } | null>(null)
   const remembered = useOffice((s) => s.remembered)
+  const prints = useOffice((s) => s.prints)
+  const addPrint = useOffice((s) => s.addPrint)
+  const [printing, setPrinting] = useState<WsItem | null>(null)
   const showSetup = useOffice((s) => s.showSetup)
   const wide = useWide()
 
@@ -560,6 +491,8 @@ function Window({ ws }: { ws: WsTarget }) {
     <Detail
       item={shown!}
       signed={signedBy && signature ? { png: signature, name: signedBy.name } : undefined}
+      printed={item.approval ? prints.find((p) => p.text === item.approval) : undefined}
+      onPrint={(item.batch || item.letter?.channel === 'Brief') && item.decision ? () => setPrinting(item) : undefined}
       columns={layout.layout === 'table' ? layout.columns : undefined}
       done={done[`${key}/${item.id}`]}
       blocked={perm.ok ? undefined : perm.why}
@@ -689,6 +622,16 @@ function Window({ ws }: { ws: WsTarget }) {
               setConfirming(null)
             }}
             onCancel={() => setConfirming(null)}
+          />
+        )}
+        {printing && user && (
+          <PrintDialog
+            letters={printing.batch ?? [printing.letter!]}
+            what={printing.title.replace(/ (freigeben|durchsehen)$/, '')}
+            signed={signedBy && signature ? { png: signature, name: signedBy.name } : undefined}
+            by={user.name}
+            onDone={(job) => addPrint({ ...job, text: printing.approval! })}
+            onCancel={() => setPrinting(null)}
           />
         )}
         {signing && !signature && (

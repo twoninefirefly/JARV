@@ -89,8 +89,11 @@ export default function Office() {
         </span>
         <span className="topbar__actions">
           {!locked && (
-            <button className="topbar__setup" onClick={() => showSetup(true)}>
-              Einrichtung
+            <button className="topbar__setup" onClick={() => showSetup(true)} aria-label="Einrichtung" title="Einrichtung">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M4 6h16M4 12h10M4 18h6M17 15l2 2 4-4" />
+              </svg>
+              <span>Einrichtung</span>
             </button>
           )}
           {view.kind !== 'overview' && (
@@ -108,9 +111,11 @@ export default function Office() {
       </header>
 
       <AnimatePresence>
-        {view.kind === 'overview' && (
-          <motion.div className="hint" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            Tippe auf eine Abteilung · Ziehen dreht
+        {(view.kind === 'overview' || view.kind === 'neural') && (
+          <motion.div key={view.kind} className="hint" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            {view.kind === 'overview'
+              ? 'Tippe auf eine Abteilung · Doppelklick aufs Gehirn zoomt hinein'
+              : 'Jeder Punkt ist ein Agent · antippen öffnet ihn'}
           </motion.div>
         )}
       </AnimatePresence>

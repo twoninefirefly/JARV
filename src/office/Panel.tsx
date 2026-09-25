@@ -278,6 +278,7 @@ function Header({ icon, title, sub, color, onClose }: { icon: Parameters<typeof 
 
 function BrainSheet({ now, send }: { now: Date; send: (q: string) => void }) {
   const show = useOffice((s) => s.show)
+  const inside = useOffice((s) => s.view.kind === 'neural')
   const open = useOffice((s) => s.open)
   return (
     <>
@@ -299,6 +300,9 @@ function BrainSheet({ now, send }: { now: Date; send: (q: string) => void }) {
         onChip={send}
         onOpen={() => open(brainTarget('Dokumente'))}
       />
+      <button className="open-ws open-ws--brain" onClick={() => show(inside ? { kind: 'brain' } : { kind: 'neural' })}>
+        {inside ? '← Zurück zum ganzen Gehirn' : 'Ins Gehirn hineinzoomen →'}
+      </button>
       <Section title="Abteilungen" aside={`${DEPARTMENTS.length}`}>
         <div className="dept-list">
           {DEPARTMENTS.map((d) => (
@@ -462,7 +466,7 @@ function OverviewSheet({ now }: { now: Date }) {
 }
 
 function whoFor(view: View): Who | null {
-  if (view.kind === 'brain') return { kind: 'brain' }
+  if (view.kind === 'brain' || view.kind === 'neural') return { kind: 'brain' }
   if (view.kind === 'dept') return { kind: 'dept', dept: DEPARTMENTS.find((d) => d.id === view.id)! }
   return null
 }

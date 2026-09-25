@@ -6,6 +6,8 @@ import type { Message } from './comms'
 export type View =
   | { kind: 'overview' }
   | { kind: 'brain' }
+  /** Inside the brain: departments and agents as neurons. */
+  | { kind: 'neural' }
   | { kind: 'dept'; id: string; agent?: string }
 
 type OfficeState = {

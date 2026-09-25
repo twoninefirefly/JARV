@@ -17,7 +17,7 @@ import { agentTarget } from './workspaces'
  * scene, so dragging turns the whole building.
  */
 
-const RING = 4.7 // distance of each floor from the brain
+const RING = 6 // distance of each floor from the brain; below ~5.9 neighbouring floors' corners overlap
 const FLOOR = 3.4 // floor edge length
 const TOP = 0.3 // floor surface height
 const BG = '#0e0b09'
@@ -66,13 +66,32 @@ const mat = {
   screen: new THREE.MeshStandardMaterial({ color: '#1b1d22', roughness: 0.4 }),
   chair: new THREE.MeshStandardMaterial({ color: '#2a2724', roughness: 0.8 }),
   suit: new THREE.MeshStandardMaterial({ color: '#1c1a19', roughness: 0.85 }),
-  skin: new THREE.MeshStandardMaterial({ color: '#c9a184', roughness: 0.7 }),
-  hair: new THREE.MeshStandardMaterial({ color: '#2b1d14', roughness: 0.9 }),
   pot: new THREE.MeshStandardMaterial({ color: '#6b5b4b', roughness: 0.9 }),
   leaf: new THREE.MeshStandardMaterial({ color: '#4f7a3a', roughness: 0.8 }),
 }
 
-function Workstation({ agent, seed }: { agent: Agent; seed: number }) {
+// People: a mixed team — women and men, different hair, skin and clothes.
+const SKINS = ['#e8c4a8', '#c9a184', '#a97c5c', '#7a5238', '#f0d2bc'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 }))
+const HAIRS = ['#2b1d14', '#4a2f1d', '#8a5a32', '#c9a063', '#1a1411', '#6b2f1f'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }))
+const SUITS = ['#1c1a19', '#23293a', '#3a3a3d', '#2f3b33'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 }))
+const TOPS = ['#7a3b3b', '#2f4a5a', '#d9d0c3', '#3d3552', '#4f5d3a', '#1c1a19'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 }))
+
+type Look = { female: boolean; skin: THREE.Material; hair: THREE.Material; top: THREE.Material; ponytail: boolean }
+
+/** A fixed look per desk, so the same person always sits in the same place. */
+function lookFor(desk: number): Look {
+  // A hash rather than a seeded sequence: neighbouring desks must not look alike.
+  let n = 0
+  const r = () => {
+    const x = Math.sin(desk * 127.1 + ++n * 311.7) * 43758.5453
+    return x - Math.floor(x)
+  }
+  const female = desk % 2 === 0 ? r() < 0.65 : r() < 0.35
+  const pick = <T,>(xs: T[]) => xs[Math.floor(r() * xs.length)]
+  return { female, skin: pick(SKINS), hair: pick(HAIRS), top: female ? pick(TOPS) : pick(SUITS), ponytail: r() < 0.4 }
+}
+
+function Workstation({ agent, seed, look }: { agent: Agent; seed: number; look: Look }) {
   const body = useRef<THREE.Group>(null)
   const glow = useMemo(
     () =>
@@ -124,24 +143,42 @@ function Workstation({ agent, seed }: { agent: Agent; seed: number }) {
       </mesh>
       {/* person */}
       <group ref={body} position={[0, 0, 0.27]}>
-        <mesh material={mat.suit} position={[0, 0.3, 0]} castShadow>
-          <boxGeometry args={[0.17, 0.24, 0.12]} />
+        <mesh material={look.top} position={[0, 0.3, 0]} castShadow>
+          <boxGeometry args={look.female ? [0.15, 0.24, 0.11] : [0.17, 0.24, 0.12]} />
         </mesh>
         <mesh material={mat.suit} position={[0, 0.2, -0.1]} castShadow>
           <boxGeometry args={[0.15, 0.06, 0.18]} />
         </mesh>
-        <mesh material={mat.skin} position={[0, 0.48, 0]} castShadow>
+        <mesh material={look.skin} position={[0, 0.48, 0]} castShadow>
           <sphereGeometry args={[0.065, 14, 12]} />
         </mesh>
-        <mesh material={mat.hair} position={[0, 0.51, 0.015]}>
+        <mesh material={look.hair} position={[0, 0.51, 0.015]}>
           <sphereGeometry args={[0.067, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
         </mesh>
+        {look.female &&
+          (look.ponytail ? (
+            // a ponytail at the back of the head (the person faces -z)
+            <mesh material={look.hair} position={[0, 0.47, 0.08]} rotation={[0.5, 0, 0]} castShadow>
+              <capsuleGeometry args={[0.025, 0.08, 4, 8]} />
+            </mesh>
+          ) : (
+            // shoulder-length hair
+            <mesh material={look.hair} position={[0, 0.43, 0.035]} castShadow>
+              <boxGeometry args={[0.15, 0.16, 0.085]} />
+            </mesh>
+          ))}
         {/* arms reaching for the keyboard */}
-        <mesh material={mat.suit} position={[-0.1, 0.3, -0.07]} rotation={[0.9, 0, 0]} castShadow>
+        <mesh material={look.top} position={[-0.1, 0.3, -0.07]} rotation={[0.9, 0, 0]} castShadow>
           <boxGeometry args={[0.045, 0.16, 0.045]} />
         </mesh>
-        <mesh material={mat.suit} position={[0.1, 0.3, -0.07]} rotation={[0.9, 0, 0]} castShadow>
+        <mesh material={look.top} position={[0.1, 0.3, -0.07]} rotation={[0.9, 0, 0]} castShadow>
           <boxGeometry args={[0.045, 0.16, 0.045]} />
+        </mesh>
+        <mesh material={look.skin} position={[-0.1, 0.27, -0.14]}>
+          <sphereGeometry args={[0.022, 8, 6]} />
+        </mesh>
+        <mesh material={look.skin} position={[0.1, 0.27, -0.14]}>
+          <sphereGeometry args={[0.022, 8, 6]} />
         </mesh>
       </group>
     </group>
@@ -173,7 +210,8 @@ function Floor({ dept }: { dept: Department }) {
   const shade = useRef(1)
   const at = useMemo(() => place(dept.angle), [dept.angle])
   const active = view.kind === 'dept' && view.id === dept.id
-  const dim = view.kind === 'dept' && !active
+  const inside = view.kind === 'neural'
+  const dim = (view.kind === 'dept' && !active) || inside
 
   const top = useMemo(
     () => new THREE.MeshStandardMaterial({ color: dept.color, roughness: 0.85 }),
@@ -193,23 +231,27 @@ function Floor({ dept }: { dept: Department }) {
     top.emissive.set(dept.color)
     top.emissiveIntensity += (want - top.emissiveIntensity) * Math.min(1, dt * 6)
     // Step back the floors you're not looking at.
-    shade.current += ((dim ? 0.55 : 1) - shade.current) * Math.min(1, dt * 6)
+    shade.current += ((inside ? 0.35 : dim ? 0.55 : 1) - shade.current) * Math.min(1, dt * 6)
     top.color.set(dept.color).multiplyScalar(shade.current)
   })
 
   const pick = () => show({ kind: 'dept', id: dept.id })
   const lead = SPOTS[0]
+  const looks = useMemo(() => dept.agents.map((_, i) => lookFor(DEPARTMENTS.indexOf(dept) * 7 + i)), [dept])
 
   // Build-up after unlock: each floor rises into place, one after the other.
   const rise = useRef<THREE.Group>(null)
   const order = DEPARTMENTS.indexOf(dept)
-  useFrame(({ clock }) => {
+  // Inside the brain the floors sink away, so the brain stands alone.
+  const away = useRef(0)
+  useFrame(({ clock }, dt) => {
     if (!rise.current) return
+    away.current += ((inside ? 1 : 0) - away.current) * Math.min(1, dt * 3)
     const k = THREE.MathUtils.clamp((clock.elapsedTime - 0.3 - order * 0.18) / 0.9, 0, 1)
     const e = 1 - Math.pow(1 - k, 3)
-    rise.current.position.y = (1 - e) * -3
-    rise.current.scale.setScalar(0.6 + 0.4 * e)
-    rise.current.visible = k > 0
+    rise.current.position.y = (1 - e) * -3 - away.current * 4
+    rise.current.scale.setScalar((0.6 + 0.4 * e) * (1 - 0.3 * away.current))
+    rise.current.visible = k > 0 && away.current < 0.97
   })
 
   return (
@@ -251,7 +293,7 @@ function Floor({ dept }: { dept: Department }) {
                     : undefined
                 }
               >
-                <Workstation agent={a} seed={i * 1.7 + dept.angle * 3} />
+                <Workstation agent={a} seed={i * 1.7 + dept.angle * 3} look={looks[i]} />
               </group>
             )
           })}
@@ -264,7 +306,7 @@ function Floor({ dept }: { dept: Department }) {
       </group>
 
       {/* The badge floats over the floor; hidden while you're inside it. */}
-      {!active && (
+      {!active && !inside && (
         <Html position={[0, 1.35, 0]} center zIndexRange={[20, 0]}>
           <button className="floor-badge" style={{ ['--c' as string]: dept.color }} onClick={pick}>
             <span className="floor-badge__icon">
@@ -333,6 +375,7 @@ const brainVertex = /* glsl */ `
   attribute vec3 aColor;
   uniform float uTime;
   uniform float uPixel;
+  uniform float uDim;
   varying vec3 vColor;
   varying float vFlicker;
   void main() {
@@ -350,16 +393,24 @@ const brainVertex = /* glsl */ `
 const brainFragment = /* glsl */ `
   varying vec3 vColor;
   varying float vFlicker;
+  uniform float uDim;
   void main() {
     float d = length(gl_PointCoord - 0.5);
     float a = smoothstep(0.5, 0.0, d);
-    gl_FragColor = vec4(vColor * vFlicker * 1.6, a * vFlicker);
+    gl_FragColor = vec4(vColor * vFlicker * 1.6 * uDim, a * vFlicker * uDim);
   }
 `
+
+/** Size of the brain in the office, and how much it grows when you step inside. */
+const BRAIN_SCALE = 1.6
+const INSIDE_GROW = 1.45
 
 function Brain() {
   const show = useOffice((s) => s.show)
   const spin = useRef<THREE.Group>(null)
+  const outer = useRef<THREE.Group>(null)
+  const grow = useRef(1)
+  const inside = useOffice((s) => s.view.kind === 'neural')
   const light = useRef<THREE.PointLight>(null)
   const dpr = useThree((s) => s.viewport.dpr)
 
@@ -403,7 +454,7 @@ function Brain() {
     const material = new THREE.ShaderMaterial({
       vertexShader: brainVertex,
       fragmentShader: brainFragment,
-      uniforms: { uTime: { value: 0 }, uPixel: { value: 1 } },
+      uniforms: { uTime: { value: 0 }, uPixel: { value: 1 }, uDim: { value: 1 } },
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -449,6 +500,14 @@ function Brain() {
       spin.current.scale.setScalar(born * (1 + flare * 0.08))
     }
     wire.opacity = 0.18 + flare * 0.5
+    // Stepping inside: the brain swells so its neurons can be told apart.
+    const want = useOffice.getState().view.kind === 'neural' ? INSIDE_GROW : 1
+    grow.current += (want - grow.current) * Math.min(1, dt * 3)
+    if (outer.current) outer.current.scale.setScalar(BRAIN_SCALE * grow.current)
+    // Inside, the cloud steps back so the neurons stand out.
+    const g = (grow.current - 1) / (INSIDE_GROW - 1)
+    material.uniforms.uDim.value = 1 - 0.6 * g
+    wire.opacity *= 1 - 0.5 * g
     if (light.current) light.current.intensity = 6 * born + flare * 10
   })
 
@@ -469,34 +528,144 @@ function Brain() {
     <group>
       {/* dark plinth */}
       <mesh position={[0, 0.08, 0]} receiveShadow>
-        <boxGeometry args={[3.2, 0.16, 3.2]} />
+        <boxGeometry args={[3.8, 0.16, 3.8]} />
         <meshStandardMaterial color="#1a1512" roughness={0.9} />
       </mesh>
       <mesh position={[0, 0.17, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[5, 5]} />
+        <planeGeometry args={[6, 6]} />
         <meshBasicMaterial map={glow} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
       <mesh position={[0, 0.2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1.1, 0.014, 8, 96]} />
+        <torusGeometry args={[1.35, 0.014, 8, 96]} />
         <meshBasicMaterial color={[1.5, 0.75, 0.45]} toneMapped={false} />
       </mesh>
-      <group position={[0, 1.75, 0]} scale={1.35}>
+      <group ref={outer} position={[0, 1.75, 0]} scale={BRAIN_SCALE}>
         <group ref={spin}>
           <points geometry={geometry} material={material} />
           <lineSegments geometry={synapses} material={wire} />
         </group>
-        {/* an invisible hit target — points are too sparse to click */}
-        <mesh
-          onClick={onTap(() => show({ kind: 'brain' }))}
-          onPointerOver={() => (document.body.style.cursor = 'pointer')}
-          onPointerOut={() => (document.body.style.cursor = '')}
-        >
-          <sphereGeometry args={[0.95, 16, 12]} />
-          <meshBasicMaterial visible={false} />
-        </mesh>
+        <Neurons />
+        {/* An invisible hit target — points are too sparse to click. Gone inside the brain, so it doesn't catch the taps meant for the neurons. */}
+        {!inside && (
+          <mesh
+            onClick={onTap(() => show({ kind: 'brain' }))}
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              show({ kind: 'neural' })
+            }}
+            onPointerOver={() => (document.body.style.cursor = 'pointer')}
+            onPointerOut={() => (document.body.style.cursor = '')}
+          >
+            <sphereGeometry args={[0.95, 16, 12]} />
+            <meshBasicMaterial visible={false} />
+          </mesh>
+        )}
       </group>
       <pointLight ref={light} position={[0, 1.4, 0]} color="#ff9a5c" intensity={6} distance={7} decay={1.6} />
       <BrainBadge />
+    </group>
+  )
+}
+
+/**
+ * Inside the brain: every department is a neuron on the side facing its
+ * floor, with its agents around it. Tap a department to fly to it, an agent
+ * to open its work.
+ */
+function Neurons() {
+  const inside = useOffice((s) => s.view.kind === 'neural')
+  const show = useOffice((s) => s.show)
+  const open = useOffice((s) => s.open)
+  const [hover, setHover] = useState<string | null>(null)
+  const root = useRef<THREE.Group>(null)
+  const k = useRef(0)
+
+  const nodes = useMemo(
+    () =>
+      DEPARTMENTS.map((d) => {
+        const out = place(d.angle).setY(0).normalize()
+        // On the surface of the (ellipsoid) brain, a little above the equator.
+        const dir = new THREE.Vector3(out.x, 0.32, out.z).normalize()
+        const at = new THREE.Vector3(dir.x * 0.68, dir.y * 0.66, dir.z * 0.9)
+        // Two directions along the surface, for the ring of agents.
+        const t1 = new THREE.Vector3(0, 1, 0).cross(dir).normalize()
+        const t2 = dir.clone().cross(t1).normalize()
+        const team = d.agents.filter((a) => !a.lead)
+        const agents = team.map((a, i) => {
+          const th = (i / team.length) * Math.PI * 2 + 0.4
+          const p = at.clone().addScaledVector(t1, Math.cos(th) * 0.2).addScaledVector(t2, Math.sin(th) * 0.2).addScaledVector(dir, 0.04)
+          return { a, p }
+        })
+        // Just over the bloom threshold: a glow, not a flare.
+        const bright = new THREE.Color(d.color).multiplyScalar(1.35)
+        const soft = new THREE.Color(d.color).multiplyScalar(0.9)
+        return { d, at, agents, bright, soft }
+      }),
+    [],
+  )
+  const waiting = useMemo(() => new THREE.Color('#ffb347').multiplyScalar(1.1), [])
+
+  useFrame(({ clock }, dt) => {
+    k.current += ((inside ? 1 : 0) - k.current) * Math.min(1, dt * 4)
+    if (!root.current) return
+    root.current.visible = k.current > 0.02
+    root.current.scale.setScalar(0.6 + 0.4 * k.current)
+    // A slow pulse on the department neurons, so they read as alive.
+    root.current.traverse((c) => {
+      if (c.userData.pulse !== undefined) c.scale.setScalar(1 + 0.18 * Math.sin(clock.elapsedTime * 2.4 + c.userData.pulse))
+    })
+  })
+
+  return (
+    <group ref={root} visible={false}>
+      {nodes.map(({ d, at, agents, bright, soft }, di) => (
+        <group key={d.id}>
+          <mesh position={at} userData={{ pulse: di }} onClick={onTap(() => inside && show({ kind: 'dept', id: d.id }))}>
+            <sphereGeometry args={[0.03, 16, 12]} />
+            <meshBasicMaterial color={bright} toneMapped={false} />
+          </mesh>
+          <Line points={[[0, 0, 0], at.toArray()]} color={d.color} lineWidth={1.2} transparent opacity={0.5} />
+          {agents.map(({ a, p }) => (
+            <group key={a.id}>
+              <Line points={[at.toArray(), p.toArray()]} color={d.color} lineWidth={0.8} transparent opacity={0.45} />
+              <mesh
+                position={p}
+                onClick={onTap(() => {
+                  if (!inside) return
+                  show({ kind: 'dept', id: d.id, agent: a.id })
+                  open(agentTarget(d, a))
+                })}
+                onPointerOver={(e) => {
+                  e.stopPropagation()
+                  setHover(a.id)
+                  document.body.style.cursor = 'pointer'
+                }}
+                onPointerOut={() => {
+                  setHover(null)
+                  document.body.style.cursor = ''
+                }}
+              >
+                <sphereGeometry args={[a.status === 'wartet' ? 0.016 : 0.012, 10, 8]} />
+                <meshBasicMaterial color={a.status === 'wartet' ? waiting : soft} toneMapped={false} />
+              </mesh>
+              {inside && hover === a.id && (
+                <Html position={p} center zIndexRange={[30, 0]} style={{ pointerEvents: 'none' }}>
+                  <div className="neuron-tip">{a.name}</div>
+                </Html>
+              )}
+            </group>
+          ))}
+          {inside && (
+            <Html position={at.clone().multiplyScalar(1.28)} center zIndexRange={[25, 0]}>
+              <button className="neuron-tag" style={{ ['--c' as string]: d.color }} onClick={() => show({ kind: 'dept', id: d.id })}>
+                <Icon name={d.icon} size={14} />
+                {d.short}
+                <small>{d.agents.length}</small>
+              </button>
+            </Html>
+          )}
+        </group>
+      ))}
     </group>
   )
 }
@@ -506,7 +675,7 @@ function BrainBadge() {
   const show = useOffice((s) => s.show)
   if (view.kind !== 'overview') return null
   return (
-    <Html position={[0, 2.5, 0]} center zIndexRange={[20, 0]}>
+    <Html position={[0, 2.85, 0]} center zIndexRange={[20, 0]}>
       <button className="brain-badge" onClick={() => show({ kind: 'brain' })}>
         <span className="brain-badge__dot" />
         Das Gehirn · <b>{fmt(BRAIN.stats[0].value)}</b> Dokumente
@@ -525,7 +694,7 @@ function Links() {
       DEPARTMENTS.map((d) => {
         const end = place(d.angle)
         const dir = end.clone().normalize()
-        const a = dir.clone().multiplyScalar(1.1).setY(0.2)
+        const a = dir.clone().multiplyScalar(1.35).setY(0.2)
         const b = end.clone().sub(dir.clone().multiplyScalar(FLOOR * 0.62)).setY(0.05)
         const mid = a.clone().lerp(b, 0.5).setY(0.5)
         return new THREE.QuadraticBezierCurve3(a, mid, b)
@@ -691,8 +860,12 @@ function Rig() {
       // Fit the whole ring, whichever axis is tighter.
       const vf = THREE.MathUtils.degToRad(cam.fov) / 2
       const hf = Math.atan(Math.tan(vf) * aspect)
-      dist = Math.max(6.9 / Math.tan(hf), 7.8 / Math.tan(vf))
+      dist = Math.max(8.7 / Math.tan(hf), 9.8 / Math.tan(vf))
       polar = aspect < 0.8 ? 0.55 : 0.8
+    } else if (view.kind === 'neural') {
+      focus = new THREE.Vector3(0, 1.9, 0)
+      dist = aspect < 0.8 ? 21 : 11
+      polar = 0.78
     } else if (view.kind === 'brain') {
       focus = new THREE.Vector3(0, 1.1, 0)
       dist = aspect < 0.8 ? 16 : 10
@@ -758,7 +931,7 @@ function Rig() {
       autoRotateSpeed={0.35}
       minPolarAngle={0.35}
       maxPolarAngle={1.2}
-      minDistance={5}
+      minDistance={3.5}
       maxDistance={60}
       onStart={() => {
         goal.current = null
@@ -818,10 +991,10 @@ export default function Scene() {
         color="#fff1e0"
         castShadow
         shadow-mapSize={phone() ? [1024, 1024] : [2048, 2048]}
-        shadow-camera-left={-12}
-        shadow-camera-right={12}
-        shadow-camera-top={12}
-        shadow-camera-bottom={-12}
+        shadow-camera-left={-15}
+        shadow-camera-right={15}
+        shadow-camera-top={15}
+        shadow-camera-bottom={-15}
         shadow-bias={-0.0004}
       />
       <Ground />

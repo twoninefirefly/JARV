@@ -1644,6 +1644,21 @@ button {
   letter-spacing: 0.08em;
   cursor: pointer;
 }
+.topbar__setup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 560px) {
+  .topbar__setup {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+  .topbar__setup span {
+    display: none;
+  }
+}
 .topbar__setup:hover {
   border-color: var(--accent);
 }
@@ -1839,4 +1854,44 @@ button {
   .setup__logo {
     filter: none;
   }
+}
+
+/* ------------------------------------------------------------ inside the brain */
+
+.neuron-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px 6px 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--c) 70%, transparent);
+  background: rgba(22, 18, 15, 0.92);
+  color: var(--text);
+  font: 600 12.5px var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--c) 35%, transparent);
+}
+.neuron-tag svg {
+  color: var(--c);
+}
+.neuron-tag small {
+  font: 11px var(--mono);
+  color: var(--muted);
+}
+.neuron-tag:hover {
+  border-color: var(--c);
+}
+.neuron-tip {
+  transform: translateY(-18px);
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(22, 18, 15, 0.94);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font: 11.5px var(--sans);
+  white-space: nowrap;
+}
+.open-ws--brain {
+  margin-top: -6px;
 }

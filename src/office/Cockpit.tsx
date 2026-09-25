@@ -21,7 +21,7 @@ export default function Cockpit() {
   const user = useOffice((s) => s.user)
   const approved = useOffice((s) => s.approved)
   const decisions = useOffice((s) => s.decisions)
-  const signature = useOffice((s) => s.signature)
+  const signature = useOffice((s) => (s.user ? s.signatures[s.user.id] : undefined))
   const setSignature = useOffice((s) => s.setSignature)
   const [pad, setPad] = useState(false)
 
@@ -118,7 +118,7 @@ export default function Cockpit() {
                     {signature ? 'Neu hinterlegen' : 'Unterschrift hinterlegen'}
                   </button>
                   {signature && (
-                    <button className="btn btn--small" onClick={() => setSignature(null)}>
+                    <button className="btn btn--small" onClick={() => setSignature(user.id, null)}>
                       Entfernen
                     </button>
                   )}
@@ -213,7 +213,7 @@ export default function Cockpit() {
             {pad && (
               <SignaturePad
                 onSave={(png) => {
-                  setSignature(png)
+                  setSignature(user.id, png)
                   setPad(false)
                 }}
                 onCancel={() => setPad(false)}

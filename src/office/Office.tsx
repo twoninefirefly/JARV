@@ -1,4 +1,4 @@
-import { Component, Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
+import { Component, Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY } from './data'
 import { useOffice } from './state'
@@ -59,6 +59,30 @@ export default function Office() {
   }, [locked])
   useComms(!locked)
 
+  // The space bar sends Soley, Adrian and Cookie running through the office
+  // (not while typing). On a phone: tap the logo three times.
+  const startRomp = useOffice((s) => s.startRomp)
+  useEffect(() => {
+    if (locked) return
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if (e.code !== 'Space' || /INPUT|TEXTAREA|SELECT|BUTTON/.test(t.tagName) || t.isContentEditable) return
+      e.preventDefault()
+      startRomp()
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [locked, startRomp])
+  const taps = useRef<number[]>([])
+  const tapLogo = () => {
+    const now = performance.now()
+    taps.current = [...taps.current.filter((t) => now - t < 900), now]
+    if (taps.current.length >= 3) {
+      taps.current = []
+      startRomp()
+    }
+  }
+
   // Lock by itself after a while without a touch — there are figures in here.
   useEffect(() => {
     if (locked) return
@@ -86,7 +110,9 @@ export default function Office() {
       </div>
 
       <header className="topbar">
-        <Mark />
+        <span className="topbar__mark" onClick={tapLogo}>
+          <Mark />
+        </span>
         <h1>Agenten-Büro</h1>
         <span className="topbar__meta">
           <i />

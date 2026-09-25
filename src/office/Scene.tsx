@@ -1308,6 +1308,228 @@ function Cosmos() {
 }
 
 // ---------------------------------------------------------------------------
+// Soley, Adrian and Cookie: press the space bar, and the children and their
+// dog race once around the brain, between the departments, and off again.
+// ---------------------------------------------------------------------------
+
+const KID = {
+  skin: std('#d9b08c', 0.65),
+  soleyHair: std('#4a3222', 0.9),
+  adrianHair: std('#9a7550', 0.9),
+  blouse: std('#f3efe8', 0.8),
+  tshirt: std('#2f5a3a', 0.8),
+  jeans: std('#3a5a8a', 0.85),
+  sneaker: std('#f2f2ee', 0.6),
+  dog: std('#e9d6b8', 0.95),
+  dogDark: std('#b89470', 0.95),
+  nose: std('#1a1414', 0.4),
+}
+
+/** A running child, standing height about `h`; limbs swing with `phase`. */
+function Runner({ h, hair, top, long, phase }: { h: number; hair: THREE.Material; top: THREE.Material; long: boolean; phase: React.RefObject<number> }) {
+  const legL = useRef<THREE.Group>(null)
+  const legR = useRef<THREE.Group>(null)
+  const armL = useRef<THREE.Group>(null)
+  const armR = useRef<THREE.Group>(null)
+  const body = useRef<THREE.Group>(null)
+  useFrame(() => {
+    const p = phase.current ?? 0
+    const s = Math.sin(p)
+    if (legL.current) legL.current.rotation.x = s * 0.8
+    if (legR.current) legR.current.rotation.x = -s * 0.8
+    if (armL.current) armL.current.rotation.x = -s * 0.9
+    if (armR.current) armR.current.rotation.x = s * 0.9
+    if (body.current) body.current.position.y = Math.abs(Math.cos(p)) * 0.03 * h
+  })
+  const k = h / 0.62
+  return (
+    <group scale={k}>
+      <group ref={body}>
+        {/* legs from the hip, so they swing */}
+        {[
+          [-0.035, legL],
+          [0.035, legR],
+        ].map(([x, ref]) => (
+          <group key={x as number} ref={ref as React.RefObject<THREE.Group>} position={[x as number, 0.26, 0]}>
+            <mesh material={KID.jeans} position={[0, -0.12, 0]}>
+              <capsuleGeometry args={[0.028, 0.18, 4, 10]} />
+            </mesh>
+            <mesh material={KID.sneaker} position={[0, -0.245, -0.02]} scale={[1, 0.7, 1.5]}>
+              <sphereGeometry args={[0.03, 10, 8]} />
+            </mesh>
+          </group>
+        ))}
+        <mesh material={top} position={[0, 0.37, 0]} scale={[1, 1, 0.75]} castShadow>
+          <capsuleGeometry args={[0.058, 0.11, 6, 14]} />
+        </mesh>
+        {[
+          [-0.075, armL],
+          [0.075, armR],
+        ].map(([x, ref]) => (
+          <group key={x as number} ref={ref as React.RefObject<THREE.Group>} position={[x as number, 0.43, 0]}>
+            <mesh material={top} position={[0, -0.05, 0]}>
+              <capsuleGeometry args={[0.02, 0.06, 4, 8]} />
+            </mesh>
+            <mesh material={KID.skin} position={[0, -0.12, 0]}>
+              <capsuleGeometry args={[0.017, 0.06, 4, 8]} />
+            </mesh>
+          </group>
+        ))}
+        <group position={[0, 0.53, 0]}>
+          <mesh material={KID.skin} scale={[0.95, 1.05, 1]} castShadow>
+            <sphereGeometry args={[0.06, 18, 14]} />
+          </mesh>
+          <mesh geometry={G.cap} material={hair} position={[0, 0.008, 0.004]} scale={[1.05, 1.12, 1.06]} />
+          {long ? (
+            <>
+              <mesh geometry={G.bob} material={hair} position={[0, 0.004, 0.008]} scale={[1.05, 1.1, 1.02]} />
+              <mesh geometry={G.long} material={hair} position={[0, -0.07, 0.045]} scale={[1.4, 1.05, 0.55]} />
+              {/* the fringe */}
+              <mesh material={hair} position={[0, 0.035, -0.052]} scale={[1, 0.45, 0.35]}>
+                <sphereGeometry args={[0.05, 12, 8]} />
+              </mesh>
+            </>
+          ) : (
+            <mesh geometry={G.back} material={hair} position={[0, 0.006, 0.004]} scale={[1.02, 1.08, 1.02]} />
+          )}
+        </group>
+      </group>
+    </group>
+  )
+}
+
+/** Cookie: small, fluffy, ears flying, tail going. */
+function Dog({ phase }: { phase: React.RefObject<number> }) {
+  const legs = useRef<THREE.Group[]>([])
+  const tail = useRef<THREE.Group>(null)
+  const body = useRef<THREE.Group>(null)
+  useFrame(() => {
+    const p = (phase.current ?? 0) * 1.4
+    legs.current.forEach((l, i) => {
+      if (l) l.rotation.x = Math.sin(p + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI / 2 : 0)) * 0.9
+    })
+    if (tail.current) tail.current.rotation.z = Math.sin(p * 2.2) * 0.6
+    if (body.current) body.current.position.y = Math.abs(Math.sin(p)) * 0.02
+  })
+  return (
+    <group ref={body} scale={0.9}>
+      <mesh material={KID.dog} position={[0, 0.13, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+        <capsuleGeometry args={[0.05, 0.1, 6, 12]} />
+      </mesh>
+      {[
+        [-0.03, -0.06],
+        [0.03, -0.06],
+        [-0.03, 0.06],
+        [0.03, 0.06],
+      ].map(([x, z], i) => (
+        <group key={i} ref={(g) => void (legs.current[i] = g!)} position={[x, 0.1, z]}>
+          <mesh material={KID.dog} position={[0, -0.045, 0]}>
+            <capsuleGeometry args={[0.014, 0.05, 4, 6]} />
+          </mesh>
+        </group>
+      ))}
+      <group position={[0, 0.2, -0.1]}>
+        <mesh material={KID.dog} castShadow>
+          <sphereGeometry args={[0.052, 14, 12]} />
+        </mesh>
+        <mesh material={KID.dogDark} position={[0, -0.012, -0.045]} scale={[0.8, 0.7, 1]}>
+          <sphereGeometry args={[0.028, 10, 8]} />
+        </mesh>
+        <mesh material={KID.nose} position={[0, -0.005, -0.072]}>
+          <sphereGeometry args={[0.009, 8, 6]} />
+        </mesh>
+        {[-1, 1].map((sd) => (
+          <mesh key={sd} material={KID.dogDark} position={[sd * 0.045, 0.015, 0.005]} rotation={[0, 0, sd * 0.5]} scale={[0.45, 1, 0.8]}>
+            <sphereGeometry args={[0.032, 10, 8]} />
+          </mesh>
+        ))}
+      </group>
+      <group ref={tail} position={[0, 0.16, 0.085]}>
+        <mesh material={KID.dog} position={[0, 0.03, 0.01]} rotation={[-0.6, 0, 0]}>
+          <capsuleGeometry args={[0.012, 0.05, 4, 6]} />
+        </mesh>
+      </group>
+    </group>
+  )
+}
+
+/** Where on the run the pack is: in from outside, a lap around the brain, out again. */
+function rompPoint(u: number, v: THREE.Vector3) {
+  const lap = 1.25
+  const a = -0.6 + u * Math.PI * 2 * lap
+  const inner = 3.75
+  const r = u < 0.14 ? THREE.MathUtils.lerp(14, inner, u / 0.14) : u > 0.86 ? THREE.MathUtils.lerp(inner, 14, (u - 0.86) / 0.14) : inner
+  return v.set(Math.cos(a) * r, 0.01, Math.sin(a) * r)
+}
+
+const PACK = [
+  { id: 'cookie', name: 'Cookie', lag: 0 },
+  { id: 'adrian', name: 'Adrian', lag: 0.035 },
+  { id: 'soley', name: 'Soley', lag: 0.065 },
+] as const
+
+function Romp() {
+  const romp = useOffice((s) => s.romp)
+  const [active, setActive] = useState(false)
+  const start = useRef(0)
+  const groups = useRef<Record<string, THREE.Group | null>>({})
+  const phase = useRef(0)
+  const v = useMemo(() => new THREE.Vector3(), [])
+  const ahead = useMemo(() => new THREE.Vector3(), [])
+  const DURATION = 13
+
+  useEffect(() => {
+    if (!romp) return
+    start.current = -1
+    setActive(true)
+  }, [romp])
+
+  useFrame(({ clock }, dt) => {
+    if (!active) return
+    if (start.current < 0) start.current = clock.elapsedTime
+    const t = (clock.elapsedTime - start.current) / DURATION
+    phase.current += dt * 16
+    for (const p of PACK) {
+      const g = groups.current[p.id]
+      if (!g) continue
+      const u = THREE.MathUtils.clamp(t - p.lag, 0, 1)
+      rompPoint(u, v)
+      rompPoint(Math.min(1, u + 0.004), ahead)
+      g.position.copy(v)
+      g.lookAt(ahead.x, v.y, ahead.z)
+      g.rotateY(Math.PI) // the figures face -z
+      g.visible = t - p.lag > 0 && u < 1
+    }
+    if (t > 1 + PACK[PACK.length - 1].lag) setActive(false)
+  })
+
+  if (!active) return null
+  return (
+    <group>
+      {PACK.map((p) => (
+        <group key={p.id} ref={(g) => void (groups.current[p.id] = g)} visible={false}>
+          {p.id === 'cookie' ? (
+            <group scale={1.6}>
+              <Dog phase={phase} />
+            </group>
+          ) : p.id === 'adrian' ? (
+            <Runner h={1.0} hair={KID.adrianHair} top={KID.tshirt} long={false} phase={phase} />
+          ) : (
+            <Runner h={0.85} hair={KID.soleyHair} top={KID.blouse} long phase={phase} />
+          )}
+          <Html portal={overlay} position={[0, p.id === 'cookie' ? 0.62 : p.id === 'adrian' ? 1.32 : 1.14, 0]} center zIndexRange={[30, 0]} style={{ pointerEvents: 'none' }}>
+            <span className={`romp-tag romp-tag--${p.id}`}>
+              {p.name}
+              {p.id === 'cookie' && ' 🐾'}
+            </span>
+          </Html>
+        </group>
+      ))}
+    </group>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Camera
 // ---------------------------------------------------------------------------
 
@@ -1506,6 +1728,7 @@ export default function Scene() {
       {DEPARTMENTS.map((d) => (
         <Floor key={d.id} dept={d} />
       ))}
+      <Romp />
       <Rig />
       {/* Bloom costs the most GPU memory; phones skip it, which is what keeps iOS from dropping the context. */}
       {!phone() && (

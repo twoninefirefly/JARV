@@ -204,7 +204,7 @@ export default function Lock({ onStart }: { onStart: () => void }) {
                     </button>
                   ))}
                 </div>
-                <div className={`lock__people${area === 'leitung' ? ' lock__people--one' : ''}`} role="listbox" aria-label="Person">
+                <div className={`lock__people${area === 'leitung' && leitung.length === 1 ? ' lock__people--one' : ''}`} role="listbox" aria-label="Person">
                   {(area === 'team' ? team : leitung).map((x) => (
                     <button key={x.id} type="button" role="option" aria-selected={chosen.id === x.id} className="lock__person" onClick={() => setChosen(x)}>
                       <Avatar user={x} />

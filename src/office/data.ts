@@ -64,6 +64,7 @@ export const COMPANY = {
   logoMark: KUNDE?.mark,
   /** The person in the management login. */
   chef: KUNDE?.chef,
+  chef2: KUNDE?.chef2,
   /** Minutes without a touch before the office locks itself. */
   autoLockMinutes: 5,
 }

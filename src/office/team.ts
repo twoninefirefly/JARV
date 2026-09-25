@@ -40,6 +40,7 @@ const all = DEPARTMENTS.map((d) => d.id)
 export const USERS: User[] = HV
   ? [
       u('leitung', COMPANY.chef ?? 'Maria Schneider', 'Geschäftsführung', 'leitung', all),
+      ...(COMPANY.chef2 ? [u('leitung2', COMPANY.chef2, 'Geschäftsführung', 'leitung', all)] : []),
       u('amueller', 'Anna Müller', 'Mietbuchhaltung & Nebenkosten', 'team', ['miete', 'nebenkosten']),
       u('jweber', 'Jonas Weber', 'Technik & Handwerker', 'team', ['schaden']),
       u('skrueger', 'Sabine Krüger', 'Vermietung', 'team', ['vermietung']),
@@ -97,6 +98,9 @@ export const HISTORY: Decision[] = HV
       { text: 'Antwort Lärmbeschwerde Gartenstr. 40', dept: 'mieter', by: 'lschroeder', name: 'Lea Schröder', at: '09:31', result: 'Freigegeben' },
       { text: 'Sonderumlage Dach – Anschreiben', dept: 'weg', by: 'thoffmann', name: 'Tim Hoffmann', at: '09:58', result: 'Abgelehnt' },
       { text: 'Auftrag Heizungswartung Birkenweg 3 (2.380 €)', dept: 'schaden', by: 'leitung', name: COMPANY.chef ?? 'Maria Schneider', at: '10:20', result: 'Freigegeben' },
+      ...(COMPANY.chef2
+        ? [{ text: 'Mietvertrag Gartenstr. 40, WE 11', dept: 'vermietung', by: 'leitung2', name: COMPANY.chef2, at: '10:42', result: 'Freigegeben' as const }]
+        : []),
     ]
   : [
       { text: 'Zahlungserinnerung Rechnung 2026-871', dept: 'finanzen', by: 'amueller', name: 'Anna Müller', at: '08:15', result: 'Freigegeben' },

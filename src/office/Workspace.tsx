@@ -358,7 +358,8 @@ function Window({ ws }: { ws: WsTarget }) {
   const decisions = useOffice((s) => s.decisions)
   const user = useOffice((s) => s.user)
   const approve = useOffice((s) => s.approve)
-  const signature = useOffice((s) => s.signature)
+  const signatures = useOffice((s) => s.signatures)
+  const signature = user ? (signatures[user.id] ?? null) : null
   const setSignature = useOffice((s) => s.setSignature)
   // Management signs: with the saved signature in one click, or draws it the first time.
   const [signing, setSigning] = useState<WsItem | null>(null)
@@ -490,7 +491,7 @@ function Window({ ws }: { ws: WsTarget }) {
   const detail = item ? (
     <Detail
       item={shown!}
-      signed={signedBy && signature ? { png: signature, name: signedBy.name } : undefined}
+      signed={signedBy && signatures[signedBy.by] ? { png: signatures[signedBy.by], name: signedBy.name } : undefined}
       printed={item.approval ? prints.find((p) => p.text === item.approval) : undefined}
       onPrint={(item.batch || item.letter?.channel === 'Brief') && item.decision ? () => setPrinting(item) : undefined}
       columns={layout.layout === 'table' ? layout.columns : undefined}
@@ -628,7 +629,7 @@ function Window({ ws }: { ws: WsTarget }) {
           <PrintDialog
             letters={printing.batch ?? [printing.letter!]}
             what={printing.title.replace(/ (freigeben|durchsehen)$/, '')}
-            signed={signedBy && signature ? { png: signature, name: signedBy.name } : undefined}
+            signed={signedBy && signatures[signedBy.by] ? { png: signatures[signedBy.by], name: signedBy.name } : undefined}
             by={user.name}
             onDone={(job) => addPrint({ ...job, text: printing.approval! })}
             onCancel={() => setPrinting(null)}
@@ -637,7 +638,7 @@ function Window({ ws }: { ws: WsTarget }) {
         {signing && !signature && (
           <SignaturePad
             onSave={(png) => {
-              setSignature(png)
+              setSignature(user!.id, png)
               // Signature drawn: now confirm it like any other decision.
               setConfirming({ it: signing, action: 'Unterschreiben & freigeben' })
               setSigning(null)

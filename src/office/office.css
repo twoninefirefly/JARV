@@ -3095,3 +3095,29 @@ button {
     page-break-after: always;
   }
 }
+
+/* ------------------------------------------------------------ the children and the dog */
+
+.romp-tag {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 250, 244, 0.95);
+  color: #2a1d14;
+  font: 700 12px var(--sans);
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.romp-tag--soley {
+  background: #fde2ea;
+}
+.romp-tag--adrian {
+  background: #dcefe0;
+}
+.romp-tag--cookie {
+  background: #f6e7cf;
+}
+.topbar__mark {
+  pointer-events: auto;
+  display: inline-flex;
+}

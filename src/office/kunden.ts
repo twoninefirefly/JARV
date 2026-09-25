@@ -16,11 +16,13 @@ export type Kunde = {
   mark?: [number, number, number, number]
   /** Who signs in to the management area. */
   chef?: string
+  /** A second person in management. */
+  chef2?: string
   branche: 'standard' | 'hausverwaltung'
 }
 
 export const KUNDEN: Record<string, Kunde> = {
-  bormann: { name: 'Bormann Immobilien', logo: bormannLogo, mark: [92, 0, 233, 283], chef: 'Martin Bormann', branche: 'hausverwaltung' },
+  bormann: { name: 'Bormann Immobilien', logo: bormannLogo, mark: [92, 0, 233, 283], chef: 'Martin Bormann', chef2: 'Kim Bormann', branche: 'hausverwaltung' },
 }
 
 const KEY = 'office.kunde'

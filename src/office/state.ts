@@ -8,7 +8,7 @@ import type { PrintJob } from './Print'
 // browser. The real system keeps both on the server.
 const KEY_USER = 'office.user'
 const KEY_DECISIONS = 'office.decisions'
-const KEY_SIGNATURE = 'office.signature'
+const KEY_SIGNATURE = 'office.signatures'
 const load = <T,>(key: string, fallback: T): T => {
   try {
     const raw = localStorage.getItem(key)
@@ -77,9 +77,12 @@ type OfficeState = {
   /** Letters sent to the office printer today. */
   prints: PrintJob[]
   addPrint: (job: PrintJob) => void
-  /** The customer's saved signature for management (a PNG data URL). */
-  signature: string | null
-  setSignature: (png: string | null) => void
+  /** Management's saved signatures, one per person (PNG data URLs). */
+  signatures: Record<string, string>
+  setSignature: (userId: string, png: string | null) => void
+  /** Bumped to send the children and the dog running through the office. */
+  romp: number
+  startRomp: () => void
 }
 
 export const useOffice = create<OfficeState>((set) => ({
@@ -121,11 +124,17 @@ export const useOffice = create<OfficeState>((set) => ({
   addPrint: (job) => set((s) => ({ prints: [...s.prints, job] })),
   alert: null,
   raise: (alert) => set({ alert }),
-  signature: load<string | null>(KEY_SIGNATURE, null),
-  setSignature: (signature) => {
-    save(KEY_SIGNATURE, signature)
-    set({ signature })
-  },
+  signatures: load<Record<string, string>>(KEY_SIGNATURE, {}),
+  setSignature: (userId, png) =>
+    set((s) => {
+      const signatures = { ...s.signatures }
+      if (png) signatures[userId] = png
+      else delete signatures[userId]
+      save(KEY_SIGNATURE, signatures)
+      return { signatures }
+    }),
+  romp: 0,
+  startRomp: () => set((s) => ({ romp: s.romp + 1 })),
   feed: [],
   inFlight: [],
   post: (msg, animate) =>

@@ -319,12 +319,26 @@ function Floor({ dept }: { dept: Department }) {
 
       {/* The badge floats over the floor; hidden while you're inside it. */}
       {!active && !inside && (
-        <Html position={[0, 1.35, 0]} center zIndexRange={[20, 0]}>
-          <button className="floor-badge" style={{ ['--c' as string]: dept.color }} onClick={pick}>
+        <Html position={[0, 1.35, 0]} center zIndexRange={hover ? [45, 35] : [20, 0]}>
+          {/* Grows, glows and shows what the department does — from the badge or from its floor. */}
+          <button
+            className={`floor-badge${hover ? ' is-hover' : ''}`}
+            style={{ ['--c' as string]: dept.color }}
+            onClick={pick}
+            onMouseEnter={() => setHover(true)}
+            onMouseLeave={() => setHover(false)}
+          >
             <span className="floor-badge__icon">
               <Icon name={dept.icon} size={16} />
             </span>
-            {dept.short}
+            <span className="floor-badge__text">
+              {dept.short}
+              <span className="floor-badge__more">
+                <span>
+                  {dept.agents.length} Agenten · {dept.tagline}
+                </span>
+              </span>
+            </span>
           </button>
         </Html>
       )}

@@ -88,6 +88,7 @@ export default function Office() {
           {COMPANY.demo && ' · Demo'}
         </span>
         <span className="topbar__actions">
+          {COMPANY.logo && !locked && <img className="topbar__logo" src={COMPANY.logo} alt={COMPANY.name} />}
           {!locked && (
             <button className="topbar__setup" onClick={() => showSetup(true)} aria-label="Einrichtung" title="Einrichtung">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -113,9 +114,11 @@ export default function Office() {
       <AnimatePresence>
         {(view.kind === 'overview' || view.kind === 'neural') && (
           <motion.div key={view.kind} className="hint" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            {view.kind === 'overview'
-              ? 'Tippe auf eine Abteilung · Doppelklick aufs Gehirn zoomt hinein'
-              : 'Jeder Punkt ist ein Agent · antippen öffnet ihn'}
+            {view.kind === 'neural'
+              ? 'Jeder Punkt ist ein Agent · antippen öffnet ihn'
+              : window.innerWidth < 600
+                ? 'Tippe auf eine Abteilung oder das Gehirn'
+                : 'Tippe auf eine Abteilung · Doppelklick aufs Gehirn zoomt hinein'}
           </motion.div>
         )}
       </AnimatePresence>

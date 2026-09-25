@@ -818,13 +818,157 @@ function Ground() {
   }, [])
   return (
     <group>
-      {/* No shadows on the ground: the floors' shadows fell far behind them as two black slabs. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
-        <planeGeometry args={[80, 80]} />
-        <meshStandardMaterial color="#15110e" roughness={1} />
-      </mesh>
+      {/* No solid ground any more: the office floats in space; the dotted grid stays as a floor plan. */}
       <points geometry={geometry}>
-        <pointsMaterial color="#3a2c22" size={0.03} depthWrite={false} />
+        <pointsMaterial color="#4a382b" size={0.03} depthWrite={false} />
+      </points>
+    </group>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// The sky: the office floats in a quiet, slowly turning universe
+// ---------------------------------------------------------------------------
+
+const starVertex = /* glsl */ `
+  attribute float aSeed;
+  attribute vec3 aColor;
+  uniform float uTime;
+  uniform float uPixel;
+  varying vec3 vColor;
+  varying float vAlpha;
+  void main() {
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mv;
+    // Each star twinkles at its own pace; most barely, a few clearly.
+    float tw = sin(uTime * (0.4 + aSeed * 1.6) + aSeed * 60.0);
+    vAlpha = (0.35 + 0.65 * aSeed) * (0.75 + 0.25 * tw * step(0.6, aSeed));
+    vColor = aColor;
+    gl_PointSize = uPixel * (0.8 + aSeed * aSeed * 2.2);
+  }
+`
+const starFragment = /* glsl */ `
+  varying vec3 vColor;
+  varying float vAlpha;
+  void main() {
+    float d = length(gl_PointCoord - 0.5);
+    float a = smoothstep(0.5, 0.0, d);
+    gl_FragColor = vec4(vColor, a * vAlpha);
+  }
+`
+
+/** A soft round glow, drawn once, for nebulae and the shooting star's head. */
+function glowTexture(inner: string, outer: string) {
+  const cv = document.createElement('canvas')
+  cv.width = cv.height = 128
+  const g = cv.getContext('2d')!
+  const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64)
+  grd.addColorStop(0, inner)
+  grd.addColorStop(0.45, outer)
+  grd.addColorStop(1, 'rgba(0,0,0,0)')
+  g.fillStyle = grd
+  g.fillRect(0, 0, 128, 128)
+  return new THREE.CanvasTexture(cv)
+}
+
+function Cosmos() {
+  const sky = useRef<THREE.Group>(null)
+  const dpr = useThree((s) => s.viewport.dpr)
+
+  const { geometry, material } = useMemo(() => {
+    const n = phone() ? 1400 : 2600
+    const pos = new Float32Array(n * 3)
+    const col = new Float32Array(n * 3)
+    const seed = new Float32Array(n)
+    const palette = ['#fff4e6', '#ffe0c2', '#e3895a', '#b9c8ff', '#fff4e6'].map((c) => new THREE.Color(c))
+    let s = 11
+    const r = () => ((s = (s * 16807) % 2147483647) / 2147483647)
+    for (let i = 0; i < n; i++) {
+      // Evenly over a sphere far outside the office, above and below.
+      const u = r() * 2 - 1
+      const th = r() * Math.PI * 2
+      const q = Math.sqrt(1 - u * u)
+      const rad = 70 + r() * 50
+      pos.set([q * Math.cos(th) * rad, u * rad, q * Math.sin(th) * rad], i * 3)
+      const c = palette[Math.floor(r() * palette.length)]
+      col.set([c.r, c.g, c.b], i * 3)
+      seed[i] = Math.pow(r(), 2.2)
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geometry.setAttribute('aColor', new THREE.BufferAttribute(col, 3))
+    geometry.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1))
+    const material = new THREE.ShaderMaterial({
+      vertexShader: starVertex,
+      fragmentShader: starFragment,
+      uniforms: { uTime: { value: 0 }, uPixel: { value: 1 } },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    })
+    return { geometry, material }
+  }, [])
+
+  const nebulae = useMemo(
+    () => [
+      { tex: glowTexture('rgba(217,138,98,0.22)', 'rgba(120,60,40,0.07)'), at: [-40, -30, -55], size: 70 },
+      { tex: glowTexture('rgba(110,130,210,0.16)', 'rgba(50,60,120,0.05)'), at: [50, -40, 20], size: 80 },
+      { tex: glowTexture('rgba(180,110,160,0.12)', 'rgba(80,40,80,0.04)'), at: [10, -55, 60], size: 65 },
+    ],
+    [],
+  )
+
+  // Now and then a shooting star crosses far below the office.
+  const shot = useRef<THREE.Points>(null)
+  const TRAIL = 48
+  const trail = useMemo(() => {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL * 3), 3))
+    return g
+  }, [])
+  const path = useRef({ from: new THREE.Vector3(), to: new THREE.Vector3(), start: 3, dur: 1.4 })
+  const v = useMemo(() => new THREE.Vector3(), [])
+
+  useFrame(({ clock }, dt) => {
+    const t = clock.elapsedTime
+    material.uniforms.uTime.value = t
+    material.uniforms.uPixel.value = dpr
+    if (sky.current) sky.current.rotation.y += dt * 0.006
+
+    const p = path.current
+    const attr = trail.getAttribute('position') as THREE.BufferAttribute
+    let u = (t - p.start) / p.dur
+    if (u > 1.6) {
+      // Plan the next one, somewhere random, 6–14 s from now.
+      const a = Math.random() * Math.PI * 2
+      const y = -22 - Math.random() * 20
+      p.from.set(Math.cos(a) * 55, y, Math.sin(a) * 55)
+      p.to.set(Math.cos(a + 1.1) * 45, y - 8, Math.sin(a + 1.1) * 45)
+      p.start = t + 6 + Math.random() * 8
+      u = -1
+    }
+    for (let k = 0; k < TRAIL; k++) {
+      const w = u - k * 0.0035
+      if (w < 0 || w > 1) attr.setXYZ(k, 0, -500, 0)
+      else {
+        v.copy(p.from).lerp(p.to, w)
+        attr.setXYZ(k, v.x, v.y, v.z)
+      }
+    }
+    attr.needsUpdate = true
+  })
+
+  return (
+    <group ref={sky}>
+      <points geometry={geometry} material={material} frustumCulled={false} />
+      {nebulae.map((nb, i) => (
+        <sprite key={i} position={nb.at as [number, number, number]} scale={nb.size}>
+          <spriteMaterial map={nb.tex} transparent depthWrite={false} blending={THREE.AdditiveBlending} fog={false} />
+        </sprite>
+      ))}
+      <points ref={shot} geometry={trail} frustumCulled={false}>
+        <pointsMaterial color={[1.6, 1.3, 1.0]} size={1.8} sizeAttenuation={false} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} fog={false} />
       </points>
     </group>
   )
@@ -838,7 +982,7 @@ function Ground() {
 const wide = () => window.innerWidth >= 900
 
 function Rig() {
-  const { camera, size } = useThree()
+  const { camera, size, scene } = useThree()
   const controls = useRef<OrbitControlsImpl>(null)
   const view = useOffice((s) => s.view)
   const flight = useOffice((s) => s.flight)
@@ -914,6 +1058,13 @@ function Rig() {
       camera.position.lerp(g.pos, k)
       ctl.target.lerp(g.target, k)
       if (camera.position.distanceTo(g.pos) < 0.01) goal.current = null
+    }
+    // Fog follows the camera: a phone in portrait sits three times further back,
+    // and fixed fog distances swallowed the floors there.
+    if (scene.fog instanceof THREE.Fog) {
+      const d = camera.position.distanceTo(ctl.target)
+      scene.fog.near = d + 4
+      scene.fog.far = d + 45
     }
     // Drift slowly in the overview once nobody has touched it for a while.
     ctl.autoRotate = view.kind === 'overview' && !g && performance.now() - idleSince.current > 4000
@@ -997,6 +1148,7 @@ export default function Scene() {
         shadow-camera-bottom={-15}
         shadow-bias={-0.0004}
       />
+      <Cosmos />
       <Ground />
       <Links />
       <Brain />

@@ -56,6 +56,9 @@ type OfficeState = {
   remembered: User | null
   signIn: (user: User, remember: boolean) => void
   signOut: () => void
+  /** The search, on top of everything. */
+  search: boolean
+  showSearch: (open: boolean) => void
   /** Management's overview, on top of everything. */
   cockpit: boolean
   showCockpit: (open: boolean) => void
@@ -113,13 +116,15 @@ export const useOffice = create<OfficeState>((set) => ({
     save(KEY_USER, null)
     set({ user: null, remembered: null, locked: true, ws: null, setup: false, cockpit: false, view: { kind: 'overview' } })
   },
+  search: false,
+  showSearch: (search) => set(search ? { search, ws: null, setup: false, cockpit: false } : { search }),
   cockpit: false,
   showCockpit: (cockpit) => set({ cockpit, ws: null, setup: false }),
   setup: false,
   showSetup: (setup) => set({ setup, ws: null }),
   locked: true,
   unlock: () => set({ locked: false }),
-  lock: () => set({ locked: true, ws: null, setup: false, cockpit: false, alert: null, view: { kind: 'overview' } }),
+  lock: () => set({ locked: true, ws: null, setup: false, cockpit: false, search: false, alert: null, view: { kind: 'overview' } }),
   prints: [],
   addPrint: (job) => set((s) => ({ prints: [...s.prints, job] })),
   alert: null,

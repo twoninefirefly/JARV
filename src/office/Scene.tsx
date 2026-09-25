@@ -558,9 +558,9 @@ function Floor({ dept }: { dept: Department }) {
             )
           })}
           {/* A ring of light on the floor under the agent you're pointing at. */}
-          {(hoverAgent ?? deskAgent) &&
+          {(hoverAgent ?? deskAgent ?? (view.kind === 'dept' ? view.agent : undefined)) &&
             (() => {
-              const i = dept.agents.findIndex((a) => a.id === (hoverAgent ?? deskAgent))
+              const i = dept.agents.findIndex((a) => a.id === (hoverAgent ?? deskAgent ?? (view.kind === 'dept' ? view.agent : undefined)))
               if (i < 0) return null
               const [x, z] = SPOTS[i % SPOTS.length]
               return (
@@ -734,6 +734,7 @@ function Brain() {
   const spin = useRef<THREE.Group>(null)
   const outer = useRef<THREE.Group>(null)
   const grow = useRef(1)
+  const hovered = useRef(false)
   const inside = useOffice((s) => s.view.kind === 'neural')
   const light = useRef<THREE.PointLight>(null)
   const dpr = useThree((s) => s.viewport.dpr)
@@ -825,7 +826,7 @@ function Brain() {
     }
     wire.opacity = 0.18 + flare * 0.5
     // Stepping inside: the brain swells so its neurons can be told apart.
-    const want = useOffice.getState().view.kind === 'neural' ? INSIDE_GROW : 1
+    const want = useOffice.getState().view.kind === 'neural' ? INSIDE_GROW : hovered.current ? 1.14 : 1
     grow.current += (want - grow.current) * Math.min(1, dt * 3)
     if (outer.current) outer.current.scale.setScalar(BRAIN_SCALE * grow.current)
     // Inside, the cloud steps back so the neurons stand out.
@@ -852,8 +853,14 @@ function Brain() {
               e.stopPropagation()
               show({ kind: 'neural' })
             }}
-            onPointerOver={() => (document.body.style.cursor = 'pointer')}
-            onPointerOut={() => (document.body.style.cursor = '')}
+            onPointerOver={() => {
+              hovered.current = true
+              document.body.style.cursor = 'pointer'
+            }}
+            onPointerOut={() => {
+              hovered.current = false
+              document.body.style.cursor = ''
+            }}
           >
             <sphereGeometry args={[0.95, 16, 12]} />
             <meshBasicMaterial visible={false} />
@@ -1463,9 +1470,9 @@ function rompPoint(u: number, v: THREE.Vector3) {
 }
 
 const PACK = [
-  { id: 'cookie', name: 'Cookie', lag: 0 },
-  { id: 'adrian', name: 'Adrian', lag: 0.035 },
-  { id: 'soley', name: 'Soley', lag: 0.065 },
+  { id: 'cookie', lag: 0 },
+  { id: 'adrian', lag: 0.035 },
+  { id: 'soley', lag: 0.065 },
 ] as const
 
 function Romp() {
@@ -1517,12 +1524,6 @@ function Romp() {
           ) : (
             <Runner h={0.85} hair={KID.soleyHair} top={KID.blouse} long phase={phase} />
           )}
-          <Html portal={overlay} position={[0, p.id === 'cookie' ? 0.62 : p.id === 'adrian' ? 1.32 : 1.14, 0]} center zIndexRange={[30, 0]} style={{ pointerEvents: 'none' }}>
-            <span className={`romp-tag romp-tag--${p.id}`}>
-              {p.name}
-              {p.id === 'cookie' && ' 🐾'}
-            </span>
-          </Html>
         </group>
       ))}
     </group>
@@ -1573,6 +1574,14 @@ function Rig() {
       focus = d ? place(d.angle).setY(0.5) : focus
       dist = aspect < 0.8 ? 17 : 9.5
       polar = 0.8
+      // An agent chosen (from the search, a tag, the list): fly on to their desk.
+      const i = d && view.agent ? d.agents.findIndex((a) => a.id === view.agent) : -1
+      if (d && i > 0) {
+        const [x, z] = SPOTS[i % SPOTS.length]
+        focus = place(d.angle).add(new THREE.Vector3(x, TOP + 0.35, z))
+        dist = aspect < 0.8 ? 12 : 6.2
+        polar = 0.85
+      }
     }
 
     // Keep whatever angle the user has turned to; only pitch and distance move.

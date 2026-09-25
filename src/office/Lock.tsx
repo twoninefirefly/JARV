@@ -5,7 +5,6 @@ import { useOffice } from './state'
 import { BRANCHE, BRANCHEN, setBranche } from './branche'
 import { HV_KUNDE, KUNDE } from './kunden'
 import { DEMO_PASSWORD, USERS, type Role, type User } from './team'
-import { greet } from './sound'
 
 /**
  * The lock screen: logo, clock, password, then a loading bar while the office
@@ -113,10 +112,7 @@ export default function Lock({ onStart }: { onStart: () => void }) {
       const k = Math.min(1, (performance.now() - t0) / 2600)
       setProgress(k)
       if (k < 1) requestAnimationFrame(tick)
-      else {
-        setTimeout(unlock, 250)
-        greet(user.name.split(' ')[0])
-      }
+      else setTimeout(unlock, 250)
     }
     requestAnimationFrame(tick)
   }

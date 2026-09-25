@@ -6,7 +6,8 @@ import Panel from './Panel'
 import Workspace from './Workspace'
 import Setup from './Setup'
 import Cockpit from './Cockpit'
-import Alert, { SoundToggle } from './Alert'
+import Alert from './Alert'
+import Search from './Search'
 import Lock, { Mark } from './Lock'
 import { useComms } from './comms'
 import { Guard } from './Guard'
@@ -62,17 +63,24 @@ export default function Office() {
   // The space bar sends Soley, Adrian and Cookie running through the office
   // (not while typing). On a phone: tap the logo three times.
   const startRomp = useOffice((s) => s.startRomp)
+  const showSearch = useOffice((s) => s.showSearch)
   useEffect(() => {
     if (locked) return
     const key = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement
+      // Ctrl/Cmd+K anywhere, or "/" outside a text field, opens the search.
+      if ((e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !/INPUT|TEXTAREA/.test(t.tagName))) {
+        e.preventDefault()
+        showSearch(true)
+        return
+      }
       if (e.code !== 'Space' || /INPUT|TEXTAREA|SELECT|BUTTON/.test(t.tagName) || t.isContentEditable) return
       e.preventDefault()
       startRomp()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [locked, startRomp])
+  }, [locked, startRomp, showSearch])
   const taps = useRef<number[]>([])
   const tapLogo = () => {
     const now = performance.now()
@@ -120,6 +128,16 @@ export default function Office() {
           {COMPANY.demo && ' · Demo'}
         </span>
         <span className="topbar__actions">
+          {!locked && (
+            <button className="topbar__setup topbar__search" onClick={() => showSearch(true)} aria-label="Suchen" title="Suchen (Strg K)">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden>
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <span>Suchen</span>
+              <kbd>Strg K</kbd>
+            </button>
+          )}
           {COMPANY.logo && !locked && <img className="topbar__logo" src={COMPANY.logo} alt={COMPANY.name} />}
           {!locked && (
             <button className="topbar__setup" onClick={() => showSetup(true)} aria-label="Einrichtung" title="Einrichtung">
@@ -154,7 +172,6 @@ export default function Office() {
               ✕
             </button>
           )}
-          {!locked && <SoundToggle />}
           <button className="icon-btn icon-btn--lg" onClick={lock} aria-label="Sperren" title="Sperren">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
               <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -186,6 +203,9 @@ export default function Office() {
       </Guard>
       <Guard name="setup" onError={() => useOffice.setState({ setup: false })}>
         {!locked && <Setup />}
+      </Guard>
+ <Guard name="search" onError={() => useOffice.setState({ search: false })}>
+        {!locked && <Search />}
       </Guard>
       <Guard name="cockpit" onError={() => useOffice.setState({ cockpit: false })}>
         {!locked && user?.role === 'leitung' && <Cockpit />}

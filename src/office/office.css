@@ -79,7 +79,7 @@ button {
   gap: 10px;
   padding: max(14px, env(safe-area-inset-top)) 16px 14px;
   pointer-events: none;
-  background: linear-gradient(var(--bg) 30%, transparent);
+  background: linear-gradient(rgba(4, 4, 6, 0.95) 30%, transparent);
   z-index: 40;
 }
 .topbar > * {

@@ -20,7 +20,7 @@ import { agentTarget } from './workspaces'
 const RING = 6 // distance of each floor from the brain; below ~5.9 neighbouring floors' corners overlap
 const FLOOR = 3.4 // floor edge length
 const TOP = 0.3 // floor surface height
-const BG = '#0e0b09'
+const BG = '#040406'
 
 /** Clockwise from the top of the screen, for a camera at +x +z. */
 function place(angle: number) {
@@ -827,10 +827,52 @@ function Ground() {
 }
 
 // ---------------------------------------------------------------------------
-// The sky: the office floats in a quiet, slowly turning universe
+// The sky: near-black space, a faint Milky Way, crisp stars and a galaxy.
+// Nothing here is a stretched image — the sky is computed per screen pixel
+// and every star is a point, so it stays sharp at any resolution.
 // ---------------------------------------------------------------------------
 
+const skyVertex = /* glsl */ `
+  varying vec3 vDir;
+  void main() {
+    vDir = normalize(position);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+const skyFragment = /* glsl */ `
+  varying vec3 vDir;
+  // Value noise and fbm on the sphere direction.
+  float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+  float noise(vec3 x) {
+    vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x), mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+               mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x), mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+  }
+  float fbm(vec3 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++) { s += a * noise(p); p *= 2.03; a *= 0.5; } return s; }
+  void main() {
+    vec3 d = normalize(vDir);
+    // A tilted band across the sky, like the Milky Way seen from inside.
+    vec3 n = normalize(vec3(0.35, 0.8, 0.45));
+    float band = exp(-pow(dot(d, n) / 0.22, 2.0));
+    float cloud = fbm(d * 3.2);
+    float dust = smoothstep(0.45, 0.75, fbm(d * 7.0 + 3.1));
+    float glow = band * (0.35 + 0.9 * cloud) * (1.0 - 0.75 * dust);
+    vec3 cool = vec3(0.10, 0.12, 0.22);
+    vec3 warm = vec3(0.30, 0.17, 0.10);
+    // Linear light: these are tiny numbers on purpose; the sRGB output lifts them.
+    vec3 col = mix(cool, warm, smoothstep(0.35, 0.8, cloud)) * glow * 0.03;
+    // A whisper of colour away from the band, so the black is not flat.
+    col += vec3(0.0016, 0.0014, 0.003) * fbm(d * 1.6 + 7.0);
+    col += vec3(0.0004, 0.0004, 0.0007);
+    // Dither, relative to the brightness: breaks up the steps in dark gradients.
+    col *= 1.0 + (hash(gl_FragCoord.xyz * 1.37) - 0.5) * 0.3;
+    gl_FragColor = vec4(col, 1.0);
+    #include <colorspace_fragment>
+  }
+`
+
 const starVertex = /* glsl */ `
+  attribute float aSize;
   attribute float aSeed;
   attribute vec3 aColor;
   uniform float uTime;
@@ -840,112 +882,149 @@ const starVertex = /* glsl */ `
   void main() {
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
-    // Each star twinkles at its own pace; most barely, a few clearly.
-    float tw = sin(uTime * (0.4 + aSeed * 1.6) + aSeed * 60.0);
-    vAlpha = (0.35 + 0.65 * aSeed) * (0.75 + 0.25 * tw * step(0.6, aSeed));
+    float tw = sin(uTime * (0.5 + aSeed * 1.5) + aSeed * 80.0);
+    vAlpha = 0.55 + 0.45 * aSeed * (0.8 + 0.2 * tw);
     vColor = aColor;
-    gl_PointSize = uPixel * (0.8 + aSeed * aSeed * 2.2);
+    gl_PointSize = uPixel * aSize;
   }
 `
+// A bright core with a short falloff: a crisp point of light, not a soft blob.
 const starFragment = /* glsl */ `
   varying vec3 vColor;
   varying float vAlpha;
   void main() {
-    float d = length(gl_PointCoord - 0.5);
-    float a = smoothstep(0.5, 0.0, d);
+    float d = length(gl_PointCoord - 0.5) * 2.0;
+    float core = smoothstep(1.0, 0.0, d);
+    float a = core * core * core;
+    if (a < 0.01) discard;
     gl_FragColor = vec4(vColor, a * vAlpha);
   }
 `
 
-/** A soft round glow, drawn once, for nebulae and the shooting star's head. */
-function glowTexture(inner: string, outer: string) {
-  const cv = document.createElement('canvas')
-  cv.width = cv.height = 128
-  const g = cv.getContext('2d')!
-  const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64)
-  grd.addColorStop(0, inner)
-  grd.addColorStop(0.45, outer)
-  grd.addColorStop(1, 'rgba(0,0,0,0)')
-  g.fillStyle = grd
-  g.fillRect(0, 0, 128, 128)
-  return new THREE.CanvasTexture(cv)
+function pointsMaterial() {
+  return new THREE.ShaderMaterial({
+    vertexShader: starVertex,
+    fragmentShader: starFragment,
+    uniforms: { uTime: { value: 0 }, uPixel: { value: 1 } },
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  })
+}
+
+/** Stars spread over a far sphere, in all directions. */
+function makeStars(n: number) {
+  const pos = new Float32Array(n * 3)
+  const col = new Float32Array(n * 3)
+  const size = new Float32Array(n)
+  const seed = new Float32Array(n)
+  const tints = ['#ffffff', '#fff3e4', '#ffe6cc', '#dfe7ff', '#ffffff'].map((c) => new THREE.Color(c))
+  let s = 11
+  const r = () => ((s = (s * 16807) % 2147483647) / 2147483647)
+  for (let i = 0; i < n; i++) {
+    const u = r() * 2 - 1
+    const th = r() * Math.PI * 2
+    const q = Math.sqrt(1 - u * u)
+    const rad = 90 + r() * 40
+    pos.set([q * Math.cos(th) * rad, u * rad, q * Math.sin(th) * rad], i * 3)
+    const m = Math.pow(r(), 3) // most stars faint, a few bright
+    const c = tints[Math.floor(r() * tints.length)].clone().multiplyScalar(0.35 + 0.65 * m)
+    col.set([c.r, c.g, c.b], i * 3)
+    size[i] = 1.4 + m * 2.4
+    seed[i] = m
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  g.setAttribute('aColor', new THREE.BufferAttribute(col, 3))
+  g.setAttribute('aSize', new THREE.BufferAttribute(size, 1))
+  g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1))
+  return g
+}
+
+/** A two-armed spiral galaxy made of points, in its own flat plane. */
+function makeGalaxy(n: number) {
+  const pos = new Float32Array(n * 3)
+  const col = new Float32Array(n * 3)
+  const size = new Float32Array(n)
+  const seed = new Float32Array(n)
+  const core = new THREE.Color('#ffe9cf')
+  const arm = new THREE.Color('#aebfff')
+  const dust = new THREE.Color('#e3895a')
+  const c = new THREE.Color()
+  let s = 5
+  const r = () => ((s = (s * 16807) % 2147483647) / 2147483647)
+  const gauss = () => (r() + r() + r() - 1.5) / 1.5
+  for (let i = 0; i < n; i++) {
+    const t = Math.pow(r(), 0.7) // radius 0..1, denser inside
+    const armAngle = (i % 2) * Math.PI
+    const a = armAngle + t * 7.5 + gauss() * (0.35 + 0.25 * (1 - t))
+    const rad = t * 20
+    const spread = 0.8 + 2.2 * (1 - t) * (1 - t)
+    const x = Math.cos(a) * rad + gauss() * spread * 0.6
+    const z = Math.sin(a) * rad + gauss() * spread * 0.6
+    const y = gauss() * (0.5 + 1.6 * (1 - t) * (1 - t))
+    pos.set([x, y, z], i * 3)
+    c.copy(core).lerp(arm, Math.min(1, t * 1.4))
+    if (r() < 0.08) c.copy(dust)
+    const b = ((1 - t) * 0.6 + 0.25 + r() * 0.15) * 0.55
+    c.multiplyScalar(b)
+    col.set([c.r, c.g, c.b], i * 3)
+    size[i] = 1.1 + r() * 1.1 + (1 - t) * 0.8
+    seed[i] = r() * 0.3
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  g.setAttribute('aColor', new THREE.BufferAttribute(col, 3))
+  g.setAttribute('aSize', new THREE.BufferAttribute(size, 1))
+  g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1))
+  return g
 }
 
 function Cosmos() {
   const sky = useRef<THREE.Group>(null)
+  const galaxy = useRef<THREE.Group>(null)
   const dpr = useThree((s) => s.viewport.dpr)
 
-  const { geometry, material } = useMemo(() => {
-    const n = phone() ? 1400 : 2600
-    const pos = new Float32Array(n * 3)
-    const col = new Float32Array(n * 3)
-    const seed = new Float32Array(n)
-    const palette = ['#fff4e6', '#ffe0c2', '#e3895a', '#b9c8ff', '#fff4e6'].map((c) => new THREE.Color(c))
-    let s = 11
-    const r = () => ((s = (s * 16807) % 2147483647) / 2147483647)
-    for (let i = 0; i < n; i++) {
-      // Evenly over a sphere far outside the office, above and below.
-      const u = r() * 2 - 1
-      const th = r() * Math.PI * 2
-      const q = Math.sqrt(1 - u * u)
-      const rad = 70 + r() * 50
-      pos.set([q * Math.cos(th) * rad, u * rad, q * Math.sin(th) * rad], i * 3)
-      const c = palette[Math.floor(r() * palette.length)]
-      col.set([c.r, c.g, c.b], i * 3)
-      seed[i] = Math.pow(r(), 2.2)
+  const { dome, stars, spiral, starMat, galaxyMat } = useMemo(() => {
+    const dome = new THREE.ShaderMaterial({ vertexShader: skyVertex, fragmentShader: skyFragment, side: THREE.BackSide, depthWrite: false, fog: false })
+    return {
+      dome,
+      stars: makeStars(phone() ? 1800 : 3600),
+      spiral: makeGalaxy(phone() ? 5000 : 9000),
+      starMat: pointsMaterial(),
+      galaxyMat: pointsMaterial(),
     }
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-    geometry.setAttribute('aColor', new THREE.BufferAttribute(col, 3))
-    geometry.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1))
-    const material = new THREE.ShaderMaterial({
-      vertexShader: starVertex,
-      fragmentShader: starFragment,
-      uniforms: { uTime: { value: 0 }, uPixel: { value: 1 } },
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      fog: false,
-    })
-    return { geometry, material }
   }, [])
 
-  const nebulae = useMemo(
-    () => [
-      { tex: glowTexture('rgba(217,138,98,0.22)', 'rgba(120,60,40,0.07)'), at: [-40, -30, -55], size: 70 },
-      { tex: glowTexture('rgba(110,130,210,0.16)', 'rgba(50,60,120,0.05)'), at: [50, -40, 20], size: 80 },
-      { tex: glowTexture('rgba(180,110,160,0.12)', 'rgba(80,40,80,0.04)'), at: [10, -55, 60], size: 65 },
-    ],
-    [],
-  )
-
   // Now and then a shooting star crosses far below the office.
-  const shot = useRef<THREE.Points>(null)
   const TRAIL = 48
   const trail = useMemo(() => {
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL * 3), 3))
     return g
   }, [])
-  const path = useRef({ from: new THREE.Vector3(), to: new THREE.Vector3(), start: 3, dur: 1.4 })
+  const path = useRef({ from: new THREE.Vector3(), to: new THREE.Vector3(), start: 4, dur: 1.2 })
   const v = useMemo(() => new THREE.Vector3(), [])
 
   useFrame(({ clock }, dt) => {
     const t = clock.elapsedTime
-    material.uniforms.uTime.value = t
-    material.uniforms.uPixel.value = dpr
-    if (sky.current) sky.current.rotation.y += dt * 0.006
+    for (const m of [starMat, galaxyMat]) {
+      m.uniforms.uTime.value = t
+      m.uniforms.uPixel.value = dpr
+    }
+    if (sky.current) sky.current.rotation.y += dt * 0.004
+    if (galaxy.current) galaxy.current.rotation.y += dt * 0.012
 
     const p = path.current
     const attr = trail.getAttribute('position') as THREE.BufferAttribute
     let u = (t - p.start) / p.dur
-    if (u > 1.6) {
-      // Plan the next one, somewhere random, 6–14 s from now.
+    if (u > 1.4) {
       const a = Math.random() * Math.PI * 2
-      const y = -22 - Math.random() * 20
-      p.from.set(Math.cos(a) * 55, y, Math.sin(a) * 55)
-      p.to.set(Math.cos(a + 1.1) * 45, y - 8, Math.sin(a + 1.1) * 45)
-      p.start = t + 6 + Math.random() * 8
+      const y = -24 - Math.random() * 20
+      p.from.set(Math.cos(a) * 60, y, Math.sin(a) * 60)
+      p.to.set(Math.cos(a + 0.9) * 50, y - 8, Math.sin(a + 0.9) * 50)
+      p.start = t + 8 + Math.random() * 10
       u = -1
     }
     for (let k = 0; k < TRAIL; k++) {
@@ -960,17 +1039,23 @@ function Cosmos() {
   })
 
   return (
-    <group ref={sky}>
-      <points geometry={geometry} material={material} frustumCulled={false} />
-      {nebulae.map((nb, i) => (
-        <sprite key={i} position={nb.at as [number, number, number]} scale={nb.size}>
-          <spriteMaterial map={nb.tex} transparent depthWrite={false} blending={THREE.AdditiveBlending} fog={false} />
-        </sprite>
-      ))}
-      <points ref={shot} geometry={trail} frustumCulled={false}>
-        <pointsMaterial color={[1.6, 1.3, 1.0]} size={1.8} sizeAttenuation={false} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} fog={false} />
+    <>
+      <mesh material={dome} renderOrder={-10} frustumCulled={false}>
+        <sphereGeometry args={[150, 64, 32]} />
+      </mesh>
+      <group ref={sky}>
+        <points geometry={stars} material={starMat} frustumCulled={false} />
+        {/* The galaxy: far off, below and to one side, tilted so its spiral shows. */}
+        <group position={[-25, -45, -105]} rotation={[0.9, 0.3, 0.35]} scale={0.6}>
+          <group ref={galaxy}>
+            <points geometry={spiral} material={galaxyMat} frustumCulled={false} />
+          </group>
+        </group>
+      </group>
+      <points geometry={trail} frustumCulled={false}>
+        <pointsMaterial color={[1.4, 1.2, 1.0]} size={1.6} sizeAttenuation={false} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} fog={false} />
       </points>
-    </group>
+    </>
   )
 }
 
@@ -1103,7 +1188,7 @@ const phone = () => Math.min(window.innerWidth, window.innerHeight) < 600
  * buffers big enough for the GPU to drop the context, which paints black.
  */
 function pixelRatio(): [number, number] {
-  const budget = phone() ? 2.2e6 : 5e6
+  const budget = phone() ? 2.2e6 : 6.5e6
   const fit = Math.sqrt(budget / Math.max(1, window.innerWidth * window.innerHeight))
   const max = Math.max(1, Math.min(window.devicePixelRatio || 1, phone() ? 1.5 : 2, fit))
   return [1, max]

@@ -72,7 +72,8 @@ export default function Office() {
   }, [locked, lock])
 
   return (
-    <div className={`office${view.kind === 'overview' ? '' : ' is-open'}`}>
+    // No native drag anywhere: holding and moving on a label used to pull out a ghost copy of it.
+    <div className={`office${view.kind === 'overview' ? '' : ' is-open'}`} onDragStart={(e) => e.preventDefault()}>
       <div className="stage">
         <SceneGuard key={attempt} attempt={attempt} onRetry={() => setAttempt((n) => n + 1)}>
           <Suspense fallback={<div className="loading">Büro wird aufgebaut …</div>}>{started && <Scene />}</Suspense>

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { Html, Line, OrbitControls } from '@react-three/drei'
+import { Html, Line, OrbitControls, RoundedBox } from '@react-three/drei'
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
-import { DEPARTMENTS, fmt, BRAIN, type Agent, type Department } from './data'
+import { COMPANY, DEPARTMENTS, fmt, BRAIN, type Agent, type Department } from './data'
 import { useOffice } from './state'
 import { Icon, Spark } from './Icon'
 import { agentTarget } from './workspaces'
@@ -64,19 +64,35 @@ function onTap(fn: () => void) {
 const mat = {
   desk: new THREE.MeshStandardMaterial({ color: '#ece8e1', roughness: 0.6 }),
   screen: new THREE.MeshStandardMaterial({ color: '#1b1d22', roughness: 0.4 }),
-  chair: new THREE.MeshStandardMaterial({ color: '#2a2724', roughness: 0.8 }),
+  chair: new THREE.MeshStandardMaterial({ color: '#2a2724', roughness: 0.7 }),
+  chairMetal: new THREE.MeshStandardMaterial({ color: '#8a8580', roughness: 0.35, metalness: 0.6 }),
   suit: new THREE.MeshStandardMaterial({ color: '#1c1a19', roughness: 0.85 }),
   pot: new THREE.MeshStandardMaterial({ color: '#6b5b4b', roughness: 0.9 }),
   leaf: new THREE.MeshStandardMaterial({ color: '#4f7a3a', roughness: 0.8 }),
 }
 
-// People: a mixed team — women and men, different hair, skin and clothes.
-const SKINS = ['#e8c4a8', '#c9a184', '#a97c5c', '#7a5238', '#f0d2bc'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 }))
-const HAIRS = ['#2b1d14', '#4a2f1d', '#8a5a32', '#c9a063', '#1a1411', '#6b2f1f'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }))
-const SUITS = ['#1c1a19', '#23293a', '#3a3a3d', '#2f3b33'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 }))
-const TOPS = ['#7a3b3b', '#2f4a5a', '#d9d0c3', '#3d3552', '#4f5d3a', '#1c1a19'].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 }))
+// People: seated figures built from rounded shapes, each one different —
+// women and men, hair style and colour, skin, clothes, glasses, beards.
+const std = (c: string, roughness = 0.8) => new THREE.MeshStandardMaterial({ color: c, roughness })
+const SKINS = ['#f1d3bd', '#e3b99b', '#c99a78', '#a8754f', '#7d5337', '#5c3b27'].map((c) => std(c, 0.65))
+const HAIRS = ['#1d1612', '#3b2619', '#5a3a22', '#8a5a32', '#c49a62', '#d9c29a', '#6b2f1f', '#8d8a86'].map((c) => std(c, 0.9))
+const TOPS = ['#1f2330', '#2b2b2e', '#3d4a5c', '#6b2f36', '#2f4a44', '#d8d2c6', '#7a6a58', '#394a2f', '#8a5a4a', '#e9e4dc'].map((c) => std(c))
+const PANTS = ['#1b1b1f', '#26262c', '#2f3440', '#3b3530', '#4a4f5a'].map((c) => std(c, 0.85))
+const SHOE = std('#141214', 0.6)
+const GLASSES = new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.3, metalness: 0.4 })
 
-type Look = { female: boolean; skin: THREE.Material; hair: THREE.Material; top: THREE.Material; ponytail: boolean }
+type Hair = 'short' | 'buzz' | 'side' | 'bob' | 'long' | 'bun' | 'ponytail'
+type Look = {
+  female: boolean
+  skin: THREE.Material
+  hair: THREE.Material
+  top: THREE.Material
+  pants: THREE.Material
+  style: Hair
+  glasses: boolean
+  beard: boolean
+  scale: number
+}
 
 /** A fixed look per desk, so the same person always sits in the same place. */
 function lookFor(desk: number): Look {
@@ -86,9 +102,172 @@ function lookFor(desk: number): Look {
     const x = Math.sin(desk * 127.1 + ++n * 311.7) * 43758.5453
     return x - Math.floor(x)
   }
-  const female = desk % 2 === 0 ? r() < 0.65 : r() < 0.35
   const pick = <T,>(xs: T[]) => xs[Math.floor(r() * xs.length)]
-  return { female, skin: pick(SKINS), hair: pick(HAIRS), top: female ? pick(TOPS) : pick(SUITS), ponytail: r() < 0.4 }
+  const female = desk % 2 === 0 ? r() < 0.65 : r() < 0.35
+  const style = female ? pick<Hair>(['bob', 'long', 'bun', 'ponytail', 'long']) : pick<Hair>(['short', 'buzz', 'side', 'short'])
+  return {
+    female,
+    skin: pick(SKINS),
+    hair: pick(HAIRS),
+    top: pick(TOPS),
+    pants: pick(PANTS),
+    style,
+    glasses: r() < 0.3,
+    beard: !female && r() < 0.35,
+    scale: (female ? 0.94 : 1) * (0.96 + r() * 0.08),
+  }
+}
+
+// Shared geometry: 40 people, one set of shapes.
+const G = {
+  torsoM: new THREE.CapsuleGeometry(0.066, 0.12, 6, 16),
+  torsoF: new THREE.CapsuleGeometry(0.058, 0.12, 6, 16),
+  hips: new THREE.CapsuleGeometry(0.06, 0.07, 4, 12).rotateZ(Math.PI / 2),
+  neck: new THREE.CylinderGeometry(0.022, 0.025, 0.05, 10),
+  head: new THREE.SphereGeometry(0.056, 20, 16),
+  upperArm: new THREE.CapsuleGeometry(0.022, 0.08, 4, 10),
+  forearm: new THREE.CapsuleGeometry(0.019, 0.085, 4, 10),
+  hand: new THREE.SphereGeometry(0.019, 10, 8),
+  thigh: new THREE.CapsuleGeometry(0.03, 0.12, 4, 10),
+  calf: new THREE.CapsuleGeometry(0.025, 0.12, 4, 10),
+  shoe: new THREE.CapsuleGeometry(0.02, 0.04, 4, 8),
+  // Hair: caps over the top, and shells that leave the face open (the person faces -z).
+  cap: new THREE.SphereGeometry(0.06, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.5),
+  buzz: new THREE.SphereGeometry(0.058, 20, 10, 0, Math.PI * 2, 0, Math.PI * 0.42),
+  back: new THREE.SphereGeometry(0.06, 20, 12, Math.PI * 1.5 + 0.95, Math.PI * 2 - 1.9, 0, Math.PI * 0.64),
+  bob: new THREE.SphereGeometry(0.064, 22, 14, Math.PI * 1.5 + 0.85, Math.PI * 2 - 1.7, 0, Math.PI * 0.8),
+  bun: new THREE.SphereGeometry(0.027, 12, 10),
+  tail: new THREE.CapsuleGeometry(0.018, 0.08, 4, 8),
+  long: new THREE.CapsuleGeometry(0.045, 0.1, 4, 12),
+  beard: new THREE.SphereGeometry(0.058, 18, 10, Math.PI * 1.5 - 1.05, 2.1, Math.PI * 0.55, Math.PI * 0.32),
+  lens: new THREE.TorusGeometry(0.016, 0.0035, 6, 16),
+  bridge: new THREE.CylinderGeometry(0.0025, 0.0025, 0.014, 6).rotateZ(Math.PI / 2),
+}
+
+/** A capsule from a to b: limbs are placed by their joints, not by hand-tuned angles. */
+function Limb({ a, b, geometry, material }: { a: [number, number, number]; b: [number, number, number]; geometry: THREE.BufferGeometry; material: THREE.Material }) {
+  const { position, quaternion } = useMemo(() => {
+    const va = new THREE.Vector3(...a)
+    const vb = new THREE.Vector3(...b)
+    const dir = vb.clone().sub(va).normalize()
+    return { position: va.add(vb).multiplyScalar(0.5), quaternion: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [a.join(), b.join()])
+  return <mesh geometry={geometry} material={material} position={position} quaternion={quaternion} />
+}
+
+/** Head height, used by the hair and the idle look-around. */
+const HEAD_Y = 0.478
+
+function Person({ look }: { look: Look }) {
+  const { skin, hair, top, pants, female } = look
+  const w = female ? 0.078 : 0.086 // shoulder half-width
+  return (
+    <group scale={look.scale}>
+      {/* legs: thighs forward on the seat, calves down under the desk */}
+      <mesh geometry={G.hips} material={pants} position={[0, 0.2, 0.0]} />
+      {[-1, 1].map((s) => (
+        <group key={s}>
+          <Limb a={[s * 0.042, 0.2, 0.0]} b={[s * 0.045, 0.2, -0.15]} geometry={G.thigh} material={pants} />
+          <Limb a={[s * 0.045, 0.2, -0.15]} b={[s * 0.048, 0.035, -0.17]} geometry={G.calf} material={pants} />
+          <Limb a={[s * 0.048, 0.022, -0.16]} b={[s * 0.05, 0.022, -0.215]} geometry={G.shoe} material={SHOE} />
+        </group>
+      ))}
+      {/* torso, slightly flattened front to back */}
+      <mesh geometry={female ? G.torsoF : G.torsoM} material={top} position={[0, 0.31, 0.005]} scale={[1, 1, 0.72]} castShadow />
+      <mesh geometry={G.neck} material={skin} position={[0, 0.415, 0]} />
+      {/* arms: shoulder → elbow → hands on the keyboard */}
+      {[-1, 1].map((s) => (
+        <group key={s}>
+          <Limb a={[s * w, 0.37, 0.005]} b={[s * (w + 0.012), 0.285, -0.05]} geometry={G.upperArm} material={top} />
+          <Limb a={[s * (w + 0.012), 0.285, -0.05]} b={[s * 0.058, 0.29, -0.16]} geometry={G.forearm} material={top} />
+          <mesh geometry={G.hand} material={skin} position={[s * 0.056, 0.29, -0.175]} scale={[1, 0.7, 1.25]} />
+        </group>
+      ))}
+      <group name="head" position={[0, HEAD_Y, 0]}>
+        <mesh geometry={G.head} material={skin} scale={[0.95, 1.08, 1]} castShadow />
+        <Hairdo look={look} material={hair} />
+        {look.beard && <mesh geometry={G.beard} material={hair} scale={[0.98, 1.05, 1.02]} />}
+        {look.glasses && (
+          <group position={[0, 0.006, -0.053]}>
+            <mesh geometry={G.lens} material={GLASSES} position={[-0.021, 0, 0]} />
+            <mesh geometry={G.lens} material={GLASSES} position={[0.021, 0, 0]} />
+            <mesh geometry={G.bridge} material={GLASSES} />
+          </group>
+        )}
+      </group>
+    </group>
+  )
+}
+
+function Hairdo({ look, material }: { look: Look; material: THREE.Material }) {
+  switch (look.style) {
+    case 'buzz':
+      return <mesh geometry={G.buzz} material={material} position={[0, 0.006, 0.002]} scale={[0.98, 1.08, 1]} />
+    case 'short':
+      return (
+        <>
+          <mesh geometry={G.cap} material={material} position={[0, 0.008, 0.003]} scale={[0.98, 1.1, 1.02]} />
+          <mesh geometry={G.back} material={material} position={[0, 0.006, 0.004]} scale={[0.98, 1.08, 1]} />
+        </>
+      )
+    case 'side':
+      return (
+        <>
+          <mesh geometry={G.cap} material={material} position={[0.004, 0.012, 0]} scale={[1, 1.18, 1.04]} rotation={[0, 0, -0.12]} />
+          <mesh geometry={G.back} material={material} position={[0, 0.006, 0.004]} scale={[0.98, 1.08, 1]} />
+        </>
+      )
+    case 'bob':
+      return (
+        <>
+          <mesh geometry={G.cap} material={material} position={[0, 0.01, 0.002]} scale={[1.02, 1.12, 1.04]} />
+          <mesh geometry={G.bob} material={material} position={[0, 0.006, 0.006]} scale={[1, 1.08, 1]} />
+        </>
+      )
+    case 'long':
+      return (
+        <>
+          <mesh geometry={G.cap} material={material} position={[0, 0.01, 0.002]} scale={[1.02, 1.12, 1.04]} />
+          <mesh geometry={G.bob} material={material} position={[0, 0.004, 0.008]} scale={[1.02, 1.1, 1]} />
+          <mesh geometry={G.long} material={material} position={[0, -0.075, 0.042]} scale={[1.35, 1, 0.55]} />
+        </>
+      )
+    case 'bun':
+      return (
+        <>
+          <mesh geometry={G.cap} material={material} position={[0, 0.01, 0.002]} scale={[1.02, 1.12, 1.04]} />
+          <mesh geometry={G.back} material={material} position={[0, 0.006, 0.004]} scale={[1.02, 1.1, 1.02]} />
+          <mesh geometry={G.bun} material={material} position={[0, 0.058, 0.04]} />
+        </>
+      )
+    case 'ponytail':
+      return (
+        <>
+          <mesh geometry={G.cap} material={material} position={[0, 0.01, 0.002]} scale={[1.02, 1.12, 1.04]} />
+          <mesh geometry={G.back} material={material} position={[0, 0.006, 0.004]} scale={[1.02, 1.1, 1.02]} />
+          <Limb a={[0, 0.02, 0.06]} b={[0, -0.07, 0.085]} geometry={G.tail} material={material} />
+        </>
+      )
+  }
+}
+
+/** A proper office chair: star base, gas lift, rounded seat and back. */
+function Chair() {
+  return (
+    <group position={[0, 0, 0.3]}>
+      {[0, 1, 2, 3, 4].map((k) => (
+        <mesh key={k} material={mat.chair} position={[Math.sin((k / 5) * Math.PI * 2) * 0.05, 0.018, Math.cos((k / 5) * Math.PI * 2) * 0.05]} rotation={[0, (k / 5) * Math.PI * 2, 0]}>
+          <boxGeometry args={[0.014, 0.012, 0.1]} />
+        </mesh>
+      ))}
+      <mesh material={mat.chairMetal} position={[0, 0.08, 0]}>
+        <cylinderGeometry args={[0.009, 0.012, 0.12, 8]} />
+      </mesh>
+      <RoundedBox args={[0.2, 0.035, 0.19]} radius={0.014} smoothness={3} material={mat.chair} position={[0, 0.155, -0.01]} castShadow />
+      <RoundedBox args={[0.19, 0.2, 0.028]} radius={0.012} smoothness={3} material={mat.chair} position={[0, 0.3, 0.09]} rotation={[-0.12, 0, 0]} castShadow />
+    </group>
+  )
 }
 
 function Workstation({ agent, seed, look }: { agent: Agent; seed: number; look: Look }) {
@@ -109,15 +288,16 @@ function Workstation({ agent, seed, look }: { agent: Agent; seed: number; look: 
     // Working agents type; waiting ones lean back now and then.
     body.current.position.y =
       agent.status === 'arbeitet' ? Math.abs(Math.sin(t * 9 + seed)) * 0.008 : Math.sin(t * 1.2 + seed) * 0.006
-    body.current.rotation.x = agent.status === 'wartet' ? -0.12 + Math.sin(t * 0.8 + seed) * 0.05 : 0.06
+    body.current.rotation.x = agent.status === 'wartet' ? -0.12 + Math.sin(t * 0.8 + seed) * 0.05 : 0.04
+    // Now and then a glance to the side, as people at desks do.
+    const head = body.current.getObjectByName('head')
+    if (head) head.rotation.y = Math.sin(t * 0.35 + seed * 2) > 0.85 ? Math.sin(t * 0.9 + seed) * 0.5 : Math.sin(t * 0.5 + seed) * 0.08
   })
 
   return (
     <group>
       {/* desk */}
-      <mesh material={mat.desk} position={[0, 0.25, 0]} castShadow receiveShadow>
-        <boxGeometry args={[0.52, 0.035, 0.3]} />
-      </mesh>
+      <RoundedBox args={[0.52, 0.035, 0.3]} radius={0.01} smoothness={2} material={mat.desk} position={[0, 0.25, 0]} castShadow receiveShadow />
       <mesh material={mat.desk} position={[-0.24, 0.125, 0]} castShadow>
         <boxGeometry args={[0.03, 0.25, 0.28]} />
       </mesh>
@@ -134,52 +314,10 @@ function Workstation({ agent, seed, look }: { agent: Agent; seed: number; look: 
       <mesh material={mat.screen} position={[0, 0.29, -0.09]}>
         <boxGeometry args={[0.03, 0.05, 0.03]} />
       </mesh>
-      {/* chair */}
-      <mesh material={mat.chair} position={[0, 0.15, 0.3]} castShadow>
-        <boxGeometry args={[0.2, 0.04, 0.18]} />
-      </mesh>
-      <mesh material={mat.chair} position={[0, 0.28, 0.39]} castShadow>
-        <boxGeometry args={[0.2, 0.24, 0.03]} />
-      </mesh>
-      {/* person */}
+      <Chair />
+      {/* person, seated: the group moves (typing, leaning back), the head looks around */}
       <group ref={body} position={[0, 0, 0.27]}>
-        <mesh material={look.top} position={[0, 0.3, 0]} castShadow>
-          <boxGeometry args={look.female ? [0.15, 0.24, 0.11] : [0.17, 0.24, 0.12]} />
-        </mesh>
-        <mesh material={mat.suit} position={[0, 0.2, -0.1]} castShadow>
-          <boxGeometry args={[0.15, 0.06, 0.18]} />
-        </mesh>
-        <mesh material={look.skin} position={[0, 0.48, 0]} castShadow>
-          <sphereGeometry args={[0.065, 14, 12]} />
-        </mesh>
-        <mesh material={look.hair} position={[0, 0.51, 0.015]}>
-          <sphereGeometry args={[0.067, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2]} />
-        </mesh>
-        {look.female &&
-          (look.ponytail ? (
-            // a ponytail at the back of the head (the person faces -z)
-            <mesh material={look.hair} position={[0, 0.47, 0.08]} rotation={[0.5, 0, 0]} castShadow>
-              <capsuleGeometry args={[0.025, 0.08, 4, 8]} />
-            </mesh>
-          ) : (
-            // shoulder-length hair
-            <mesh material={look.hair} position={[0, 0.43, 0.035]} castShadow>
-              <boxGeometry args={[0.15, 0.16, 0.085]} />
-            </mesh>
-          ))}
-        {/* arms reaching for the keyboard */}
-        <mesh material={look.top} position={[-0.1, 0.3, -0.07]} rotation={[0.9, 0, 0]} castShadow>
-          <boxGeometry args={[0.045, 0.16, 0.045]} />
-        </mesh>
-        <mesh material={look.top} position={[0.1, 0.3, -0.07]} rotation={[0.9, 0, 0]} castShadow>
-          <boxGeometry args={[0.045, 0.16, 0.045]} />
-        </mesh>
-        <mesh material={look.skin} position={[-0.1, 0.27, -0.14]}>
-          <sphereGeometry args={[0.022, 8, 6]} />
-        </mesh>
-        <mesh material={look.skin} position={[0.1, 0.27, -0.14]}>
-          <sphereGeometry args={[0.022, 8, 6]} />
-        </mesh>
+        <Person look={look} />
       </group>
     </group>
   )
@@ -207,6 +345,19 @@ function Floor({ dept }: { dept: Department }) {
   const show = useOffice((s) => s.show)
   const open = useOffice((s) => s.open)
   const [hover, setHover] = useState(false)
+  // The badge has its own hover, apart from the floor's: the two used to fight
+  // at the badge's edge and made it flicker open and shut.
+  const [tagHover, setTagHover] = useState(false)
+  const leave = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const enterTag = () => {
+    clearTimeout(leave.current)
+    setTagHover(true)
+  }
+  const leaveTag = () => {
+    clearTimeout(leave.current)
+    leave.current = setTimeout(() => setTagHover(false), 140)
+  }
+  useEffect(() => () => clearTimeout(leave.current), [])
   // The agent under the mouse — from its name tag or its desk — gets a card and a ring.
   const [hoverAgent, setHoverAgent] = useState<string | null>(null)
   const shade = useRef(1)
@@ -319,15 +470,23 @@ function Floor({ dept }: { dept: Department }) {
 
       {/* The badge floats over the floor; hidden while you're inside it. */}
       {!active && !inside && (
-        <Html position={[0, 1.35, 0]} center zIndexRange={hover ? [45, 35] : [20, 0]}>
-          {/* Grows, glows and shows what the department does — from the badge or from its floor. */}
+        <Html position={[0, 1.35, 0]} center zIndexRange={hover || tagHover ? [45, 35] : [20, 0]}>
+          {/* Grows, glows and shows what the department does — from the badge or from its floor.
+              Resting on the badge fills it like an hourglass, and when full the department opens. */}
           <button
-            className={`floor-badge${hover ? ' is-hover' : ''}`}
+            className={`floor-badge${hover || tagHover ? ' is-hover' : ''}${tagHover ? ' is-dwell' : ''}`}
             style={{ ['--c' as string]: dept.color }}
             onClick={pick}
-            onMouseEnter={() => setHover(true)}
-            onMouseLeave={() => setHover(false)}
+            onMouseEnter={enterTag}
+            onMouseLeave={leaveTag}
           >
+            <span
+              className="floor-badge__fill"
+              aria-hidden
+              onTransitionEnd={(e) => {
+                if (e.propertyName === 'transform' && tagHover) pick()
+              }}
+            />
             <span className="floor-badge__icon">
               <Icon name={dept.icon} size={16} />
             </span>
@@ -469,6 +628,93 @@ const brainFragment = /* glsl */ `
 const BRAIN_SCALE = 1.6
 const INSIDE_GROW = 1.45
 
+/**
+ * The platform under the brain: a round landing pad, like a helipad, with the
+ * customer's mark where the "H" would be. Drawn once into a sharp texture.
+ */
+function padTexture() {
+  const S = 1024
+  const cv = document.createElement('canvas')
+  cv.width = cv.height = S
+  const g = cv.getContext('2d')!
+  const c = S / 2
+  const ring = (r: number, w: number, color: string, dash?: number[]) => {
+    g.beginPath()
+    g.setLineDash(dash ?? [])
+    g.lineWidth = w
+    g.strokeStyle = color
+    g.arc(c, c, r * c, 0, Math.PI * 2)
+    g.stroke()
+  }
+  const bg = g.createRadialGradient(c, c, 0, c, c, c)
+  bg.addColorStop(0, '#221a15')
+  bg.addColorStop(0.7, '#15110f')
+  bg.addColorStop(1, '#0d0b0a')
+  g.fillStyle = bg
+  g.fillRect(0, 0, S, S)
+  ring(0.955, 6, 'rgba(232,162,124,0.85)')
+  ring(0.87, 14, 'rgba(232,162,124,0.55)', [46, 30])
+  ring(0.64, 3, 'rgba(232,162,124,0.45)')
+  // Ticks around the inner ring, like a compass rose.
+  for (let k = 0; k < 48; k++) {
+    const a = (k / 48) * Math.PI * 2
+    const r0 = k % 4 === 0 ? 0.69 : 0.715
+    g.beginPath()
+    g.setLineDash([])
+    g.lineWidth = k % 4 === 0 ? 4 : 2
+    g.strokeStyle = 'rgba(232,162,124,0.4)'
+    g.moveTo(c + Math.cos(a) * r0 * c, c + Math.sin(a) * r0 * c)
+    g.lineTo(c + Math.cos(a) * 0.75 * c, c + Math.sin(a) * 0.75 * c)
+    g.stroke()
+  }
+  const tex = new THREE.CanvasTexture(cv)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.anisotropy = 8
+  const mark = COMPANY.logoMark
+  if (COMPANY.logo) {
+    const img = new Image()
+    img.onload = () => {
+      const [sx, sy, sw, sh] = mark ?? [0, 0, img.width, img.height]
+      // The mark, tinted a light copper so it reads on the dark pad.
+      const tint = document.createElement('canvas')
+      tint.width = sw
+      tint.height = sh
+      const t = tint.getContext('2d')!
+      t.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+      t.globalCompositeOperation = 'source-in'
+      t.fillStyle = '#f0b48e'
+      t.fillRect(0, 0, sw, sh)
+      const h = S * 0.5
+      const w = (sw / sh) * h
+      g.drawImage(tint, c - w / 2, c - h / 2, w, h)
+      tex.needsUpdate = true
+    }
+    img.src = COMPANY.logo
+  }
+  return tex
+}
+
+function Pad() {
+  const tex = useMemo(padTexture, [])
+  return (
+    <group>
+      <mesh position={[0, 0.06, 0]} receiveShadow>
+        <cylinderGeometry args={[2.1, 2.16, 0.12, 96]} />
+        <meshStandardMaterial color="#141110" roughness={0.55} metalness={0.3} />
+      </mesh>
+      {/* the marked top faces the camera's default angle, so the mark reads upright */}
+      <mesh position={[0, 0.121, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 4]} receiveShadow>
+        <circleGeometry args={[2.1, 96]} />
+        <meshStandardMaterial map={tex} emissiveMap={tex} emissive="#ffffff" emissiveIntensity={0.35} roughness={0.5} metalness={0.2} />
+      </mesh>
+      <mesh position={[0, 0.125, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[2.1, 0.012, 8, 160]} />
+        <meshBasicMaterial color={[1.5, 0.75, 0.45]} toneMapped={false} />
+      </mesh>
+    </group>
+  )
+}
+
 function Brain() {
   const show = useOffice((s) => s.show)
   const spin = useRef<THREE.Group>(null)
@@ -575,34 +821,9 @@ function Brain() {
     if (light.current) light.current.intensity = 6 * born + flare * 10
   })
 
-  const glow = useMemo(() => {
-    const cv = document.createElement('canvas')
-    cv.width = cv.height = 128
-    const g = cv.getContext('2d')!
-    const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64)
-    grd.addColorStop(0, 'rgba(255,170,110,0.55)')
-    grd.addColorStop(0.4, 'rgba(200,100,60,0.18)')
-    grd.addColorStop(1, 'rgba(0,0,0,0)')
-    g.fillStyle = grd
-    g.fillRect(0, 0, 128, 128)
-    return new THREE.CanvasTexture(cv)
-  }, [])
-
   return (
     <group>
-      {/* dark plinth */}
-      <mesh position={[0, 0.08, 0]} receiveShadow>
-        <boxGeometry args={[3.8, 0.16, 3.8]} />
-        <meshStandardMaterial color="#1a1512" roughness={0.9} />
-      </mesh>
-      <mesh position={[0, 0.17, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[6, 6]} />
-        <meshBasicMaterial map={glow} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
-      </mesh>
-      <mesh position={[0, 0.2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1.35, 0.014, 8, 96]} />
-        <meshBasicMaterial color={[1.5, 0.75, 0.45]} toneMapped={false} />
-      </mesh>
+      <Pad />
       <group ref={outer} position={[0, 1.75, 0]} scale={BRAIN_SCALE}>
         <group ref={spin}>
           <points geometry={geometry} material={material} />
@@ -758,7 +979,7 @@ function Links() {
       DEPARTMENTS.map((d) => {
         const end = place(d.angle)
         const dir = end.clone().normalize()
-        const a = dir.clone().multiplyScalar(1.35).setY(0.2)
+        const a = dir.clone().multiplyScalar(2.15).setY(0.16)
         const b = end.clone().sub(dir.clone().multiplyScalar(FLOOR * 0.62)).setY(0.05)
         const mid = a.clone().lerp(b, 0.5).setY(0.5)
         return new THREE.QuadraticBezierCurve3(a, mid, b)

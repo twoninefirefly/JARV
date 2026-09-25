@@ -66,6 +66,8 @@ export const COMPANY = {
   password: 'demo',
   /** Optional logo for the lock screen (an image URL or data: URI); the mark is used without one. */
   logo: KUNDE?.logo ?? '',
+  /** The bare mark inside the logo, for the landing pad under the brain. */
+  logoMark: KUNDE?.mark,
   /** Minutes without a touch before the office locks itself. */
   autoLockMinutes: 5,
 }

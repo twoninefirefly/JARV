@@ -9,10 +9,16 @@ import bormannLogo from './kunden/bormann.png?inline'
  * neutral example. The logo is inlined, so the page stays a single bundle.
  */
 
-export type Kunde = { name: string; logo: string; branche: 'standard' | 'hausverwaltung' }
+export type Kunde = {
+  name: string
+  logo: string
+  /** Where the bare mark sits inside the logo image, [x, y, w, h] — used on the landing pad. */
+  mark?: [number, number, number, number]
+  branche: 'standard' | 'hausverwaltung'
+}
 
 export const KUNDEN: Record<string, Kunde> = {
-  bormann: { name: 'Bormann Immobilien', logo: bormannLogo, branche: 'hausverwaltung' },
+  bormann: { name: 'Bormann Immobilien', logo: bormannLogo, mark: [92, 0, 233, 283], branche: 'hausverwaltung' },
 }
 
 const KEY = 'office.kunde'

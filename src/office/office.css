@@ -164,14 +164,16 @@ button {
 /* ------------------------------------------------------- labels in the 3D */
 
 .floor-badge {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 16px 6px 6px;
-  border-radius: 14px;
+  gap: 11px;
+  padding: 7px 19px 7px 7px;
+  border-radius: 15px;
   border: 1px solid var(--line);
   background: rgba(22, 18, 15, 0.94);
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
   white-space: nowrap;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 color-mix(in srgb, var(--c) 45%, transparent);
@@ -192,6 +194,23 @@ button {
     0 12px 34px rgba(0, 0, 0, 0.55),
     0 0 26px color-mix(in srgb, var(--c) 32%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--c) 60%, transparent);
+}
+.floor-badge > :not(.floor-badge__fill) {
+  position: relative;
+}
+/* The hourglass: fills left to right while you rest on the badge, drains fast when you leave. */
+.floor-badge__fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--c) 34%, transparent), color-mix(in srgb, var(--c) 20%, transparent));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s ease-out;
+  pointer-events: none;
+}
+.floor-badge.is-dwell .floor-badge__fill {
+  transform: scaleX(1);
+  transition: transform 1.4s linear;
 }
 .floor-badge__text {
   display: flex;
@@ -232,6 +251,10 @@ button {
   .floor-badge__more > span {
     transition: none;
   }
+}
+.floor-badge .floor-badge__icon {
+  width: 34px;
+  height: 34px;
 }
 .floor-badge__icon,
 .sheet__icon {
@@ -862,12 +885,12 @@ button {
     letter-spacing: 0.16em;
   }
   .floor-badge {
-    font-size: 13px;
-    padding: 4px 12px 4px 4px;
+    font-size: 14px;
+    padding: 5px 13px 5px 5px;
   }
-  .floor-badge__icon {
-    width: 26px;
-    height: 26px;
+  .floor-badge .floor-badge__icon {
+    width: 28px;
+    height: 28px;
   }
 }
 
@@ -2047,4 +2070,13 @@ button {
 }
 .open-ws--brain {
   margin-top: -6px;
+}
+
+/* Labels are buttons, not things to drag or select. */
+.office button,
+.office img,
+.office svg {
+  -webkit-user-drag: none;
+  user-select: none;
+  -webkit-user-select: none;
 }

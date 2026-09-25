@@ -6,18 +6,27 @@ import Panel from './Panel'
 import Workspace from './Workspace'
 import Lock, { Mark } from './Lock'
 import { useComms } from './comms'
+import { Guard } from './Guard'
 
 /** One retry: a chunk request that fails once (a flaky connection) usually works the second time. */
 const Scene = lazy(() => import('./Scene').catch(() => import('./Scene')))
 
-/** If the 3D view cannot start, say so and offer a retry, instead of a black screen. */
-class SceneGuard extends Component<{ children: ReactNode; onRetry: () => void }, { failed: boolean }> {
+/**
+ * If the 3D view fails, rebuild it by itself — twice — and only then say so
+ * and offer a button, instead of leaving a black screen.
+ */
+class SceneGuard extends Component<{ children: ReactNode; attempt: number; onRetry: () => void }, { failed: boolean }> {
   state = { failed: false }
   static getDerivedStateFromError() {
     return { failed: true }
   }
+  componentDidCatch(error: unknown) {
+    console.error('[scene]', error)
+    if (this.props.attempt < 2) setTimeout(this.props.onRetry, 300)
+  }
   render() {
     if (!this.state.failed) return this.props.children
+    if (this.props.attempt < 2) return <div className="loading">Büro wird aufgebaut …</div>
     return (
       <div className="loading loading--error">
         <p>Die 3D-Ansicht konnte nicht geladen werden.</p>
@@ -51,7 +60,8 @@ export default function Office() {
       clearTimeout(t)
       t = setTimeout(lock, COMPANY.autoLockMinutes * 60_000)
     }
-    const events = ['pointerdown', 'keydown', 'wheel'] as const
+    // Moving the mouse while presenting counts as being there.
+    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel'] as const
     events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
     return () => {
       clearTimeout(t)
@@ -62,7 +72,7 @@ export default function Office() {
   return (
     <div className={`office${view.kind === 'overview' ? '' : ' is-open'}`}>
       <div className="stage">
-        <SceneGuard key={attempt} onRetry={() => setAttempt((n) => n + 1)}>
+        <SceneGuard key={attempt} attempt={attempt} onRetry={() => setAttempt((n) => n + 1)}>
           <Suspense fallback={<div className="loading">Büro wird aufgebaut …</div>}>{started && <Scene />}</Suspense>
         </SceneGuard>
       </div>
@@ -98,8 +108,13 @@ export default function Office() {
         )}
       </AnimatePresence>
 
-      {!locked && <Panel />}
-      {!locked && <Workspace />}
+      {/* A failure in a sheet or window resets to the overview instead of blanking the page. */}
+      <Guard name="panel" onError={() => useOffice.setState({ ws: null, view: { kind: 'overview' } })}>
+        {!locked && <Panel />}
+      </Guard>
+      <Guard name="window" onError={() => useOffice.setState({ ws: null })}>
+        {!locked && <Workspace />}
+      </Guard>
       <Lock onStart={() => setStarted(true)} />
     </div>
   )

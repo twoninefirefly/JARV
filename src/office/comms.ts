@@ -68,7 +68,7 @@ function make(i: number, at: Date): Message {
   }
 }
 
-export const deptOf = (id: string) => DEPARTMENTS.find((d) => d.id === id)!
+export const deptOf = (id: string) => DEPARTMENTS.find((d) => d.id === id)
 
 /** Starts the traffic once the office is unlocked; one message every few seconds. */
 export function useComms(running: boolean) {

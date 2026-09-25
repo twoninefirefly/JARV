@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY } from './data'
 import { useOffice } from './state'
 import { BRANCHE, BRANCHEN, setBranche } from './branche'
+import { KUNDE } from './kunden'
 
 /**
  * The lock screen: logo, clock, password, then a loading bar while the office
@@ -109,12 +110,19 @@ export default function Lock({ onStart }: { onStart: () => void }) {
             <div className="lock__date">{now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
 
             <div className="lock__brand">
-              {COMPANY.logo ? <img src={COMPANY.logo} alt={COMPANY.name} className="lock__logo" /> : <Mark size={64} />}
-              <div className="lock__name">{COMPANY.name}</div>
+              {/* A customer logo carries its own name; the text name only goes with our mark. */}
+              {COMPANY.logo ? (
+                <img src={COMPANY.logo} alt={COMPANY.name} className="lock__logo" />
+              ) : (
+                <>
+                  <Mark size={64} />
+                  <div className="lock__name">{COMPANY.name}</div>
+                </>
+              )}
               <div className="eyebrow">Agenten-Büro · geschützter Bereich</div>
             </div>
 
-            {progress === null && (
+            {progress === null && !KUNDE && (
               <div className="lock__branche" role="group" aria-label="Branche der Demo">
                 {BRANCHEN.map((b) => (
                   <button key={b.id} type="button" aria-pressed={b.id === BRANCHE} onClick={() => b.id !== BRANCHE && setBranche(b.id)}>

@@ -7,6 +7,8 @@
  * once at load, so switching reloads the page.
  */
 
+import { KUNDE } from './kunden'
+
 export type Branche = 'standard' | 'hausverwaltung'
 
 export const BRANCHEN: Array<{ id: Branche; label: string }> = [
@@ -18,6 +20,8 @@ const KEY = 'office.branche'
 const valid = (v: string | null | undefined): v is Branche => BRANCHEN.some((b) => b.id === v)
 
 function read(): Branche {
+  // A customer demo is always dressed for that customer's trade.
+  if (KUNDE) return KUNDE.branche
   const fromUrl = new URLSearchParams(location.search).get('branche') ?? location.hash.slice(1)
   if (valid(fromUrl)) return fromUrl
   try {

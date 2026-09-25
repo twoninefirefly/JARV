@@ -12,6 +12,7 @@
  */
 
 import { BRANCHE } from './branche'
+import { KUNDE } from './kunden'
 import { HV_BRAIN, hvDepartments } from './hausverwaltung'
 
 export type IconName = 'chat' | 'megaphone' | 'box' | 'clapper' | 'handshake' | 'euro' | 'brain' | 'key' | 'wrench' | 'building' | 'meter'
@@ -53,7 +54,7 @@ export type Department = {
 const params = new URLSearchParams(location.search)
 
 export const COMPANY = {
-  name: params.get('firma')?.slice(0, 40) || (BRANCHE === 'hausverwaltung' ? 'Beispiel Hausverwaltung' : 'Beispielfirma'),
+  name: params.get('firma')?.slice(0, 40) || KUNDE?.name || (BRANCHE === 'hausverwaltung' ? 'Beispiel Hausverwaltung' : 'Beispielfirma'),
   demo: !params.has('live'),
   assistant: 'Jarvis',
   /**
@@ -63,7 +64,7 @@ export const COMPANY = {
    */
   password: 'demo',
   /** Optional logo for the lock screen (an image URL or data: URI); the mark is used without one. */
-  logo: '',
+  logo: KUNDE?.logo ?? '',
   /** Minutes without a touch before the office locks itself. */
   autoLockMinutes: 5,
 }

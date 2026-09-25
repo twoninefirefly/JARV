@@ -576,8 +576,12 @@ function Links() {
           continue
         }
         // First half: out of the sender's floor into the brain; second: out to the receiver.
-        if (u < 0.5) byDept[f.msg.from.dept].getPoint(1 - u * 2, v)
-        else byDept[f.msg.to.dept].getPoint((u - 0.5) * 2, v)
+        const curve = u < 0.5 ? byDept[f.msg.from.dept] : byDept[f.msg.to.dept]
+        if (!curve) {
+          attr.setXYZ(p * TRAIL + k, 0, -50, 0)
+          continue
+        }
+        curve.getPoint(u < 0.5 ? 1 - u * 2 : (u - 0.5) * 2, v)
         attr.setXYZ(p * TRAIL + k, v.x, v.y + 0.12, v.z)
       }
     }
@@ -676,7 +680,8 @@ function Rig() {
   useEffect(() => {
     const cam = camera as THREE.PerspectiveCamera
     const ctl = controls.current
-    if (!ctl) return
+    // A hidden or collapsing stage reports a zero size; flying there would put the camera at infinity.
+    if (!ctl || size.width < 2 || size.height < 2) return
     const aspect = size.width / size.height
 
     let focus = new THREE.Vector3(0, 0.3, 0)
@@ -692,8 +697,8 @@ function Rig() {
       focus = new THREE.Vector3(0, 1.1, 0)
       dist = aspect < 0.8 ? 16 : 10
     } else {
-      const d = DEPARTMENTS.find((x) => x.id === view.id)!
-      focus = place(d.angle).setY(0.5)
+      const d = DEPARTMENTS.find((x) => x.id === view.id)
+      focus = d ? place(d.angle).setY(0.5) : focus
       dist = aspect < 0.8 ? 17 : 9.5
       polar = 0.8
     }
@@ -715,12 +720,21 @@ function Rig() {
       shift.set(0, -1, 0).applyQuaternion(probe.quaternion).multiplyScalar(dist * 0.04)
     }
     const target = focus.clone().add(shift)
-    goal.current = { target, pos: target.clone().addScaledVector(dir, dist) }
+    const pos = target.clone().addScaledVector(dir, dist)
+    if (![pos.x, pos.y, pos.z, target.x, target.y, target.z].every(Number.isFinite)) return
+    goal.current = { target, pos }
   }, [view, flight, size, camera])
 
   useFrame((_, dt) => {
     const ctl = controls.current
     if (!ctl) return
+    // Last line of defence: a camera at NaN renders nothing but background, forever.
+    const p = camera.position
+    if (!Number.isFinite(p.x + p.y + p.z) || !Number.isFinite(ctl.target.x + ctl.target.y + ctl.target.z)) {
+      p.set(18, 22, 18)
+      ctl.target.set(0, 0.3, 0)
+      goal.current = null
+    }
     const g = goal.current
     if (g) {
       const k = 1 - Math.exp(-dt * 3.2)
@@ -760,6 +774,17 @@ function Rig() {
 /** Phones get a lighter renderer: less GPU memory, fewer lost contexts. */
 const phone = () => Math.min(window.innerWidth, window.innerHeight) < 600
 
+/**
+ * Pixel density, capped by total pixels: a 4K projector at 2× with bloom needs
+ * buffers big enough for the GPU to drop the context, which paints black.
+ */
+function pixelRatio(): [number, number] {
+  const budget = phone() ? 2.2e6 : 5e6
+  const fit = Math.sqrt(budget / Math.max(1, window.innerWidth * window.innerHeight))
+  const max = Math.max(1, Math.min(window.devicePixelRatio || 1, phone() ? 1.5 : 2, fit))
+  return [1, max]
+}
+
 export default function Scene() {
   // A phone drops the GPU context when the app goes to the background or the
   // page is reopened, and a lost context paints black forever. Rebuilding the
@@ -779,7 +804,7 @@ export default function Scene() {
         )
       }}
       shadows
-      dpr={phone() ? [1, 1.5] : [1, 2]}
+      dpr={pixelRatio()}
       camera={{ position: [18, 22, 18], fov: 34, near: 0.1, far: 200 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
     >

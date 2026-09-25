@@ -144,6 +144,7 @@ function Feed({ dept, limit }: { dept?: string; limit: number }) {
         {items.map((m) => {
           const from = deptOf(m.from.dept)
           const to = deptOf(m.to.dept)
+          if (!from || !to) return null
           const agent = to.agents.find((a) => a.name === m.to.agent) ?? to.agents[0]
           return (
             <motion.li key={m.id} layout initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>

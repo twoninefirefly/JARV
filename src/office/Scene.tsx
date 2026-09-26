@@ -1430,94 +1430,6 @@ function makeStars(n: number) {
   return g
 }
 
-/**
- * Capricornus, drawn where it would be: its brightest stars by right ascension
- * and declination, joined as the classic figure — a faint line drawing in the
- * sky behind the office.
- */
-const CAPRICORN: Array<[string, number, number, number]> = [
-  // name, RA (h), Dec (°), brightness 0..1
-  ['α', 20.3, -12.5, 0.7],
-  ['β', 20.35, -14.8, 0.85],
-  ['ψ', 20.77, -25.3, 0.55],
-  ['ω', 20.86, -26.9, 0.55],
-  ['ζ', 21.44, -22.4, 0.65],
-  ['ε', 21.62, -19.5, 0.45],
-  ['δ', 21.78, -16.1, 1],
-  ['γ', 21.67, -16.7, 0.7],
-  ['ι', 21.37, -16.8, 0.45],
-  ['θ', 21.1, -17.2, 0.55],
-]
-const CAPRICORN_LINES = [
-  ['α', 'β'],
-  ['β', 'ψ'],
-  ['ψ', 'ω'],
-  ['ω', 'ζ'],
-  ['ζ', 'ε'],
-  ['ε', 'δ'],
-  ['δ', 'γ'],
-  ['γ', 'ι'],
-  ['ι', 'θ'],
-  ['θ', 'β'],
-]
-
-function Capricorn() {
-  const { geometry, lines } = useMemo(() => {
-    // Behind the office as the camera first sees it, a little below the horizon,
-    // so it shows above the far departments.
-    const dir = new THREE.Vector3(-1.35, -0.86, -0.72).normalize()
-    const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize()
-    const up = new THREE.Vector3().crossVectors(right, dir).normalize()
-    const R = 118
-    const deg = Math.PI / 180
-    const at = new Map<string, THREE.Vector3>()
-    const pos: number[] = []
-    const col: number[] = []
-    const size: number[] = []
-    const seed: number[] = []
-    for (const [name, ra, dec, b] of CAPRICORN) {
-      const x = (21.05 - ra) * 15 * Math.cos(dec * deg) * 0.8
-      const y = (dec + 19.5) * 0.8
-      const p = dir
-        .clone()
-        .addScaledVector(right, Math.tan(x * deg))
-        .addScaledVector(up, Math.tan(y * deg))
-        .normalize()
-        .multiplyScalar(R)
-      at.set(name, p)
-      pos.push(p.x, p.y, p.z)
-      const c = new THREE.Color('#e6eeff').multiplyScalar(0.9 + b * 0.9)
-      col.push(c.r, c.g, c.b)
-      size.push(3.2 + b * 3.4)
-      seed.push(0.6 + b * 0.4)
-    }
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
-    geometry.setAttribute('aColor', new THREE.Float32BufferAttribute(col, 3))
-    geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(size, 1))
-    geometry.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1))
-    const seg: number[] = []
-    for (const [a, b] of CAPRICORN_LINES) seg.push(...at.get(a)!.toArray(), ...at.get(b)!.toArray())
-    const lines = new THREE.BufferGeometry()
-    lines.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3))
-    return { geometry, lines }
-  }, [])
-  const mat = useMemo(() => pointsMaterial(), [])
-  const dpr = useThree((s) => s.viewport.dpr)
-  useFrame(({ clock }) => {
-    mat.uniforms.uTime.value = clock.elapsedTime
-    mat.uniforms.uPixel.value = dpr
-  })
-  return (
-    <group>
-      <points geometry={geometry} material={mat} frustumCulled={false} />
-      <lineSegments geometry={lines} frustumCulled={false}>
-        <lineBasicMaterial color="#9fb6e8" transparent opacity={0.28} depthWrite={false} fog={false} />
-      </lineSegments>
-    </group>
-  )
-}
-
 function Cosmos() {
   const sky = useRef<THREE.Group>(null)
   const dpr = useThree((s) => s.viewport.dpr)
@@ -1576,7 +1488,6 @@ function Cosmos() {
       </mesh>
       <group ref={sky}>
         <points geometry={stars} material={starMat} frustumCulled={false} />
-        <Capricorn />
       </group>
       <points geometry={trail} frustumCulled={false}>
         <pointsMaterial color={[1.4, 1.2, 1.0]} size={1.6} sizeAttenuation={false} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} fog={false} />

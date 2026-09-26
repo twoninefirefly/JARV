@@ -24,6 +24,35 @@ export function Mark({ size = 26 }: { size?: number }) {
   )
 }
 
+/**
+ * The customer's logo, alive: it breathes with a soft glow, a sheen runs over
+ * it now and then, it tilts towards the pointer and answers a tap with a pulse.
+ */
+function LiveLogo({ src, alt }: { src: string; alt: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pulse, setPulse] = useState(0)
+  const tilt = (e: React.PointerEvent) => {
+    const el = ref.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const x = (e.clientX - r.left) / r.width - 0.5
+    const y = (e.clientY - r.top) / r.height - 0.5
+    el.style.setProperty('--rx', `${(-y * 16).toFixed(2)}deg`)
+    el.style.setProperty('--ry', `${(x * 18).toFixed(2)}deg`)
+  }
+  const rest = () => {
+    ref.current?.style.setProperty('--rx', '0deg')
+    ref.current?.style.setProperty('--ry', '0deg')
+  }
+  return (
+    <div ref={ref} className="live-logo" onPointerMove={tilt} onPointerLeave={rest} onClick={() => setPulse((n) => n + 1)} style={{ ['--logo' as string]: `url("${src}")` }}>
+      <img src={src} alt={alt} className="lock__logo" draggable={false} />
+      <span className="live-logo__sheen" aria-hidden />
+      {pulse > 0 && <span key={pulse} className="live-logo__ring" aria-hidden />}
+    </div>
+  )
+}
+
 /** Slow drifting dots behind the lock — a 2D canvas, cheap enough for any phone. */
 function Drift() {
   const ref = useRef<HTMLCanvasElement>(null)
@@ -156,14 +185,19 @@ export default function Lock({ onStart }: { onStart: () => void }) {
           <div className="lock__inner">
             {/* Like a phone's lock screen: the date small on top, the time large beneath. */}
             <div className="lock__date">{now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-            <div className="lock__time">
-              {now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+            {/* The time behind glass: a frosted pane with a highlight along its top edge. */}
+            <div className="lock__glass">
+              <div className="lock__time">
+                {String(now.getHours()).padStart(2, '0')}
+                <span className="lock__colon">:</span>
+                {String(now.getMinutes()).padStart(2, '0')}
+              </div>
             </div>
 
             <div className="lock__brand">
               {/* A customer logo carries its own name; the text name only goes with our mark. */}
               {COMPANY.logo ? (
-                <img src={COMPANY.logo} alt={COMPANY.name} className="lock__logo" />
+                <LiveLogo src={COMPANY.logo} alt={COMPANY.name} />
               ) : (
                 <>
                   <Mark size={64} />

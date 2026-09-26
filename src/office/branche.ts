@@ -7,7 +7,7 @@
  * once at load, so switching reloads the page.
  */
 
-import { KUNDE } from './kunden'
+import { HV_KUNDE, KUNDE } from './kunden'
 
 export type Branche = 'standard' | 'hausverwaltung'
 
@@ -24,6 +24,9 @@ function read(): Branche {
   if (KUNDE) return KUNDE.branche
   const fromUrl = new URLSearchParams(location.search).get('branche') ?? location.hash.slice(1)
   if (valid(fromUrl)) return fromUrl
+  // A build made for a customer (VITE_HV_KUNDE) opens as that customer, on any
+  // device and any fresh link — nothing left over in the browser can undo that.
+  if (HV_KUNDE) return HV_KUNDE.branche
   try {
     const stored = localStorage.getItem(KEY)
     if (valid(stored)) return stored

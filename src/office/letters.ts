@@ -154,6 +154,26 @@ export function craftOrder(o: { craft: string; object: string; job: string; amou
   }
 }
 
+/** The reply that goes with a work order: the tenant hears who is coming and what to do. */
+export function craftAssigned(o: { person: string; object: string; unit?: string; craft: string; topic: string; urgent?: boolean }): Letter {
+  const all = o.person === 'Hausgemeinschaft'
+  return {
+    channel: 'E-Mail',
+    template: 'Antwort: Handwerker beauftragt',
+    to: all ? [`Aushang und Mail an alle Parteien`, f(o.object)] : [`${o.person.replace(/^(Fam\.|Frau|Herr) /, '').toLowerCase().replace(/ /g, '.')}@mail.de`],
+    subject: `${o.urgent ? 'Notdienst ist unterwegs' : 'Handwerker ist beauftragt'} – ${f(o.topic)}, ${f(o.unit ? `${o.object}, ${o.unit}` : o.object)}`,
+    salutation: all ? 'Liebe Mieterinnen und Mieter,' : greet(o.person),
+    body: [
+      `vielen Dank für Ihre Meldung. Wir haben soeben ${f(o.craft)} mit der Behebung beauftragt${o.urgent ? ' – als Notdienst, der Betrieb ist bereits unterwegs' : ''}.`,
+      o.urgent
+        ? `Der Techniker ist voraussichtlich ${f('innerhalb der nächsten zwei Stunden')} vor Ort. Bitte ermöglichen Sie ihm den Zugang zum Heizungskeller bzw. zu Ihrer Wohnung.`
+        : `Der Betrieb meldet sich in den nächsten ${f('zwei Werktagen')} direkt bei Ihnen, um einen Termin zu vereinbaren. Bitte ermöglichen Sie zum vereinbarten Termin den Zugang zur Wohnung.`,
+      'Den Stand sehen Sie jederzeit im Mieterportal. Sobald alles erledigt ist, melden wir uns noch einmal.',
+    ],
+    from: 'Technik',
+  }
+}
+
 export function etvInvite(o: { object: string; date: string; agenda: string[] }): Letter {
   return {
     channel: 'Brief',

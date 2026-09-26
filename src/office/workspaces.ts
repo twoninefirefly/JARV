@@ -11,7 +11,7 @@ import {
 import { BRANCHE } from './branche'
 import * as L from './letters'
 import { needsLeitung, type Decision } from './team'
-import { HV_KIND_BY_NAME, HV_KPI_OWNER, HV_LAYOUT, HV_WAITING_OWNER, hvMakers, hvSources, type HvKind } from './hausverwaltung'
+import { HV_KIND_BY_NAME, HV_KPI_OWNER, HV_LAYOUT, HV_OBJECTS, HV_PEOPLE, HV_WAITING_OWNER, hvMakers, hvSources, type HvKind } from './hausverwaltung'
 
 const HV = BRANCHE === 'hausverwaltung'
 
@@ -99,7 +99,13 @@ export type WsItem = {
   letter?: L.Letter
   /** Every copy of a mail merge — one letter per recipient, for printing. */
   batch?: L.Letter[]
+  /** The reply that goes out once it's dealt with — a template, ready to send. */
+  reply?: L.Letter
+  /** Done in this window today: approved, sent, rejected … and by whom. */
+  handled?: Handled
 }
+
+export type Handled = { label: string; short: string; tone: Tone; by?: string; at: string }
 
 export type Source = {
   /** The kind of system, as a customer would name it. */
@@ -122,7 +128,11 @@ export type WsTarget = {
   agentId?: string
   focus?: string
   filter?: 'done' | 'planned'
+  /** An urgent message tapped in the notification: the window opens on that case. */
+  incident?: Incident
 }
+
+export type Incident = { text: string; from: string; to: string; filed: string; time: string; urgency: 1 | 2 }
 
 const domain = `${COMPANY.name.toLowerCase().replace(/[^a-z0-9äöüß]+/g, '-').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/^-|-$/g, '')}.de`
 
@@ -746,7 +756,46 @@ function seedOf(s: string) {
 }
 
 /** Everything a window lists, including approvals owned by that agent. */
+/** The case behind an urgent notification, with the fix one click away. */
+function incidentItem(x: Incident): WsItem {
+  const object = HV_OBJECTS.find((o) => x.text.includes(o))
+  const heat = /heizung/i.test(x.text)
+  const water = /wasser|rohr/i.test(x.text)
+  const badge = x.urgency === 2 ? { text: 'Notfall', tone: 'bad' as Tone } : { text: 'Dringend', tone: 'warn' as Tone }
+  const base = { id: `inc-${x.text}`, title: x.text, sub: `${x.from} → ${x.to} · ${x.time}`, meta: 'jetzt', badge }
+  if (HV && object) {
+    const craft = heat ? 'Heizung & Solar Meyer' : water ? 'Sanitär Kaya' : 'Hausmeister-Service Kaiser'
+    const topic = heat ? 'Heizungsausfall' : water ? 'Wasserschaden' : x.text.replace(`, ${object}`, '')
+    const all = heat
+    return {
+      ...base,
+      body: `${x.from} hat das erkannt, das Gehirn hat es an ${x.to} gegeben (${x.filed}). Vorgeschlagen: ${craft} ${x.urgency === 2 ? 'als Notdienst' : 'mit Termin in den nächsten Tagen'}. Mit einem Klick geht der Auftrag raus – danach die Antwort an ${all ? 'alle Mieter' : 'den Mieter'} als Vorlage.`,
+      fields: [
+        ['Objekt', object],
+        ['Betroffen', all ? '8 Parteien' : '1 Wohnung'],
+        ['Vorschlag', craft],
+        ['Frist', x.urgency === 2 ? 'sofort' : 'innerhalb 48 Std.'],
+      ],
+      letter: L.craftOrder({ craft, object, job: heat ? 'Heizungsausfall – Notdienst, Anlage wieder in Betrieb nehmen' : water ? 'Wasserfleck an der Decke – Ursache finden und abdichten' : topic, amount: heat ? 480 : 320, no: `N-2026-${40 + (x.text.length % 50)}` }),
+      reply: L.craftAssigned({ person: all ? 'Hausgemeinschaft' : HV_PEOPLE[x.text.length % HV_PEOPLE.length], object, unit: all ? undefined : `WE ${String(1 + (x.text.length % 12)).padStart(2, '0')}`, craft, topic, urgent: x.urgency === 2 }),
+      actions: ['Handwerker beauftragen', 'Mieter antworten', 'Erledigt'],
+    }
+  }
+  const person = PEOPLE[x.text.length % PEOPLE.length]
+  return {
+    ...base,
+    body: `${x.from} hat das erkannt, das Gehirn hat es an ${x.to} gegeben (${x.filed}). Übernehmen Sie den Fall oder schicken Sie gleich die vorbereitete Antwort.`,
+    fields: [
+      ['Gemeldet', x.time],
+      ['Zuständig', x.to],
+    ],
+    reply: L.customerReply({ person, topic: x.text }),
+    actions: ['Übernehmen', 'Kunde antworten', 'Erledigt'],
+  }
+}
+
 export function itemsFor(t: WsTarget, approved: string[], decisions: Decision[] = []): WsItem[] {
+  if (t.incident) return [incidentItem(t.incident), ...itemsFor({ ...t, incident: undefined }, approved, decisions)]
   const dept = DEPARTMENTS.find((d) => d.id === t.deptId)
 
   if (t.kind === 'log') {

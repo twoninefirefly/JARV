@@ -32,11 +32,11 @@ function useNow() {
 // Pieces
 // ---------------------------------------------------------------------------
 
-function Stat({ value, label, tone, onClick }: { value: number; label: string; tone?: string; onClick?: () => void }) {
+function Stat({ value, label, tone, onClick }: { value: number | string; label: string; tone?: string; onClick?: () => void }) {
   return (
     <button className="stat stat--link" onClick={onClick}>
       <div className="stat__value" style={tone ? { color: tone } : undefined}>
-        {fmt(value)}
+        {typeof value === 'number' ? fmt(value) : value}
       </div>
       <div className="stat__label">
         {label} <span className="stat__go">→</span>
@@ -233,25 +233,51 @@ function Thread({ msgs, busy }: { msgs: Msg[]; busy: boolean }) {
 
 function Composer({ placeholder, busy, onSend }: { placeholder: string; busy: boolean; onSend: (q: string) => void }) {
   const [text, setText] = useState('')
+  const field = useRef<HTMLTextAreaElement>(null)
+  // The field grows with the text, up to a few lines.
+  useEffect(() => {
+    const t = field.current
+    if (!t) return
+    t.style.height = 'auto'
+    t.style.height = `${Math.min(t.scrollHeight, 160)}px`
+  }, [text])
+  const submit = () => {
+    if (busy || !text.trim()) return
+    onSend(text)
+    setText('')
+  }
   return (
     <form
       className="composer"
       onSubmit={(e) => {
         e.preventDefault()
-        onSend(text)
-        setText('')
+        submit()
       }}
     >
-      <input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder={placeholder}
-        aria-label={placeholder}
-        enterKeyHint="send"
-      />
-      <button type="submit" disabled={busy || !text.trim()}>
-        Senden
-      </button>
+      <div className="composer__box">
+        <textarea
+          ref={field}
+          rows={2}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter sends, Shift+Enter starts a new line.
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              submit()
+            }
+          }}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          enterKeyHint="send"
+        />
+        <button type="submit" disabled={busy || !text.trim()} aria-label="Senden">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
+        </button>
+      </div>
+      <small className="composer__hint">Enter senden · Shift+Enter neue Zeile</small>
     </form>
   )
 }
@@ -357,9 +383,9 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
         <Stat value={s.done} label="Heute erledigt" tone="#b7cf85" onClick={() => open(logTarget(dept, 'done'))} />
         <Stat value={dept.runs[(s.hour + 1) % 24]} label="Nächste Stunde" tone="#9db8d6" onClick={() => open(logTarget(dept, 'planned'))} />
         <Stat
-          value={waiting.filter(({ w }) => mayDecide(user, dept.id, w).ok).length}
-          label={waiting.length ? 'Wartet auf Sie' : 'Nichts offen'}
-          tone="#e8c170"
+          value={waiting.length ? waiting.filter(({ w }) => mayDecide(user, dept.id, w).ok).length : '✓'}
+          label={waiting.length ? 'Wartet auf Sie' : 'Alles erledigt'}
+          tone={waiting.length ? '#e8c170' : '#b7cf85'}
           onClick={() => open(approvalsTarget(dept))}
         />
       </div>
@@ -439,9 +465,13 @@ function OverviewSheet({ now }: { now: Date }) {
           <b>Aufgaben</b>
           <span className="eyebrow">Ganzes Büro · {fmt(done)} heute erledigt</span>
         </span>
-        <span className="pill">
-          <i /> {waiting.length} warten {expanded ? '▾' : '▸'}
-        </span>
+        {waiting.length ? (
+          <span className="pill">
+            <i /> {waiting.length} warten {expanded ? '▾' : '▸'}
+          </span>
+        ) : (
+          <span className="pill pill--done">✓ Alles erledigt {expanded ? '▾' : '▸'}</span>
+        )}
       </button>
       <AnimatePresence>
         {expanded && (
@@ -451,6 +481,11 @@ function OverviewSheet({ now }: { now: Date }) {
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
           >
+            {waiting.length === 0 && (
+              <li className="waiting__empty">
+                <span>✓</span> Nichts wartet auf eine Freigabe – alles für heute erledigt.
+              </li>
+            )}
             {waiting.map(({ d, w, i }) => (
               <li key={w} style={{ ['--c' as string]: d.color }}>
                 <button onClick={() => open(agentTarget(d, waitingOwner(d, i), w))}>

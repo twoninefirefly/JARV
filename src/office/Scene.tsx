@@ -5,7 +5,7 @@ import { Bloom, EffectComposer } from '@react-three/postprocessing'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { COMPANY, DEPARTMENTS, fmt, BRAIN, type Agent, type Department } from './data'
-import { useOffice } from './state'
+import { useOffice, type View } from './state'
 import { Icon, Spark } from './Icon'
 import { agentTarget } from './workspaces'
 import Garden from './Garden'
@@ -81,6 +81,9 @@ const TOPS = ['#1f2330', '#2b2b2e', '#3d4a5c', '#6b2f36', '#2f4a44', '#d8d2c6', 
 const PANTS = ['#1b1b1f', '#26262c', '#2f3440', '#3b3530', '#4a4f5a'].map((c) => std(c, 0.85))
 const SHOE = std('#141214', 0.6)
 const GLASSES = new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.3, metalness: 0.4 })
+const EYE = std('#f4f1ec', 0.35)
+const PUPIL = new THREE.MeshStandardMaterial({ color: '#1a120e', roughness: 0.2 })
+const LIPS = ['#9c5a52', '#b45a62', '#7a4038'].map((c) => std(c, 0.55))
 
 type Hair = 'short' | 'buzz' | 'side' | 'bob' | 'long' | 'bun' | 'ponytail'
 type Look = {
@@ -142,6 +145,13 @@ const G = {
   long: new THREE.CapsuleGeometry(0.045, 0.1, 4, 12),
   beard: new THREE.SphereGeometry(0.058, 18, 10, Math.PI * 1.5 - 1.05, 2.1, Math.PI * 0.55, Math.PI * 0.32),
   lens: new THREE.TorusGeometry(0.016, 0.0035, 6, 16),
+  // The face: eyes that blink, brows, nose, mouth and ears.
+  eye: new THREE.SphereGeometry(0.0088, 12, 8),
+  pupil: new THREE.SphereGeometry(0.0052, 10, 6),
+  brow: new THREE.CapsuleGeometry(0.0022, 0.013, 2, 6).rotateZ(Math.PI / 2),
+  nose: new THREE.SphereGeometry(0.0085, 10, 8),
+  mouth: new THREE.CapsuleGeometry(0.0026, 0.013, 2, 6).rotateZ(Math.PI / 2),
+  ear: new THREE.SphereGeometry(0.012, 10, 8),
   bridge: new THREE.CylinderGeometry(0.0025, 0.0025, 0.014, 6).rotateZ(Math.PI / 2),
 }
 
@@ -182,11 +192,12 @@ function Person({ look }: { look: Look }) {
         <group key={s}>
           <Limb a={[s * w, 0.37, 0.005]} b={[s * (w + 0.012), 0.285, -0.05]} geometry={G.upperArm} material={top} />
           <Limb a={[s * (w + 0.012), 0.285, -0.05]} b={[s * 0.058, 0.29, -0.16]} geometry={G.forearm} material={top} />
-          <mesh geometry={G.hand} material={skin} position={[s * 0.056, 0.29, -0.175]} scale={[1, 0.7, 1.25]} />
+          <mesh name={s < 0 ? 'handL' : 'handR'} geometry={G.hand} material={skin} position={[s * 0.056, 0.29, -0.175]} scale={[1, 0.7, 1.25]} />
         </group>
       ))}
       <group name="head" position={[0, HEAD_Y, 0]}>
         <mesh geometry={G.head} material={skin} scale={[0.95, 1.08, 1]} castShadow />
+        <Face look={look} />
         <Hairdo look={look} material={hair} />
         {look.beard && <mesh geometry={G.beard} material={hair} scale={[0.98, 1.05, 1.02]} />}
         {look.glasses && (
@@ -197,6 +208,31 @@ function Person({ look }: { look: Look }) {
           </group>
         )}
       </group>
+    </group>
+  )
+}
+
+/** Eyes (they blink), brows in the hair colour, nose, mouth and ears; the person faces -z. */
+function Face({ look }: { look: Look }) {
+  const lips = LIPS[look.female ? 1 : look.skin === SKINS[4] || look.skin === SKINS[5] ? 2 : 0]
+  return (
+    <group>
+      <group name="eyes" position={[0, 0.008, -0.047]}>
+        {[-1, 1].map((s) => (
+          <group key={s} position={[s * 0.02, 0, 0]}>
+            <mesh geometry={G.eye} material={EYE} scale={[1, look.female ? 0.82 : 0.72, 0.55]} />
+            <mesh geometry={G.pupil} material={PUPIL} position={[0, -0.0005, -0.0035]} scale={[1, 1, 0.5]} />
+          </group>
+        ))}
+      </group>
+      {[-1, 1].map((s) => (
+        <mesh key={s} geometry={G.brow} material={look.hair} position={[s * 0.021, 0.022, -0.052]} rotation={[0.2, 0, s * (look.female ? -0.12 : -0.05)]} scale={look.female ? [1, 0.8, 1] : [1.1, 1.25, 1]} />
+      ))}
+      <mesh geometry={G.nose} material={look.skin} position={[0, -0.006, -0.058]} scale={[0.75, 1.15, 0.9]} />
+      <mesh geometry={G.mouth} material={lips} position={[0, -0.027, -0.052]} scale={look.female ? [1.05, 1.2, 1] : [1.1, 0.9, 1]} />
+      {[-1, 1].map((s) => (
+        <mesh key={s} geometry={G.ear} material={look.skin} position={[s * 0.054, 0.002, 0.004]} scale={[0.45, 1, 0.8]} />
+      ))}
     </group>
   )
 }
@@ -283,16 +319,31 @@ function Workstation({ agent, seed, look }: { agent: Agent; seed: number; look: 
     [agent.status],
   )
 
+  // Parts that move on their own: found once, not searched every frame.
+  const parts = useRef<{ head?: THREE.Object3D; eyes?: THREE.Object3D; hands: THREE.Object3D[] }>({ hands: [] })
+  useEffect(() => {
+    const b = body.current
+    if (!b) return
+    parts.current = {
+      head: b.getObjectByName('head'),
+      eyes: b.getObjectByName('eyes'),
+      hands: ['handL', 'handR'].map((n) => b.getObjectByName(n)).filter(Boolean) as THREE.Object3D[],
+    }
+  }, [])
+
   useFrame(({ clock }) => {
     if (!body.current) return
     const t = clock.elapsedTime
-    // Working agents type; waiting ones lean back now and then.
-    body.current.position.y =
-      agent.status === 'arbeitet' ? Math.abs(Math.sin(t * 9 + seed)) * 0.008 : Math.sin(t * 1.2 + seed) * 0.006
-    body.current.rotation.x = agent.status === 'wartet' ? -0.12 + Math.sin(t * 0.8 + seed) * 0.05 : 0.04
+    const { head, eyes, hands } = parts.current
+    // Seated and still: the body only breathes and leans; the hands do the typing.
+    body.current.position.y = 0
+    body.current.rotation.x = agent.status === 'wartet' ? -0.08 + Math.sin(t * 0.8 + seed) * 0.03 : 0.03 + Math.sin(t * 1.1 + seed) * 0.006
+    const typing = agent.status === 'arbeitet'
+    hands.forEach((h, i) => (h.position.y = 0.29 + (typing ? Math.max(0, Math.sin(t * 11 + seed + i * 1.9)) * 0.007 : 0)))
     // Now and then a glance to the side, as people at desks do.
-    const head = body.current.getObjectByName('head')
     if (head) head.rotation.y = Math.sin(t * 0.35 + seed * 2) > 0.85 ? Math.sin(t * 0.9 + seed) * 0.5 : Math.sin(t * 0.5 + seed) * 0.08
+    // A blink every few seconds.
+    if (eyes) eyes.scale.y = (t * 0.31 + seed * 0.7) % 1 < 0.035 ? 0.1 : 1
   })
 
   return (
@@ -317,7 +368,7 @@ function Workstation({ agent, seed, look }: { agent: Agent; seed: number; look: 
       </mesh>
       <Chair />
       {/* person, seated: the group moves (typing, leaning back), the head looks around */}
-      <group ref={body} position={[0, 0, 0.27]}>
+      <group ref={body} position={[0, 0, 0.3]}>
         <Person look={look} />
       </group>
     </group>
@@ -341,6 +392,10 @@ function Plant() {
 // A department floor
 // ---------------------------------------------------------------------------
 
+/** How long resting on a department's badge takes to open it; the bar fills in the same time. */
+const DWELL_MS = 1400
+const canDwell = (v: View, id: string) => v.kind === 'overview' || v.kind === 'brain' || (v.kind === 'dept' && v.id !== id)
+
 function Floor({ dept }: { dept: Department }) {
   const view = useOffice((s) => s.view)
   const show = useOffice((s) => s.show)
@@ -359,6 +414,17 @@ function Floor({ dept }: { dept: Department }) {
     leave.current = setTimeout(() => setTagHover(false), 140)
   }
   useEffect(() => () => clearTimeout(leave.current), [])
+  // Resting on the badge opens the department once its bar is full. A timer, not
+  // the bar's transitionend: that one went missing now and then, and the bar filled for nothing.
+  // Works from the overview and from inside another department alike.
+  const dwell = tagHover && canDwell(view, dept.id)
+  useEffect(() => {
+    if (!dwell) return
+    const t = setTimeout(() => {
+      if (canDwell(useOffice.getState().view, dept.id)) show({ kind: 'dept', id: dept.id })
+    }, DWELL_MS)
+    return () => clearTimeout(t)
+  }, [dwell, dept.id, show])
   // The tag under the mouse opens its card; a desk under the mouse only lights
   // its ring — opening cards from desks made stray cards pop up on the way out.
   const [hoverAgent, setHoverAgent] = useState<string | null>(null)
@@ -489,7 +555,7 @@ function Floor({ dept }: { dept: Department }) {
           {/* Grows, glows and shows what the department does — from the badge or from its floor.
               Resting on the badge fills it like an hourglass, and when full the department opens. */}
           <button
-            className={`floor-badge${tagHover ? ' is-hover' : ''}${tagHover && view.kind === 'overview' ? ' is-dwell' : ''}`}
+            className={`floor-badge${tagHover ? ' is-hover' : ''}${dwell ? ' is-dwell' : ''}`}
             style={{ ['--c' as string]: dept.color }}
             onClick={pick}
             onMouseEnter={enterTag}
@@ -498,9 +564,6 @@ function Floor({ dept }: { dept: Department }) {
             <span
               className="floor-badge__fill"
               aria-hidden
-              onTransitionEnd={(e) => {
-                if (e.propertyName === 'transform' && tagHover && useOffice.getState().view.kind === 'overview') pick()
-              }}
             />
             <span className="floor-badge__icon">
               <Icon name={dept.icon} size={16} />

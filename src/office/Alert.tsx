@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useOffice } from './state'
 import { deptOf } from './comms'
-import { agentTarget } from './workspaces'
+import { agentTarget, type Incident, type WsTarget } from './workspaces'
 
 /**
  * An urgent message pops in at the top right, like a message on a phone:
@@ -20,13 +20,17 @@ export default function Alert() {
     return () => clearTimeout(t)
   }, [alert, raise])
 
+  // Straight to the case: the camera flies to the department, then the case opens
+  // with the fix one click away (commission a craftsman, reply, done).
   const go = () => {
     if (!alert) return
     const d = deptOf(alert.to.dept)
     if (d) {
-      const a = d.agents.find((x) => x.name === alert.to.agent) ?? d.agents[0]
-      show({ kind: 'dept', id: d.id, agent: a.id })
-      open(agentTarget(d, a, alert.text))
+      const a = d.agents.find((x) => x.name === 'Eskalation') ?? d.agents.find((x) => x.name === alert.to.agent && !x.lead) ?? d.agents.find((x) => !x.lead) ?? d.agents[0]
+      const incident: Incident = { text: alert.text, from: alert.from.agent, to: alert.to.agent, filed: alert.filed, time: alert.time, urgency: alert.urgency ?? 1 }
+      const target: WsTarget = { ...agentTarget(d, a, alert.text), kind: 'escalation', title: alert.urgency === 2 ? 'Notfall' : 'Dringend', incident }
+      show({ kind: 'dept', id: d.id })
+      setTimeout(() => open(target), 700)
     }
     raise(null)
   }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { useOffice } from './state'
@@ -67,13 +67,14 @@ type Petal = { len: number; wid: number; r0: number; y0: number; phi: number; t:
 type Pose = (t: number) => { theta: number; curl: number; cup: number; roll: number }
 
 /** Bud: every petal upright and tucked in round the heart. */
-const BUD: Pose = (t) => ({ theta: 0.04 + 0.2 * t, curl: -0.55 + 0.35 * t, cup: 0.3, roll: 0 })
-/** Bloom: the outer petals lie open and roll back at the tips, the heart stays closed. */
+const BUD: Pose = (t) => ({ theta: 0.03 + 0.14 * t, curl: -0.6 + 0.3 * t, cup: 0.32, roll: 0 })
+/** A rose, not a daisy: the heart stays a closed spiral, only the outer petals
+ *  loosen a little and turn their rims back — the classic high-centred rose. */
 const BLOOM: Pose = (t) => ({
-  theta: 0.1 + 1.4 * Math.pow(t, 1.5),
-  curl: t < 0.3 ? -0.5 : -0.3 + 1.3 * t,
-  cup: 0.35 * (1 - t) + 0.05,
-  roll: 0.8 * t * t,
+  theta: 0.05 + 0.5 * t * t,
+  curl: t < 0.45 ? -0.5 + 0.2 * t : -0.4 + 1.05 * (t - 0.45),
+  cup: 0.34 - 0.1 * t,
+  roll: 0.45 * t * t,
 })
 
 /** One petal: a centre line bending out from the base, the blade wrapped round the axis. */
@@ -338,6 +339,107 @@ function lawnTexture() {
 }
 
 // ---------------------------------------------------------------------------
+// The finale: a jet streaks across once, low and fast, contrails behind it.
+// ---------------------------------------------------------------------------
+
+function trailTexture() {
+  const cv = document.createElement('canvas')
+  cv.width = 256
+  cv.height = 8
+  const g = cv.getContext('2d')!
+  const grad = g.createLinearGradient(0, 0, 256, 0)
+  grad.addColorStop(0, 'rgba(255,255,255,0.9)')
+  grad.addColorStop(0.25, 'rgba(255,255,255,0.45)')
+  grad.addColorStop(1, 'rgba(255,255,255,0)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, 256, 8)
+  return new THREE.CanvasTexture(cv)
+}
+
+const JET_TIME = 1.9 // seconds across the whole sky
+
+function Jet({ onDone }: { onDone: () => void }) {
+  const { camera } = useThree()
+  const ref = useRef<THREE.Group>(null)
+  const trails = useRef<(THREE.Mesh | null)[]>([])
+  const t = useRef(0)
+  const parts = useMemo(() => {
+    const body = new THREE.MeshStandardMaterial({ color: '#c9ced6', roughness: 0.35, metalness: 0.6 })
+    const dark = new THREE.MeshStandardMaterial({ color: '#2a2f38', roughness: 0.4, metalness: 0.5 })
+    const glass = new THREE.MeshStandardMaterial({ color: '#10151d', roughness: 0.05, metalness: 0.9 })
+    const flame = new THREE.MeshBasicMaterial({ color: '#ffb35c', toneMapped: false })
+    // Delta wing and fins as flat shapes, the jet flying along +x.
+    const wing = new THREE.Shape([new THREE.Vector2(0.35, 0), new THREE.Vector2(-0.45, 0.62), new THREE.Vector2(-0.62, 0.62), new THREE.Vector2(-0.55, 0)])
+    const fin = new THREE.Shape([new THREE.Vector2(-0.35, 0), new THREE.Vector2(-0.62, 0.34), new THREE.Vector2(-0.72, 0.34), new THREE.Vector2(-0.66, 0)])
+    const extrude = (sh: THREE.Shape) => new THREE.ExtrudeGeometry(sh, { depth: 0.018, bevelEnabled: false })
+    const trail = new THREE.MeshBasicMaterial({ map: trailTexture(), transparent: true, depthWrite: false, side: THREE.DoubleSide })
+    return { body, dark, glass, flame, wingGeo: extrude(wing), finGeo: extrude(fin), trail, trailGeo: new THREE.PlaneGeometry(1, 0.07).translate(-0.5, 0, 0) }
+  }, [])
+
+  // Across the view: through the middle of the garden, side to side as the camera sees it.
+  const path = useMemo(() => {
+    const look = new THREE.Vector3()
+    camera.getWorldDirection(look)
+    look.y = 0
+    look.normalize()
+    const side = new THREE.Vector3(-look.z, 0, look.x)
+    const mid = new THREE.Vector3(0, 4.2, 0).addScaledVector(look, 2)
+    return { from: mid.clone().addScaledVector(side, -38), to: mid.clone().addScaledVector(side, 38).add(new THREE.Vector3(0, 1.6, 0)), side }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useFrame((_, dt) => {
+    const g = ref.current
+    if (!g) return
+    t.current += dt
+    const k = t.current / JET_TIME
+    if (k >= 1.35) {
+      onDone()
+      return
+    }
+    g.position.lerpVectors(path.from, path.to, Math.min(k, 1.35))
+    g.lookAt(g.position.clone().add(path.side.clone().add(new THREE.Vector3(0, 0.04, 0))))
+    g.rotateY(-Math.PI / 2)
+    g.rotateX(Math.sin(Math.min(k, 1) * Math.PI) * 0.35)
+    // Contrails stretch out behind, then fade.
+    const len = Math.min(k, 1) * 26
+    const fade = k > 1 ? 1 - (k - 1) / 0.35 : 1
+    trails.current.forEach((m) => {
+      if (!m) return
+      m.scale.x = Math.max(0.01, len)
+      ;(m.material as THREE.MeshBasicMaterial).opacity = 0.8 * fade
+    })
+  })
+
+  const { body, dark, glass, flame, wingGeo, finGeo, trail, trailGeo } = parts
+  return (
+    <group ref={ref} position={path.from} scale={1.25}>
+      <mesh material={body} rotation={[0, 0, -Math.PI / 2]}>
+        <capsuleGeometry args={[0.1, 1.1, 6, 14]} />
+      </mesh>
+      <mesh material={body} position={[0.72, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        <coneGeometry args={[0.1, 0.34, 14]} />
+      </mesh>
+      <mesh material={glass} position={[0.42, 0.075, 0]} scale={[1.6, 0.55, 0.7]}>
+        <sphereGeometry args={[0.1, 14, 10]} />
+      </mesh>
+      <mesh geometry={wingGeo} material={body} rotation={[Math.PI / 2, 0, 0]} position={[0, -0.02, 0.009]} />
+      <mesh geometry={wingGeo} material={body} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, -0.009]} />
+      <mesh geometry={finGeo} material={dark} position={[-0.02, 0.06, -0.009]} />
+      <mesh material={dark} position={[-0.66, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        <cylinderGeometry args={[0.085, 0.07, 0.12, 12]} />
+      </mesh>
+      <mesh material={flame} position={[-0.76, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
+        <coneGeometry args={[0.06, 0.22, 10]} />
+      </mesh>
+      {[-1, 1].map((s) => (
+        <mesh key={s} ref={(m) => void (trails.current[s < 0 ? 0 : 1] = m)} geometry={trailGeo} material={trail} position={[-0.6, 0, s * 0.5]} rotation={[Math.PI / 2, 0, 0]} />
+      ))}
+    </group>
+  )
+}
+
+// ---------------------------------------------------------------------------
 
 const ROSE_SIZE = 2.1
 const RISE = 2.6 // seconds a rose takes to push up out of the ground
@@ -355,6 +457,8 @@ export default function Garden({ free, phone }: { free: (x: number, z: number, m
   const daisyRef = useRef<THREE.InstancedMesh>(null)
   const roseRefs = useRef<(THREE.Group | null)[]>([])
   const headRefs = useRef<(THREE.Mesh | null)[]>([])
+  // The jet flies once per garden, when the last rose has opened.
+  const [jet, setJet] = useState<'waiting' | 'flying' | 'done'>('waiting')
 
   const built = useMemo(() => {
     if (!shown) return null
@@ -419,6 +523,7 @@ export default function Garden({ free, phone }: { free: (x: number, z: number, m
   useEffect(() => {
     if (on) {
       clock.current = 0
+      setJet('waiting')
       setShown(true)
     }
   }, [on])
@@ -465,6 +570,7 @@ export default function Garden({ free, phone }: { free: (x: number, z: number, m
     if (lawn.current) lawn.current.scale.setScalar(Math.max(0.001, Math.min(1, front / LAWN_R)))
 
     const t = clock.current
+    if (on && jet === 'waiting' && t > FIRST + SPREAD + RISE * 0.6 + OPEN + 0.6) setJet('flying')
     const fade = on ? 1 : ease
     built.roses.forEach((o, i) => {
       const gr = roseRefs.current[i]
@@ -492,6 +598,7 @@ export default function Garden({ free, phone }: { free: (x: number, z: number, m
         <circleGeometry args={[LAWN_R, 96]} />
         <meshStandardMaterial map={built.tex} roughness={1} color="#b6dc98" />
       </mesh>
+      {jet === 'flying' && on && <Jet onDone={() => setJet('done')} />}
       <instancedMesh ref={grassRef} args={[built.blade, built.grassMat, built.blades.length]} frustumCulled={false} receiveShadow />
       <instancedMesh ref={daisyRef} args={[built.daisy, built.daisyMat, built.daisies.length]} frustumCulled={false} />
       {built.roses.map((o, i) => {

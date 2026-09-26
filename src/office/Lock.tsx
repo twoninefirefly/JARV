@@ -70,6 +70,12 @@ function Avatar({ user, size = 34 }: { user: User; size?: number }) {
   )
 }
 
+/** 3:00–11:59 Guten Morgen, 12:00–17:59 Guten Tag, 18:00–2:59 Guten Abend. */
+function greeting(d: Date) {
+  const h = d.getHours()
+  return h >= 18 || h < 3 ? 'Guten Abend' : h < 12 ? 'Guten Morgen' : 'Guten Tag'
+}
+
 export default function Lock({ onStart }: { onStart: () => void }) {
   const locked = useOffice((s) => s.locked)
   const unlock = useOffice((s) => s.unlock)
@@ -164,7 +170,7 @@ export default function Lock({ onStart }: { onStart: () => void }) {
 
             {progress !== null ? (
               <div className="lock__load" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
-                <div className="lock__hello">Guten {now.getHours() < 11 ? 'Morgen' : now.getHours() < 18 ? 'Tag' : 'Abend'}, {(current ?? chosen).name.split(' ')[0]}</div>
+                <div className="lock__hello">{greeting(now)}, {(current ?? chosen).name.split(' ')[0]}</div>
                 <div className="lock__bar">
                   <div style={{ width: `${progress * 100}%` }} />
                 </div>

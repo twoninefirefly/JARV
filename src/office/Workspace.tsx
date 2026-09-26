@@ -15,6 +15,7 @@ import {
   itemsFor,
   kindOf,
   logTarget,
+  type Handled,
   type WsItem,
   type WsTarget,
 } from './workspaces'
@@ -52,7 +53,7 @@ function List({ items, chosen, pick, agenda }: { items: WsItem[]; chosen?: strin
     <ul className={`ws-list${agenda ? ' ws-list--agenda' : ''}`}>
       {items.map((it) => (
         <li key={it.id}>
-          <button className={`ws-row${chosen === it.id ? ' is-chosen' : ''}${it.approval ? ' is-approval' : ''}`} onClick={() => pick(it)}>
+          <button className={`ws-row${chosen === it.id ? ' is-chosen' : ''}${it.approval ? ' is-approval' : ''}${it.handled ? ' is-done' : ''}`} onClick={() => pick(it)}>
             {agenda && <span className="ws-row__time">{it.meta}</span>}
             <span className="ws-row__main">
               <b>{it.title}</b>
@@ -81,7 +82,7 @@ function Board({ items, columns, chosen, pick }: { items: WsItem[]; columns: str
               <span className="eyebrow">{cards.length}</span>
             </div>
             {cards.map((it) => (
-              <button key={it.id} className={`ws-card${chosen === it.id ? ' is-chosen' : ''}${it.approval ? ' is-approval' : ''}`} onClick={() => pick(it)}>
+              <button key={it.id} className={`ws-card${chosen === it.id ? ' is-chosen' : ''}${it.approval ? ' is-approval' : ''}${it.handled ? ' is-done' : ''}`} onClick={() => pick(it)}>
                 <b>{it.title}</b>
                 {it.sub && <small>{it.sub}</small>}
                 <span className="ws-card__foot">
@@ -110,7 +111,7 @@ function Table({ items, columns, chosen, pick }: { items: WsItem[]; columns: str
         </thead>
         <tbody>
           {items.map((it) => (
-            <tr key={it.id} className={`${chosen === it.id ? 'is-chosen' : ''}${it.approval ? ' is-approval' : ''}`} onClick={() => pick(it)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && pick(it)}>
+            <tr key={it.id} className={`${chosen === it.id ? 'is-chosen' : ''}${it.approval ? ' is-approval' : ''}${it.handled ? ' is-done' : ''}`} onClick={() => pick(it)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && pick(it)}>
               {(it.cells ?? [it.title]).map((c, i) => (
                 <td key={i}>{i === (it.cells?.length ?? 1) - 1 && it.badge ? <Badge badge={it.badge} /> : c}</td>
               ))}
@@ -190,6 +191,8 @@ function Detail({
   item,
   columns,
   done,
+  replied,
+  onReply,
   blocked,
   signed,
   printed,
@@ -199,7 +202,10 @@ function Detail({
 }: {
   item: WsItem
   columns?: string[]
-  done?: string
+  done?: Handled
+  /** The prepared reply, once sent. */
+  replied?: Handled
+  onReply?: () => void
   /** Why the signed-in person may look but not decide. */
   blocked?: string
   signed?: { png: string; name: string }
@@ -217,7 +223,7 @@ function Detail({
       )}
       <div className="ws-detail__head">
         <h3>{item.title}</h3>
-        <Badge badge={done ? { text: done, tone: 'ok' } : item.badge} />
+        <Badge badge={item.badge} />
       </div>
       {(item.sub || item.meta) && (
         <div className="eyebrow">
@@ -263,7 +269,45 @@ function Detail({
           ))}
         </div>
       )}
-      {done && <p className="ws-note">✓ {done} — in der Demo nur vorgemerkt.</p>}
+      {done && (
+        <div className={`ws-done ws-done--${done.tone}`} role="status">
+          <span className="ws-done__check" aria-hidden>
+            {done.tone === 'ok' ? '✓' : '–'}
+          </span>
+          <span>
+            <b>{done.label}</b>
+            <small>
+              {done.by ? `${done.by} · ` : ''}heute {done.at} Uhr · erledigt, in der Demo nur vorgemerkt
+            </small>
+          </span>
+        </div>
+      )}
+      {item.reply &&
+        (replied ? (
+          <div className="ws-done ws-done--reply" role="status">
+            <span className="ws-done__check" aria-hidden>
+              ✉
+            </span>
+            <span>
+              <b>{replied.label}</b>
+              <small>
+                {replied.by ? `${replied.by} · ` : ''}heute {replied.at} Uhr
+              </small>
+            </span>
+          </div>
+        ) : (
+          done &&
+          onReply && (
+            <button className="ws-reply" onClick={onReply}>
+              <span aria-hidden>✉</span>
+              <span>
+                <b>Antworten: {item.reply.template.replace('Antwort: ', '')}</b>
+                <small>Vorlage liegt bereit – ansehen und mit einem Klick senden</small>
+              </span>
+              <span aria-hidden>→</span>
+            </button>
+          )
+        ))}
     </div>
   )
 }
@@ -365,6 +409,7 @@ function Window({ ws }: { ws: WsTarget }) {
   const [signing, setSigning] = useState<WsItem | null>(null)
   // Every decision is confirmed by the signed-in person before it counts.
   const [confirming, setConfirming] = useState<{ it: WsItem; action: string } | null>(null)
+  const [replying, setReplying] = useState<WsItem | null>(null)
   const remembered = useOffice((s) => s.remembered)
   const prints = useOffice((s) => s.prints)
   const addPrint = useOffice((s) => s.addPrint)
@@ -376,13 +421,22 @@ function Window({ ws }: { ws: WsTarget }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'alle' | 'done' | 'planned'>('alle')
   const [chosen, setChosen] = useState<string | undefined>()
-  const [done, setDone] = useState<Record<string, string>>({})
+  const handled = useOffice((s) => s.handled)
+  const handle = useOffice((s) => s.handle)
   const [toast, setToast] = useState<string | null>(null)
   const [plug, setPlug] = useState(false)
 
   const key = `${ws.kind}:${ws.deptId}:${ws.agentId}:${ws.title}`
   const layout = LAYOUT[ws.kind]
-  const all = useMemo(() => itemsFor(ws, approved, decisions), [ws, approved, decisions])
+  // Whatever was dealt with here today shows as done, in the list and in the detail.
+  const all = useMemo(
+    () =>
+      itemsFor(ws, approved, decisions).map((i) => {
+        const h = handled[`${key}/${i.id}`]
+        return h ? { ...i, handled: h, badge: { text: h.short, tone: h.tone } } : i
+      }),
+    [ws, approved, decisions, handled, key],
+  )
 
   // A new window starts clean, on the record it was opened for.
   useEffect(() => {
@@ -428,14 +482,38 @@ function Window({ ws }: { ws: WsTarget }) {
 
   const sign = (it: WsItem) => {
     approve(it.approval!, it.dept ?? ws.deptId ?? '', 'Freigegeben', true)
-    setDone((d) => ({ ...d, [`${key}/${it.id}`]: 'Unterschrieben' }))
+    mark(it, 'Unterschrieben und freigegeben', 'Unterschrieben', 'ok')
     setToast(`Unterschrieben von ${user?.name}: ${it.title.replace(/ (freigeben|durchsehen)$/, '')}. Geht mit Ihrer Unterschrift raus – in der Demo nur vorgemerkt.`)
     setSigning(null)
   }
 
-  const decides = (action: string) => /^(Freigeben|Beauftragen|Ablehnen|Unterschreiben)/.test(action)
+  const mark = (it: WsItem, label: string, short: string, tone: 'ok' | 'muted') => {
+    const now = new Date()
+    handle(`${key}/${it.id}`, { label, short, tone, by: user?.name, at: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` })
+  }
+
+  const decides = (action: string) => /^(Freigeben|Beauftragen|Handwerker beauftragen|Ablehnen|Unterschreiben)/.test(action)
+
+  /** The prepared reply goes out as it stands; the record notes it. */
+  const sendReply = (it: WsItem) => {
+    const now = new Date()
+    const to = it.reply!.to[0].includes('@') ? it.reply!.to[0] : it.reply!.to.join(' ')
+    handle(`${key}/${it.id}#reply`, {
+      label: `Antwort gesendet an ${to}`,
+      short: 'Beantwortet',
+      tone: 'ok',
+      by: user?.name,
+      at: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+    })
+    setToast(`Antwort gesendet: „${it.reply!.subject.replace(/‹|›/g, '')}“ – in der Demo nur vorgemerkt.`)
+    setReplying(null)
+  }
 
   const act = (it: WsItem, action: string) => {
+    if (it.reply && /antworten$/.test(action)) {
+      setReplying(it)
+      return
+    }
     // Deciding asks for confirmation first; the first signature is drawn before that.
     if (decides(action) && user) {
       if (action === 'Unterschreiben & freigeben' && !signature) setSigning(it)
@@ -452,8 +530,11 @@ function Window({ ws }: { ws: WsTarget }) {
     }
     if (it.approval && /Freigeben|Beauftragen|Ablehnen/.test(action))
       approve(it.approval, it.dept ?? ws.deptId ?? '', action === 'Ablehnen' ? 'Abgelehnt' : 'Freigegeben')
-    const sends = it.letter && /^(Freigeben|Beauftragen)/.test(action)
-    const label = sends
+    const sends = it.letter && /^(Freigeben|Beauftragen|Handwerker beauftragen)/.test(action)
+    const craft = /beauftragen$/i.test(action)
+    const label = craft
+      ? `Handwerker beauftragt – Auftrag ist raus an ${it.letter?.to[0] ?? 'den Betrieb'}`
+      : sends
       ? `Freigegeben – ${it.letter!.channel === 'Brief' ? 'Brief geht in den Versand' : 'Mail wird gesendet'}`
       : action === 'Freigeben'
         ? 'Freigegeben'
@@ -462,11 +543,32 @@ function Window({ ws }: { ws: WsTarget }) {
           : action === 'Erledigt'
             ? 'Erledigt'
             : `${action} vorgemerkt`
-    setDone((d) => ({ ...d, [`${key}/${it.id}`]: label }))
+    const short = craft
+      ? 'Beauftragt'
+      : sends
+      ? action === 'Ablehnen'
+        ? 'Abgelehnt'
+        : it.letter!.channel === 'Brief'
+          ? 'Im Versand'
+          : 'Gesendet'
+      : action === 'Freigeben'
+        ? 'Freigegeben'
+        : action === 'Ablehnen'
+          ? 'Abgelehnt'
+          : action === 'Erledigt'
+            ? 'Erledigt'
+            : action === 'Verwerfen'
+              ? 'Verworfen'
+              : action === 'Übernehmen'
+                ? 'Übernommen'
+                : 'Vorgemerkt'
+    mark(it, label, short, /Abgelehnt|Verworfen/.test(short) ? 'muted' : 'ok')
     const by = it.approval && user ? ` von ${user.name}` : ''
     const what = it.title.replace(/ (freigeben|durchsehen)$/, '')
     setToast(
-      sends
+      craft
+        ? `${label}.${it.reply ? ' Jetzt noch die Antwort an den Mieter – liegt als Vorlage bereit.' : ''}`
+        : sends
         ? `${action === 'Ablehnen' ? 'Abgelehnt' : 'Freigegeben'}${by}: ${what}. ${it.letter!.channel === 'Brief' ? 'Der Brief geht in den Versand' : 'Die Mail wird gesendet'} – in der Demo nur vorgemerkt.`
         : `${label}: ${it.title}. Nach der Anbindung an „${source.system}“ passiert das wirklich.`,
     )
@@ -495,7 +597,9 @@ function Window({ ws }: { ws: WsTarget }) {
       printed={item.approval ? prints.find((p) => p.text === item.approval) : undefined}
       onPrint={(item.batch || item.letter?.channel === 'Brief') && item.decision ? () => setPrinting(item) : undefined}
       columns={layout.layout === 'table' ? layout.columns : undefined}
-      done={done[`${key}/${item.id}`]}
+      done={item.handled}
+      replied={handled[`${key}/${item.id}#reply`]}
+      onReply={item.reply ? () => setReplying(item) : undefined}
       blocked={perm.ok ? undefined : perm.why}
       act={act}
       back={wide ? undefined : () => setChosen(undefined)}
@@ -624,6 +728,28 @@ function Window({ ws }: { ws: WsTarget }) {
             }}
             onCancel={() => setConfirming(null)}
           />
+        )}
+        {replying?.reply && (
+          <div className="sig" role="dialog" aria-modal="true" aria-label="Antwort senden">
+            <motion.div className="sig__backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={() => setReplying(null)} />
+            <motion.div className="sig__card reply" initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', damping: 26, stiffness: 300 }}>
+              <h3>Antwort senden</h3>
+              <p className="sig__lead">Vorlage „{replying.reply.template}“ – so geht sie raus, mit Ihrem Namen.</p>
+              <div className="reply__letter">
+                <LetterView letter={replying.reply} />
+              </div>
+              <div className="sig__actions">
+                <span />
+                <span />
+                <button type="button" className="btn" onClick={() => setReplying(null)}>
+                  Abbrechen
+                </button>
+                <button type="button" className="btn btn--primary" onClick={() => sendReply(replying)} autoFocus>
+                  Antwort senden
+                </button>
+              </div>
+            </motion.div>
+          </div>
         )}
         {printing && user && (
           <PrintDialog

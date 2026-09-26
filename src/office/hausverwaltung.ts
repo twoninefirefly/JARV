@@ -498,16 +498,29 @@ export function hvMakers({ n, eur, clock, later, L }: Helpers): Partial<Record<s
       { id: 'e2', title: 'Wasserschaden seit 3 Tagen ohne Termin', sub: 'Lindenstr. 12, WE 07', badge: { text: 'Mittel', tone: 'warn' }, body: 'Sanitär Kaya hat noch nicht bestätigt. Zweiter Betrieb angefragt.', actions: ['Nachfassen'] },
     ],
     damages: (r, pick) =>
-      n(9, (i) => ({
-        id: `sd${i}`,
-        title: pick(['Wasserfleck Decke Bad', 'Heizkörper bleibt kalt', 'Fenster schließt nicht', 'Schimmel im Schlafzimmer', 'Klingelanlage defekt', 'Aufzug steht', 'Rohrverstopfung Küche', 'Treppenhauslicht aus']),
-        sub: `${pick(O)}, ${unit(r)} · ${pick(P)}`,
-        meta: clock(20 + i * 110 + Math.floor(r() * 40)),
-        badge: i === 0 ? { text: 'Dringend', tone: 'bad' } : i < 4 ? { text: 'Neu', tone: 'info' } : { text: 'Beauftragt', tone: 'ok' },
-        body: 'Aus den Fotos erkannt: Gewerk, Dringlichkeit und ob ein Versicherungsfall vorliegen könnte. Vorgang beim Objekt angelegt.',
-        fields: [['Gewerk', pick(['Sanitär', 'Heizung', 'Elektro', 'Fenster', 'Aufzug'])], ['Fotos', `${1 + Math.floor(r() * 4)} vom Mieter`]],
-        actions: ['Handwerker beauftragen', 'Rückfrage an Mieter'],
-      })),
+      n(9, (i) => {
+        const title = pick(['Wasserfleck Decke Bad', 'Heizkörper bleibt kalt', 'Fenster schließt nicht', 'Schimmel im Schlafzimmer', 'Klingelanlage defekt', 'Aufzug steht', 'Rohrverstopfung Küche', 'Treppenhauslicht aus'])
+        const object = pick(O)
+        const u = unit(r)
+        const person = pick(P)
+        const trade = /Wasser|Rohr/.test(title) ? 'Sanitär' : /Heiz/.test(title) ? 'Heizung' : /Klingel|licht/.test(title) ? 'Elektro' : /Fenster|Schimmel/.test(title) ? 'Fenster' : 'Aufzug'
+        const craft = { Sanitär: 'Sanitär Kaya', Heizung: 'Heizung & Solar Meyer', Elektro: 'Elektro Hahn', Fenster: 'Malerbetrieb Voss', Aufzug: 'Aufzugsdienst Nord' }[trade]!
+        const open = i < 4
+        return {
+          id: `sd${i}`,
+          title,
+          sub: `${object}, ${u} · ${person}`,
+          meta: clock(20 + i * 110 + Math.floor(r() * 40)),
+          badge: i === 0 ? { text: 'Dringend', tone: 'bad' } : open ? { text: 'Neu', tone: 'info' } : { text: 'Beauftragt', tone: 'ok' },
+          body: open
+            ? `Aus den Fotos erkannt: Gewerk, Dringlichkeit und ob ein Versicherungsfall vorliegen könnte. Vorgeschlagen: ${craft}. Mit einem Klick geht dieser Auftrag raus – danach die Antwort an ${person} als Vorlage:`
+            : `${craft} ist beauftragt, der Termin wird mit ${person} abgestimmt.`,
+          fields: [['Gewerk', trade], ['Vorschlag', craft], ['Fotos', `${1 + Math.floor(r() * 4)} vom Mieter`]],
+          letter: open ? L.craftOrder({ craft, object, job: `${title} – ${object}, ${u}`, amount: 180 + Math.floor(r() * 20) * 20, no: `A-2026-${330 + i}` }) : undefined,
+          reply: open ? L.craftAssigned({ person, object, unit: u, craft, topic: title }) : undefined,
+          actions: open ? ['Handwerker beauftragen', 'Mieter antworten', 'Rückfrage an Mieter'] : ['Auftrag öffnen'],
+        }
+      }),
     dispatch: (r, pick) =>
       n(5, (i) => {
         const job = pick(['Dachrinne erneuern', 'Fassade ausbessern', 'Treppenhaus streichen', 'Heizungswartung', 'Klingelanlage tauschen'])

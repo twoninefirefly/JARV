@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { WsTarget } from './workspaces'
+import type { Handled, WsTarget } from './workspaces'
 import type { Message } from './comms'
 import { USERS, type Decision, type User } from './team'
 import type { PrintJob } from './Print'
@@ -9,6 +9,7 @@ import type { PrintJob } from './Print'
 const KEY_USER = 'office.user'
 const KEY_DECISIONS = 'office.decisions'
 const KEY_SIGNATURE = 'office.signatures'
+const KEY_HANDLED = 'office.handled'
 const load = <T,>(key: string, fallback: T): T => {
   try {
     const raw = localStorage.getItem(key)
@@ -28,6 +29,7 @@ const save = (key: string, value: unknown) => {
 const today = new Date().toDateString()
 const stored = load<{ day: string; list: Decision[] }>(KEY_DECISIONS, { day: today, list: [] })
 const initialDecisions = stored.day === today ? stored.list : []
+const storedHandled = load<{ day: string; map: Record<string, Handled> }>(KEY_HANDLED, { day: today, map: {} })
 
 /** What the sheet shows and where the camera flies. */
 export type View =
@@ -51,6 +53,9 @@ type OfficeState = {
   /** Who decided what, and when — for management's overview. */
   decisions: Decision[]
   approve: (item: string, dept: string, result?: Decision['result'], signed?: boolean) => void
+  /** Records dealt with today, by window and record — so a sent draft stays sent. */
+  handled: Record<string, Handled>
+  handle: (key: string, h: Handled) => void
   /** Who is signed in; remembered on this computer if they asked for it. */
   user: User | null
   remembered: User | null
@@ -108,6 +113,13 @@ export const useOffice = create<OfficeState>((set) => ({
       const decisions = [...s.decisions, { text: item, dept, by: s.user.id, name: s.user.name, at, result, signed }]
       save(KEY_DECISIONS, { day: today, list: decisions })
       return { approved: [...s.approved, item], decisions }
+    }),
+  handled: storedHandled.day === today ? storedHandled.map : {},
+  handle: (key, h) =>
+    set((s) => {
+      const handled = { ...s.handled, [key]: h }
+      save(KEY_HANDLED, { day: today, map: handled })
+      return { handled }
     }),
   user: null,
   remembered: USERS.find((x) => x.id === load<string | null>(KEY_USER, null)) ?? null,

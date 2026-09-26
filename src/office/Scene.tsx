@@ -110,8 +110,8 @@ const TOPS = ['#1f2330', '#2b2b2e', '#3d4a5c', '#6b2f36', '#2f4a44', '#d8d2c6', 
 const PANTS = ['#1b1b1f', '#26262c', '#2f3440', '#3b3530', '#4a4f5a'].map((c) => std(c, 0.85))
 const SHOE = std('#141214', 0.6)
 const GLASSES = new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.3, metalness: 0.4 })
-const EYE = std('#f4f1ec', 0.35)
 const PUPIL = new THREE.MeshStandardMaterial({ color: '#1a120e', roughness: 0.2 })
+const GLINT = new THREE.MeshBasicMaterial({ color: '#ffffff' })
 const LIPS = ['#9c5a52', '#b45a62', '#7a4038'].map((c) => std(c, 0.55))
 
 type Hair = 'short' | 'buzz' | 'side' | 'bob' | 'long' | 'bun' | 'ponytail'
@@ -175,8 +175,8 @@ const G = {
   beard: new THREE.SphereGeometry(0.058, 18, 10, Math.PI * 1.5 - 1.05, 2.1, Math.PI * 0.55, Math.PI * 0.32),
   lens: new THREE.TorusGeometry(0.016, 0.0035, 6, 16),
   // The face: eyes that blink, brows, nose, mouth and ears.
-  eye: new THREE.SphereGeometry(0.0088, 12, 8),
-  pupil: new THREE.SphereGeometry(0.0052, 10, 6),
+  pupil: new THREE.SphereGeometry(0.0058, 12, 8),
+  glint: new THREE.SphereGeometry(0.0016, 6, 4),
   brow: new THREE.CapsuleGeometry(0.0022, 0.013, 2, 6).rotateZ(Math.PI / 2),
   nose: new THREE.SphereGeometry(0.0085, 10, 8),
   mouth: new THREE.CapsuleGeometry(0.0026, 0.013, 2, 6).rotateZ(Math.PI / 2),
@@ -246,11 +246,12 @@ function Face({ look }: { look: Look }) {
   const lips = LIPS[look.female ? 1 : look.skin === SKINS[4] || look.skin === SKINS[5] ? 2 : 0]
   return (
     <group>
-      <group name="eyes" position={[0, 0.008, -0.047]}>
+      {/* Eyes set into the face, not on it: a dark almond with a glint, following the head's curve. */}
+      <group name="eyes" position={[0, 0.008, 0]}>
         {[-1, 1].map((s) => (
-          <group key={s} position={[s * 0.02, 0, 0]}>
-            <mesh geometry={G.eye} material={EYE} scale={[1, look.female ? 0.82 : 0.72, 0.55]} />
-            <mesh geometry={G.pupil} material={PUPIL} position={[0, -0.0005, -0.0035]} scale={[1, 1, 0.5]} />
+          <group key={s} position={[s * 0.019, 0, -0.0505]} rotation={[0, s * 0.36, 0]}>
+            <mesh geometry={G.pupil} material={PUPIL} scale={[0.95, look.female ? 1.3 : 1.15, 0.28]} />
+            <mesh geometry={G.glint} material={GLINT} position={[0.0015, 0.0025, -0.0016]} />
           </group>
         ))}
       </group>
@@ -818,7 +819,10 @@ function padTexture(t: Theme) {
 }
 
 function Pad() {
-  const theme = useTheme()
+  const chosen = useTheme()
+  // Kim Bormann's pad keeps its pink ring in the standard Centurion look.
+  const kim = useOffice((s) => s.user?.id === 'leitung2')
+  const theme = kim && chosen.id === 'centurion' ? themeOf('pink') : chosen
   const tex = useMemo(() => padTexture(theme), [theme])
   const ring = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(1.7), [theme])
   const halo = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(0.9), [theme])
@@ -1140,7 +1144,7 @@ function BrainBadge() {
   if (view.kind !== 'overview') return null
   // Same size and style as the departments' badges; in the garden it names the bonsai.
   return (
-    <Html portal={overlay} position={[0, garden ? 4.6 : 2.85, 0]} center zIndexRange={[20, 0]}>
+    <Html portal={overlay} position={[0, garden ? 3.5 : 2.85, 0]} center zIndexRange={[20, 0]}>
       <button className="floor-badge floor-badge--brain" {...press(() => show({ kind: 'brain' }))}>
         <span className="floor-badge__icon">
           <Icon name="brain" size={16} />
@@ -1458,7 +1462,7 @@ const CAPRICORN_LINES = [
 ]
 
 function Capricorn() {
-  const { geometry, lines, label } = useMemo(() => {
+  const { geometry, lines } = useMemo(() => {
     // Behind the office as the camera first sees it, a little below the horizon,
     // so it shows above the far departments.
     const dir = new THREE.Vector3(-1.35, -0.86, -0.72).normalize()
@@ -1496,7 +1500,7 @@ function Capricorn() {
     for (const [a, b] of CAPRICORN_LINES) seg.push(...at.get(a)!.toArray(), ...at.get(b)!.toArray())
     const lines = new THREE.BufferGeometry()
     lines.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3))
-    return { geometry, lines, label: at.get('ω')!.clone().add(up.clone().multiplyScalar(-5)) }
+    return { geometry, lines }
   }, [])
   const mat = useMemo(() => pointsMaterial(), [])
   const dpr = useThree((s) => s.viewport.dpr)
@@ -1510,9 +1514,6 @@ function Capricorn() {
       <lineSegments geometry={lines} frustumCulled={false}>
         <lineBasicMaterial color="#9fb6e8" transparent opacity={0.28} depthWrite={false} fog={false} />
       </lineSegments>
-      <Html portal={overlay} position={label} center zIndexRange={[1, 0]} style={{ pointerEvents: 'none' }}>
-        <div className="constellation">♑ Capricorn</div>
-      </Html>
     </group>
   )
 }
@@ -1590,24 +1591,129 @@ function Cosmos() {
 // ---------------------------------------------------------------------------
 
 const KID = {
-  skin: std('#d9b08c', 0.65),
-  soleyHair: std('#4a3222', 0.9),
-  adrianHair: std('#9a7550', 0.9),
-  blouse: std('#f3efe8', 0.8),
-  tshirt: std('#2f5a3a', 0.8),
-  jeans: std('#3a5a8a', 0.85),
-  sneaker: std('#f2f2ee', 0.6),
-  dog: std('#e9d6b8', 0.95),
-  dogDark: std('#b89470', 0.95),
-  nose: std('#1a1414', 0.4),
+  // From the book: light olive skin, dark-brown eyes, white sneakers, blue jeans.
+  skin: std('#dcae86', 0.62),
+  soleyHair: std('#4b3325', 0.75),
+  adrianHair: std('#7d5a3a', 0.8),
+  adrianTips: std('#b08a58', 0.8),
+  blouse: std('#f6f3ee', 0.75),
+  tshirt: std('#2f6a3c', 0.8),
+  jeans: std('#3d5f93', 0.85),
+  jeansDark: std('#2f4b78', 0.85),
+  sneaker: std('#f7f7f4', 0.55),
+  sole: std('#d9d6cf', 0.6),
+  eyeWhite: std('#ffffff', 0.25),
+  iris: new THREE.MeshStandardMaterial({ color: '#4a2a18', roughness: 0.15 }),
+  pupil: new THREE.MeshStandardMaterial({ color: '#0d0806', roughness: 0.1 }),
+  shine: new THREE.MeshBasicMaterial({ color: '#ffffff' }),
+  brow: std('#2e1f16', 0.8),
+  mouth: std('#8e3a36', 0.5),
+  teeth: std('#ffffff', 0.4),
+  blush: new THREE.MeshBasicMaterial({ color: '#f29a93', transparent: true, opacity: 0.35, depthWrite: false }),
+  dog: std('#eedfc6', 0.95),
+  dogDark: std('#c9a57c', 0.95),
+  nose: std('#1a1414', 0.3),
+  tongue: std('#e57f8b', 0.5),
+  collar: std('#c8323c', 0.5),
+  tag: new THREE.MeshStandardMaterial({ color: '#e0b84a', roughness: 0.25, metalness: 0.8 }),
+}
+
+// Shapes for the children, built once: a shaped torso, long hair that falls
+// like a curtain, a fringe, sneakers with soles.
+const KG = {
+  torso: new THREE.LatheGeometry(
+    [
+      [0.0, -0.07],
+      [0.052, -0.068],
+      [0.058, -0.04],
+      [0.056, 0.0],
+      [0.062, 0.045],
+      [0.066, 0.07],
+      [0.05, 0.085],
+      [0.022, 0.092],
+      [0.0, 0.093],
+    ].map(([x, y]) => new THREE.Vector2(x, y)),
+    24,
+  ),
+  head: new THREE.SphereGeometry(0.075, 28, 22),
+  cap: new THREE.SphereGeometry(0.08, 28, 14, 0, Math.PI * 2, 0, Math.PI * 0.52),
+  // The fringe: a band over the forehead, sweeping to one side.
+  fringe: new THREE.SphereGeometry(0.081, 24, 8, Math.PI * 0.95, Math.PI * 1.1, Math.PI * 0.2, Math.PI * 0.2),
+  // Long hair: an open shell behind and beside the head, down past the shoulders.
+  curtain: (() => {
+    const g = new THREE.CylinderGeometry(0.079, 0.1, 0.19, 28, 6, true, Math.PI * 1.3, Math.PI * 1.4)
+    const pos = g.attributes.position
+    const v = new THREE.Vector3()
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i)
+      // Wavy ends, and the sides tucked a little inwards.
+      const low = THREE.MathUtils.clamp((0.095 - v.y) / 0.19, 0, 1)
+      const a = Math.atan2(v.x, v.z)
+      v.y -= Math.sin(a * 7) * 0.008 * low * low
+      v.x *= 1 + low * 0.08
+      pos.setXYZ(i, v.x, v.y, v.z)
+    }
+    g.computeVertexNormals()
+    return g
+  })(),
+  // Short boys' hair: a cap with a tousled front.
+  tuft: new THREE.SphereGeometry(0.03, 10, 8),
+  eye: new THREE.SphereGeometry(0.0165, 16, 12),
+  iris: new THREE.SphereGeometry(0.012, 14, 10),
+  pupil: new THREE.SphereGeometry(0.0062, 10, 8),
+  shine: new THREE.SphereGeometry(0.0034, 8, 6),
+  brow: new THREE.CapsuleGeometry(0.0035, 0.016, 3, 6).rotateZ(Math.PI / 2),
+  smile: new THREE.TorusGeometry(0.017, 0.0042, 6, 16, Math.PI),
+  teeth: new THREE.CircleGeometry(0.014, 16, Math.PI, Math.PI),
+  cheek: new THREE.CircleGeometry(0.013, 16),
+  nose: new THREE.SphereGeometry(0.0065, 10, 8),
+  ear: new THREE.SphereGeometry(0.016, 10, 8),
+  ruffle: new THREE.TorusGeometry(0.03, 0.011, 8, 18),
+  thigh: new THREE.CapsuleGeometry(0.032, 0.08, 6, 14),
+  calf: new THREE.CapsuleGeometry(0.026, 0.08, 6, 14),
+  cuff: new THREE.TorusGeometry(0.026, 0.006, 6, 16).rotateX(Math.PI / 2),
+  shoe: new THREE.CapsuleGeometry(0.026, 0.045, 6, 12).rotateX(Math.PI / 2),
+  soleGeo: new THREE.BoxGeometry(0.05, 0.012, 0.09),
+  upperArm: new THREE.CapsuleGeometry(0.021, 0.05, 6, 12),
+  foreArm: new THREE.CapsuleGeometry(0.018, 0.05, 6, 12),
+  hand: new THREE.SphereGeometry(0.021, 12, 10),
+}
+
+type Kid = { hair: THREE.Material; tips?: THREE.Material; top: THREE.Material; blouse: boolean; long: boolean }
+
+/** A cartoon face in the book's style: big dark-brown eyes with a glint, a wide smile, rosy cheeks. */
+function KidFace({ girl }: { girl: boolean }) {
+  return (
+    <group>
+      {[-1, 1].map((sd) => (
+        <group key={sd} position={[sd * 0.027, 0.004, -0.0685]} rotation={[0, sd * 0.37, 0]}>
+          {/* a big dark-brown almond set into the face, with two glints, as in the book */}
+          <mesh geometry={KG.iris} material={KID.iris} scale={[0.95, girl ? 1.3 : 1.2, 0.22]} />
+          <mesh geometry={KG.pupil} material={KID.pupil} position={[0, -0.001, -0.0022]} scale={[1, 1.25, 0.2]} />
+          <mesh geometry={KG.shine} material={KID.shine} position={[0.004, 0.005, -0.0035]} />
+          <mesh geometry={KG.shine} material={KID.shine} position={[-0.003, -0.004, -0.0032]} scale={0.55} />
+          <mesh geometry={KG.brow} material={KID.brow} position={[0, 0.024, 0.001]} rotation={[0, 0, sd * -0.14]} />
+        </group>
+      ))}
+      <mesh geometry={KG.nose} material={KID.skin} position={[0, -0.012, -0.074]} scale={[1, 0.8, 0.8]} />
+      {/* the smile, open, with teeth */}
+      <mesh geometry={KG.teeth} material={KID.teeth} position={[0, -0.028, -0.07]} rotation={[0.25, 0, 0]} scale={[1, 0.75, 1]} />
+      <mesh geometry={KG.smile} material={KID.mouth} position={[0, -0.028, -0.069]} rotation={[0.25, 0, Math.PI]} scale={[1, 0.75, 1]} />
+      {[-1, 1].map((sd) => (
+        <mesh key={sd} geometry={KG.cheek} material={KID.blush} position={[sd * 0.045, -0.017, -0.06]} rotation={[0, sd * -0.6, 0]} />
+      ))}
+    </group>
+  )
 }
 
 /**
- * A running child, standing height about `h`. A real running gait: the hip
- * swings the thigh, the knee folds the calf up behind on the way forward, the
- * bent arms pump against the legs, the body leans in and bounces twice a stride.
+ * A running child, standing height about `h`, modelled after the book: a
+ * cartoon figure with a big head and expressive face. A real running gait:
+ * the hip swings the thigh, the knee folds the calf up behind on the way
+ * forward, the bent arms pump against the legs, the body leans in and bounces
+ * twice a stride, the hair flies.
  */
-function Runner({ h, hair, top, long, phase }: { h: number; hair: THREE.Material; top: THREE.Material; long: boolean; phase: React.RefObject<number> }) {
+function Runner({ h, kid, phase }: { h: number; kid: Kid; phase: React.RefObject<number> }) {
   const hips = useRef<(THREE.Group | null)[]>([])
   const knees = useRef<(THREE.Group | null)[]>([])
   const shoulders = useRef<(THREE.Group | null)[]>([])
@@ -1615,93 +1721,105 @@ function Runner({ h, hair, top, long, phase }: { h: number; hair: THREE.Material
   const body = useRef<THREE.Group>(null)
   const chest = useRef<THREE.Group>(null)
   const head = useRef<THREE.Group>(null)
-  const tail = useRef<THREE.Group>(null)
+  const hair = useRef<THREE.Group>(null)
   useFrame(() => {
     const p = phase.current ?? 0
     for (let i = 0; i < 2; i++) {
       const q = p + i * Math.PI
-      const hip = Math.sin(q) * 0.78
+      if (hips.current[i]) hips.current[i]!.rotation.x = Math.sin(q) * 0.8
       // The knee folds most while the leg swings through, and nearly straightens on landing.
-      const knee = -(0.25 + 1.25 * Math.pow(Math.max(0, Math.cos(q + 0.5)), 1.5))
-      if (hips.current[i]) hips.current[i]!.rotation.x = hip
-      if (knees.current[i]) knees.current[i]!.rotation.x = knee
-      // Arms pump against the legs, elbows bent, a little across the body.
+      if (knees.current[i]) knees.current[i]!.rotation.x = -(0.2 + 1.35 * Math.pow(Math.max(0, Math.cos(q + 0.5)), 1.5))
       if (shoulders.current[i]) {
-        shoulders.current[i]!.rotation.x = -Math.sin(q) * 0.75
-        shoulders.current[i]!.rotation.z = (i ? -1 : 1) * 0.12
+        shoulders.current[i]!.rotation.x = -Math.sin(q) * 0.8
+        shoulders.current[i]!.rotation.z = (i ? -1 : 1) * 0.14
       }
-      if (elbows.current[i]) elbows.current[i]!.rotation.x = 1.35 + Math.sin(q) * 0.25
+      if (elbows.current[i]) elbows.current[i]!.rotation.x = 1.4 + Math.sin(q) * 0.25
     }
     if (body.current) {
-      body.current.position.y = Math.abs(Math.cos(p)) * 0.045 * h - 0.012
-      body.current.rotation.x = -0.16 // leaning into the run
+      body.current.position.y = Math.abs(Math.cos(p)) * 0.05 * h - 0.014
+      body.current.rotation.x = -0.17
     }
-    // The chest turns against the hips; the head stays steady, looking ahead.
-    if (chest.current) chest.current.rotation.y = Math.sin(p) * 0.16
+    if (chest.current) chest.current.rotation.y = Math.sin(p) * 0.18
     if (head.current) {
-      head.current.rotation.y = -Math.sin(p) * 0.12
-      head.current.rotation.x = 0.12
+      head.current.rotation.y = -Math.sin(p) * 0.14
+      head.current.rotation.x = 0.14
+      head.current.rotation.z = Math.sin(p) * 0.04
     }
-    if (tail.current) tail.current.rotation.x = 0.35 + Math.abs(Math.cos(p)) * 0.3
+    // Long hair streams back and bounces with each step.
+    if (hair.current) hair.current.rotation.x = -0.28 - Math.abs(Math.cos(p)) * 0.18
   })
-  const k = h / 0.62
+  const k = h / 0.66
   return (
     <group scale={k}>
       <group ref={body}>
-        {/* legs: hip → thigh → knee → calf → foot */}
+        {/* legs: hip → thigh → knee → calf → sneaker */}
         {[-0.036, 0.036].map((x, i) => (
-          <group key={x} ref={(g) => void (hips.current[i] = g)} position={[x, 0.26, 0]}>
-            <mesh material={KID.jeans} position={[0, -0.065, 0]}>
-              <capsuleGeometry args={[0.03, 0.08, 4, 10]} />
-            </mesh>
-            <group ref={(g) => void (knees.current[i] = g)} position={[0, -0.13, 0]}>
-              <mesh material={KID.jeans} position={[0, -0.055, 0]}>
-                <capsuleGeometry args={[0.025, 0.08, 4, 10]} />
-              </mesh>
-              <mesh material={KID.sneaker} position={[0, -0.115, -0.022]} scale={[1, 0.65, 1.6]}>
-                <sphereGeometry args={[0.03, 10, 8]} />
-              </mesh>
+          <group key={x} ref={(g) => void (hips.current[i] = g)} position={[x, 0.27, 0]}>
+            <mesh geometry={KG.thigh} material={KID.jeans} position={[0, -0.066, 0]} castShadow />
+            <group ref={(g) => void (knees.current[i] = g)} position={[0, -0.135, 0]}>
+              <mesh geometry={KG.calf} material={KID.jeans} position={[0, -0.056, 0]} />
+              <mesh geometry={KG.cuff} material={KID.jeansDark} position={[0, -0.1, 0]} />
+              <group position={[0, -0.118, -0.018]}>
+                <mesh geometry={KG.shoe} material={KID.sneaker} />
+                <mesh geometry={KG.soleGeo} material={KID.sole} position={[0, -0.02, 0]} />
+              </group>
             </group>
           </group>
         ))}
-        <group ref={chest} position={[0, 0.3, 0]}>
-          <mesh material={top} position={[0, 0.07, 0]} scale={[1, 1, 0.75]} castShadow>
-            <capsuleGeometry args={[0.058, 0.11, 6, 14]} />
-          </mesh>
-          {/* arms: shoulder → upper arm → elbow → forearm */}
-          {[-0.075, 0.075].map((x, i) => (
-            <group key={x} ref={(g) => void (shoulders.current[i] = g)} position={[x, 0.13, 0]}>
-              <mesh material={top} position={[0, -0.04, 0]}>
-                <capsuleGeometry args={[0.02, 0.05, 4, 8]} />
-              </mesh>
+        {/* hips in jeans */}
+        <mesh material={KID.jeans} position={[0, 0.28, 0]} scale={[1.25, 0.7, 0.9]}>
+          <sphereGeometry args={[0.05, 16, 12]} />
+        </mesh>
+        <group ref={chest} position={[0, 0.34, 0]}>
+          <mesh geometry={KG.torso} material={kid.top} scale={[1, 1.15, 0.8]} castShadow />
+          {/* arms: shoulder → upper arm → elbow → forearm → hand */}
+          {[-0.068, 0.068].map((x, i) => (
+            <group key={x} ref={(g) => void (shoulders.current[i] = g)} position={[x, 0.075, 0]}>
+              {kid.blouse ? (
+                <mesh geometry={KG.ruffle} material={KID.blouse} position={[0, -0.012, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[1, 1, 0.8]} />
+              ) : (
+                <mesh material={kid.top} position={[0, -0.02, 0]}>
+                  <capsuleGeometry args={[0.025, 0.03, 6, 12]} />
+                </mesh>
+              )}
+              <mesh geometry={KG.upperArm} material={KID.skin} position={[0, -0.04, 0]} />
               <group ref={(g) => void (elbows.current[i] = g)} position={[0, -0.08, 0]}>
-                <mesh material={KID.skin} position={[0, -0.035, 0]}>
-                  <capsuleGeometry args={[0.017, 0.05, 4, 8]} />
-                </mesh>
-                <mesh material={KID.skin} position={[0, -0.075, 0]}>
-                  <sphereGeometry args={[0.019, 8, 6]} />
-                </mesh>
+                <mesh geometry={KG.foreArm} material={KID.skin} position={[0, -0.035, 0]} />
+                <mesh geometry={KG.hand} material={KID.skin} position={[0, -0.078, 0]} scale={[1, 1.1, 0.9]} />
               </group>
             </group>
           ))}
-          <group ref={head} position={[0, 0.23, 0]}>
-            <mesh material={KID.skin} scale={[0.95, 1.05, 1]} castShadow>
-              <sphereGeometry args={[0.06, 18, 14]} />
-            </mesh>
-            <mesh geometry={G.cap} material={hair} position={[0, 0.008, 0.004]} scale={[1.05, 1.12, 1.06]} />
-            {long ? (
+          <mesh material={KID.skin} position={[0, 0.105, 0]}>
+            <cylinderGeometry args={[0.018, 0.021, 0.03, 12]} />
+          </mesh>
+          <group ref={head} position={[0, 0.19, 0]}>
+            <mesh geometry={KG.head} material={KID.skin} scale={[1, 1.02, 0.98]} castShadow />
+            <KidFace girl={kid.long} />
+            {kid.long ? (
               <>
-                <mesh geometry={G.bob} material={hair} position={[0, 0.004, 0.008]} scale={[1.05, 1.1, 1.02]} />
-                {/* the hair flies behind her with every step */}
-                <group ref={tail} position={[0, -0.01, 0.05]}>
-                  <mesh geometry={G.long} material={hair} position={[0, -0.06, 0.01]} scale={[1.35, 1, 0.55]} />
+                {/* Soley: parted on the left, fringe sweeping right, long brown hair covering her ears */}
+                <mesh geometry={KG.cap} material={kid.hair} position={[0, 0.006, 0.004]} scale={[1.02, 1.04, 1.03]} />
+                <mesh geometry={KG.fringe} material={kid.hair} position={[0.004, 0.012, 0]} rotation={[0, 0, -0.18]} scale={[1.02, 1.02, 1.02]} />
+                <group ref={hair} position={[0, 0.01, 0.006]}>
+                  <mesh geometry={KG.curtain} material={kid.hair} position={[0, -0.085, 0]} castShadow />
                 </group>
-                <mesh material={hair} position={[0, 0.035, -0.052]} scale={[1, 0.45, 0.35]}>
-                  <sphereGeometry args={[0.05, 12, 8]} />
-                </mesh>
               </>
             ) : (
-              <mesh geometry={G.back} material={hair} position={[0, 0.006, 0.004]} scale={[1.02, 1.08, 1.02]} />
+              <>
+                {/* Adrian: short and neat at the sides, a little longer on top, brushed forward */}
+                <mesh geometry={KG.cap} material={kid.hair} position={[0, 0.004, 0.004]} scale={[1.0, 0.98, 1.01]} />
+                {[
+                  [-0.03, 0.062, -0.045],
+                  [0.0, 0.07, -0.05],
+                  [0.03, 0.064, -0.046],
+                  [0.012, 0.075, -0.02],
+                ].map(([x, y, z], i) => (
+                  <mesh key={i} geometry={KG.tuft} material={i % 2 ? kid.tips ?? kid.hair : kid.hair} position={[x, y, z]} scale={[1, 0.55, 1]} rotation={[0.4, 0, i * 0.3]} />
+                ))}
+                {[-1, 1].map((sd) => (
+                  <mesh key={sd} geometry={KG.ear} material={KID.skin} position={[sd * 0.074, -0.006, 0.004]} scale={[0.45, 1, 0.75]} />
+                ))}
+              </>
             )}
           </group>
         </group>
@@ -1711,19 +1829,19 @@ function Runner({ h, hair, top, long, phase }: { h: number; hair: THREE.Material
 }
 
 /**
- * Cookie at a gallop: the front legs reach together, then the hind legs drive,
- * the back flexes, ears flop and the tail streams.
+ * Cookie at a gallop: a small fluffy light-beige dog. The front legs reach
+ * together, then the hind legs drive, the back flexes, ears flop, the tongue
+ * hangs out and the tail streams.
  */
 function Dog({ phase }: { phase: React.RefObject<number> }) {
   const legs = useRef<(THREE.Group | null)[]>([])
   const tail = useRef<THREE.Group>(null)
   const body = useRef<THREE.Group>(null)
-  const spine = useRef<THREE.Mesh>(null)
+  const spine = useRef<THREE.Group>(null)
   const ears = useRef<(THREE.Mesh | null)[]>([])
   const head = useRef<THREE.Group>(null)
   useFrame(() => {
     const p = phase.current ?? 0
-    // Rotary gallop: fronts a beat apart, hinds half a stride later.
     const offs = [0, 0.35, Math.PI * 0.95, Math.PI * 0.95 + 0.35]
     legs.current.forEach((l, i) => {
       if (l) l.rotation.x = Math.sin(p + offs[i]) * (i < 2 ? 0.95 : 1.1)
@@ -1732,55 +1850,90 @@ function Dog({ phase }: { phase: React.RefObject<number> }) {
       body.current.position.y = Math.max(0, Math.sin(p + 0.4)) * 0.045
       body.current.rotation.x = Math.sin(p + 1.2) * 0.14
     }
-    if (spine.current) spine.current.scale.y = 1 + Math.sin(p) * 0.08
+    if (spine.current) spine.current.scale.z = 1 + Math.sin(p) * 0.08
     if (head.current) head.current.rotation.x = -Math.sin(p + 1.2) * 0.12
     ears.current.forEach((e, i) => {
-      if (e) e.rotation.x = 0.6 + Math.sin(p * 2 + i) * 0.35
+      if (e) e.rotation.x = 0.5 + Math.sin(p * 2 + i) * 0.4
     })
     if (tail.current) {
       tail.current.rotation.x = -0.9 + Math.sin(p) * 0.2
-      tail.current.rotation.z = Math.sin(p * 2) * 0.35
+      tail.current.rotation.z = Math.sin(p * 2) * 0.4
     }
   })
+  // Fluff: a few overlapping soft balls instead of one smooth capsule.
+  const fluff: Array<[number, number, number, number]> = [
+    [0, 0.135, -0.05, 0.058],
+    [0, 0.14, 0.0, 0.062],
+    [0, 0.135, 0.055, 0.058],
+    [0.02, 0.15, -0.02, 0.04],
+    [-0.02, 0.15, 0.03, 0.04],
+  ]
   return (
     <group ref={body} scale={0.9}>
-      <mesh ref={spine} material={KID.dog} position={[0, 0.13, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-        <capsuleGeometry args={[0.05, 0.1, 6, 12]} />
-      </mesh>
+      <group ref={spine}>
+        {fluff.map(([x, y, z, r], i) => (
+          <mesh key={i} material={KID.dog} position={[x, y, z]} castShadow={i < 3}>
+            <icosahedronGeometry args={[r, 2]} />
+          </mesh>
+        ))}
+        <mesh material={KID.collar} position={[0, 0.17, -0.085]} rotation={[1.2, 0, 0]}>
+          <torusGeometry args={[0.036, 0.007, 6, 18]} />
+        </mesh>
+        <mesh material={KID.tag} position={[0, 0.135, -0.108]}>
+          <cylinderGeometry args={[0.009, 0.009, 0.003, 12]} />
+        </mesh>
+      </group>
       {[
-        [-0.03, -0.065],
-        [0.03, -0.065],
-        [-0.03, 0.065],
-        [0.03, 0.065],
+        [-0.032, -0.07],
+        [0.032, -0.07],
+        [-0.032, 0.07],
+        [0.032, 0.07],
       ].map(([x, z], i) => (
         <group key={i} ref={(g) => void (legs.current[i] = g)} position={[x, 0.11, z]}>
-          <mesh material={KID.dog} position={[0, -0.05, 0]}>
-            <capsuleGeometry args={[0.015, 0.055, 4, 6]} />
+          <mesh material={KID.dog} position={[0, -0.048, 0]}>
+            <capsuleGeometry args={[0.017, 0.05, 4, 8]} />
           </mesh>
-          <mesh material={KID.dogDark} position={[0, -0.09, -0.008]} scale={[1, 0.6, 1.3]}>
-            <sphereGeometry args={[0.014, 8, 6]} />
+          <mesh material={KID.dog} position={[0, -0.088, -0.01]} scale={[1, 0.7, 1.35]}>
+            <sphereGeometry args={[0.017, 10, 8]} />
           </mesh>
         </group>
       ))}
-      <group ref={head} position={[0, 0.2, -0.1]}>
+      <group ref={head} position={[0, 0.215, -0.11]}>
         <mesh material={KID.dog} castShadow>
-          <sphereGeometry args={[0.052, 14, 12]} />
+          <icosahedronGeometry args={[0.058, 2]} />
         </mesh>
-        <mesh material={KID.dogDark} position={[0, -0.012, -0.045]} scale={[0.8, 0.7, 1]}>
-          <sphereGeometry args={[0.028, 10, 8]} />
+        {/* snout, nose, eyes with a glint, tongue out */}
+        <mesh material={KID.dog} position={[0, -0.018, -0.05]} scale={[0.85, 0.7, 1]}>
+          <sphereGeometry args={[0.032, 14, 10]} />
         </mesh>
-        <mesh material={KID.nose} position={[0, -0.005, -0.072]}>
-          <sphereGeometry args={[0.009, 8, 6]} />
+        <mesh material={KID.nose} position={[0, -0.006, -0.083]} scale={[1.2, 0.9, 1]}>
+          <sphereGeometry args={[0.011, 10, 8]} />
+        </mesh>
+        {[-1, 1].map((sd) => (
+          <group key={sd} position={[sd * 0.024, 0.012, -0.05]}>
+            <mesh material={KID.pupil}>
+              <sphereGeometry args={[0.0095, 10, 8]} />
+            </mesh>
+            <mesh material={KID.shine} position={[0.003, 0.004, -0.008]}>
+              <sphereGeometry args={[0.0028, 6, 5]} />
+            </mesh>
+          </group>
+        ))}
+        <mesh material={KID.tongue} position={[0.006, -0.042, -0.058]} rotation={[0.5, 0, 0]} scale={[1, 0.35, 1.4]}>
+          <sphereGeometry args={[0.013, 10, 8]} />
         </mesh>
         {[-1, 1].map((sd, i) => (
-          <mesh key={sd} ref={(m) => void (ears.current[i] = m)} material={KID.dogDark} position={[sd * 0.045, 0.015, 0.005]} rotation={[0.6, 0, sd * 0.5]} scale={[0.45, 1, 0.8]}>
-            <sphereGeometry args={[0.032, 10, 8]} />
+          <mesh key={sd} ref={(m) => void (ears.current[i] = m)} material={KID.dogDark} position={[sd * 0.05, 0.012, 0.005]} rotation={[0.5, 0, sd * 0.55]} scale={[0.4, 1.1, 0.8]}>
+            <sphereGeometry args={[0.034, 12, 10]} />
           </mesh>
         ))}
       </group>
-      <group ref={tail} position={[0, 0.16, 0.085]}>
-        <mesh material={KID.dog} position={[0, 0.03, 0.01]}>
-          <capsuleGeometry args={[0.012, 0.055, 4, 6]} />
+      <group ref={tail} position={[0, 0.17, 0.1]}>
+        <mesh material={KID.dog} position={[0, 0.035, 0.01]}>
+          <icosahedronGeometry args={[0.022, 1]} />
+        </mesh>
+        <mesh material={KID.dog} position={[0, 0.06, 0.02]}>
+          <icosahedronGeometry args={[0.018, 1]} />
         </mesh>
       </group>
     </group>
@@ -1828,6 +1981,37 @@ const PACK = [
   { id: 'adrian', gap: 1.1, side: 0.22, stride: 1.05 },
   { id: 'soley', gap: 1.9, side: -0.2, stride: 0.95 },
 ] as const
+
+/** For a close look at the children: ?kids has them run on the spot next to the landing pad. */
+const KIDS_ON_SPOT = (() => {
+  try {
+    return new URLSearchParams(location.search).has('kids')
+  } catch {
+    return false
+  }
+})()
+
+function KidsOnSpot() {
+  const phases = useRef({ cookie: { current: 0 }, adrian: { current: 1 }, soley: { current: 2.2 } })
+  useFrame((_, dt) => {
+    phases.current.cookie.current += dt * 11
+    phases.current.adrian.current += dt * 8
+    phases.current.soley.current += dt * 9
+  })
+  return (
+    <group position={[0.75, 0.13, 0.75]} rotation={[0, -Math.PI * 0.75 + 0.45, 0]}>
+      <group position={[-0.5, 0, 0]} scale={1.6}>
+        <Dog phase={phases.current.cookie} />
+      </group>
+      <group position={[0, 0, 0]}>
+        <Runner h={1.0} kid={{ hair: KID.adrianHair, tips: KID.adrianTips, top: KID.tshirt, blouse: false, long: false }} phase={phases.current.adrian} />
+      </group>
+      <group position={[0.5, 0, 0]}>
+        <Runner h={0.85} kid={{ hair: KID.soleyHair, top: KID.blouse, blouse: true, long: true }} phase={phases.current.soley} />
+      </group>
+    </group>
+  )
+}
 
 function Romp() {
   const romp = useOffice((s) => s.romp)
@@ -1882,9 +2066,9 @@ function Romp() {
               <Dog phase={phases.current.cookie} />
             </group>
           ) : p.id === 'adrian' ? (
-            <Runner h={1.0} hair={KID.adrianHair} top={KID.tshirt} long={false} phase={phases.current.adrian} />
+            <Runner h={1.0} kid={{ hair: KID.adrianHair, tips: KID.adrianTips, top: KID.tshirt, blouse: false, long: false }} phase={phases.current.adrian} />
           ) : (
-            <Runner h={0.85} hair={KID.soleyHair} top={KID.blouse} long phase={phases.current.soley} />
+            <Runner h={0.85} kid={{ hair: KID.soleyHair, top: KID.blouse, blouse: true, long: true }} phase={phases.current.soley} />
           )}
         </group>
       ))}
@@ -2119,6 +2303,7 @@ export default function Scene() {
         <Floor key={d.id} dept={d} />
       ))}
       <Romp />
+      {KIDS_ON_SPOT && <KidsOnSpot />}
       <Rig />
       {/* Bloom costs the most GPU memory; phones skip it, which is what keeps iOS from dropping the context. */}
       {!phone() && (

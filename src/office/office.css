@@ -1677,7 +1677,7 @@ button {
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
-  background: radial-gradient(ellipse at 50% 40%, #241812 0%, var(--bg) 70%);
+  background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--accent) 12%, var(--bg)) 0%, var(--bg) 70%);
   /* The login now lists people; on a short screen it scrolls rather than clips. */
   overflow-x: hidden;
   overflow-y: auto;
@@ -1825,7 +1825,7 @@ button {
   font-family: var(--mono);
   font-weight: 600;
   color: #f6e7da;
-  background: linear-gradient(135deg, #6a4a3a, #3b2a22);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 45%, #2a2a2a), color-mix(in srgb, var(--accent-deep) 60%, #151515));
   border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .avatar--leitung {
@@ -4004,19 +4004,72 @@ button {
   color: rgba(190, 206, 240, 0.45);
   user-select: none;
 }
-/* Bonsai: the name of what is under the mouse, on the tree itself. */
+/* Bonsai: what is under the mouse, as a small list on the tree itself. */
 .bonsai-tip {
-  padding: 6px 12px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  min-width: 170px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--c, var(--accent)) 55%, transparent);
   background: var(--surface);
-  font: 600 12px var(--mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
-.bonsai-tip.is-agent {
-  text-transform: none;
-  letter-spacing: 0.02em;
+.bonsai-tip b {
+  display: block;
+  font: 600 12px var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c, var(--text));
+}
+.bonsai-tip ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--line);
+}
+.bonsai-tip li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.bonsai-tip li.is-on {
+  color: var(--text);
+  background: color-mix(in srgb, var(--c, var(--accent)) 18%, transparent);
+}
+
+/* Phone page: the search sits top left, and the page uses the whole screen. */
+.m-search {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-hi);
+}
+.office--m .m-page > * {
+  margin-left: 8px;
+  margin-right: 8px;
+}
+.office--m .m-hello h2 {
+  margin: 2px 0 10px;
+  font-size: 24px;
+}
+.office--m .m-kpis {
+  gap: 6px;
+}
+.office--m .m-stage__view {
+  height: calc(100dvh - 250px);
+  min-height: 380px;
+  max-height: 640px;
+  border-radius: 20px;
+}
+.office--m .m-page {
+  padding-top: calc(max(8px, env(safe-area-inset-top)) + 60px);
 }

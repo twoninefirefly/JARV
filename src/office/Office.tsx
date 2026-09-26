@@ -14,7 +14,7 @@ import { Guard } from './Guard'
 import { MOBILE } from './mobile'
 import MobileHome from './Mobile'
 import Palette from './Palette'
-import { applyTheme, themeOf } from './themes'
+import { GARDEN_DONE_MS } from './gardenTiming'
 
 /** One retry: a chunk request that fails once (a flaky connection) usually works the second time. */
 const Scene = lazy(() => import('./Scene').catch(() => import('./Scene')))
@@ -79,6 +79,16 @@ export default function Office() {
   const signOut = useOffice((s) => s.signOut)
   const garden = useOffice((s) => s.garden)
   const setGarden = useOffice((s) => s.setGarden)
+  // The page turns pink only once the garden has finished growing, not at the first blade of grass.
+  const [bloomed, setBloomed] = useState(false)
+  useEffect(() => {
+    if (!garden) {
+      setBloomed(false)
+      return
+    }
+    const t = setTimeout(() => setBloomed(true), GARDEN_DONE_MS)
+    return () => clearTimeout(t)
+  }, [garden])
   // The scene starts loading the moment the password is right, under the
   // loading bar, and is torn down again on lock so nothing stays on screen.
   const [started, setStarted] = useState(false)
@@ -86,9 +96,7 @@ export default function Office() {
     if (locked) setStarted(false)
   }, [locked])
   useComms(!locked)
-  const theme = useOffice((s) => s.theme)
   const showPalette = useOffice((s) => s.showPalette)
-  useEffect(() => applyTheme(themeOf(theme)), [theme])
 
   // The space bar sends Soley, Adrian and Cookie running through the office
   // (not while typing). On a phone: tap the logo three times.
@@ -148,7 +156,7 @@ export default function Office() {
 
   return (
     // No native drag anywhere: holding and moving on a label used to pull out a ghost copy of it.
-    <div className={`office${MOBILE ? ' office--m' : ''}${view.kind === 'overview' ? '' : ' is-open'}${garden ? ' is-garden' : ''}`} onDragStart={(e) => e.preventDefault()}>
+    <div className={`office${MOBILE ? ' office--m' : ''}${view.kind === 'overview' ? '' : ' is-open'}${bloomed ? ' is-garden' : ''}`} onDragStart={(e) => e.preventDefault()}>
       {MOBILE ? (
         <main className="m-page">
           <MobileHome stage={stage} />
@@ -158,6 +166,14 @@ export default function Office() {
       )}
 
       <header className="topbar">
+        {MOBILE && !locked && (
+          <button className="m-search" onClick={() => showSearch(true)} aria-label="Suchen">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          </button>
+        )}
         <span className="topbar__mark" onClick={tapLogo}>
           <Mark />
         </span>

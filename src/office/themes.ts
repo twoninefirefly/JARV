@@ -36,11 +36,9 @@ export const THEMES: Theme[] = [
 
 export const themeOf = (id: string | null | undefined): Theme => THEMES.find((t) => t.id === id) ?? THEMES[0]
 
-/** What each person sees first: the boss presents in Centurion, Kim in pink. */
-export function defaultTheme(userId: string | undefined): ThemeId {
-  if (userId === 'leitung') return 'centurion'
-  if (userId === 'leitung2') return 'pink'
-  return 'orange'
+/** What everyone sees first: the Centurion look, lock screen included; each person can change it. */
+export function defaultTheme(_userId?: string): ThemeId {
+  return 'centurion'
 }
 
 /** The whole page follows: CSS variables on the root element. */

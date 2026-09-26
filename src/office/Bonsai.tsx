@@ -117,7 +117,8 @@ const SOIL = new THREE.MeshStandardMaterial({ color: '#2a2016', roughness: 1 })
 const MOSS = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })
 const STONE = new THREE.MeshStandardMaterial({ color: '#8b8781', roughness: 0.7 })
 
-type Hover = { kind: 'dept' | 'agent'; id: string; label: string; at: THREE.Vector3 } | null
+/** What is under the mouse: the trunk, or a department's pad (and maybe one agent's clump in it). */
+type Hover = { dept?: Department; agent?: string; at: THREE.Vector3 } | null
 
 export default function Bonsai({
   depts,
@@ -235,7 +236,7 @@ export default function Bonsai({
     pads.current.forEach((p, i) => {
       if (!p) return
       const s = THREE.MathUtils.smoothstep(k, 0.4 + i * 0.05, 0.7 + i * 0.05)
-      const h = hover?.kind === 'dept' && hover.id === tree.branches[i]?.d.id ? 1.06 : 1
+      const h = hover?.dept && hover.dept.id === tree.branches[i]?.d.id ? 1.06 : 1
       p.scale.setScalar(Math.max(0.001, s * h))
       // A breath of wind through the pads.
       p.rotation.z = Math.sin(t * 0.8 + i * 1.3) * 0.012
@@ -294,7 +295,7 @@ export default function Bonsai({
       ))}
 
       {/* The trunk is the brain: tap it. */}
-      <mesh geometry={tree.trunkGeo} material={WOOD} castShadow onClick={tap(onTrunk)} onPointerOver={over({ kind: 'dept', id: '', label: 'Das Gehirn', at: new THREE.Vector3(0.3, 1.4, 0) })} onPointerOut={out} />
+      <mesh geometry={tree.trunkGeo} material={WOOD} castShadow onClick={tap(onTrunk)} onPointerOver={over({ at: new THREE.Vector3(0.3, 1.4, 0) })} onPointerOut={out} />
       {tree.roots.map((g, i) => (
         <mesh key={i} geometry={g} material={WOOD} />
       ))}
@@ -305,7 +306,7 @@ export default function Bonsai({
           <mesh geometry={b.geo} material={WOOD} castShadow />
           <group ref={(g) => void (pads.current[i] = g)}>
             {/* The pad as a whole is the department… */}
-            <group onClick={tap(() => onDept(b.d.id))} onPointerOver={over({ kind: 'dept', id: b.d.id, label: b.d.short, at: b.end.clone().add(new THREE.Vector3(0, 0.34, 0)) })} onPointerOut={out}>
+            <group onClick={tap(() => onDept(b.d.id))} onPointerOver={over({ dept: b.d, at: b.end.clone().add(new THREE.Vector3(0, 0.34, 0)) })} onPointerOut={out}>
               {b.clumps.map(({ a, at, twig, leaves }) => (
                 <group key={a.id}>
                   <mesh geometry={twig} material={WOOD} />
@@ -316,9 +317,9 @@ export default function Bonsai({
                     position={at}
                     castShadow
                     onClick={tap(() => onAgent(b.d.id, a.id))}
-                    onPointerOver={over({ kind: 'agent', id: a.id, label: `${a.name} · ${b.d.short}`, at: at.clone().add(new THREE.Vector3(0, 0.2, 0)) })}
+                    onPointerOver={over({ dept: b.d, agent: a.id, at: b.end.clone().add(new THREE.Vector3(0, 0.34, 0)) })}
                     onPointerOut={out}
-                    scale={hover?.kind === 'agent' && hover.id === a.id ? 1.15 : 1}
+                    scale={hover?.agent === a.id ? 1.15 : 1}
                   />
                 </group>
               ))}
@@ -335,7 +336,24 @@ export default function Bonsai({
 
       {hover && (
         <Html position={hover.at} center zIndexRange={[40, 30]} style={{ pointerEvents: 'none' }}>
-          <div className={`bonsai-tip${hover.kind === 'agent' ? ' is-agent' : ''}`}>{hover.label}</div>
+          {hover.dept ? (
+            // A small list: the department, and its work areas underneath.
+            <div className="bonsai-tip" style={{ ['--c' as string]: hover.dept.color }}>
+              <b>{hover.dept.name}</b>
+              <ul>
+                {hover.dept.agents.map((a) => (
+                  <li key={a.id} className={a.id === hover.agent ? 'is-on' : undefined}>
+                    <i className={`status status--${a.status}`} />
+                    {a.name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <div className="bonsai-tip">
+              <b>Das Gehirn</b>
+            </div>
+          )}
         </Html>
       )}
     </group>

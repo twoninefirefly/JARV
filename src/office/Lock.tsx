@@ -30,6 +30,11 @@ function Drift() {
   useEffect(() => {
     const cv = ref.current!
     const g = cv.getContext('2d')!
+    // The dots take the office's colour.
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#d98a62'
+    const m = /^#?([0-9a-f]{6})$/i.exec(accent)
+    const n = m ? parseInt(m[1], 16) : 0xd98a62
+    const tint = `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`
     const dots = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.6 + 0.4, s: Math.random() * 0.00025 + 0.00008 }))
     let raf = 0
     const draw = (t: number) => {
@@ -40,7 +45,7 @@ function Drift() {
         const y = (d.y - t * d.s) % 1
         const yy = (y < 0 ? y + 1 : y) * h
         const a = 0.25 + 0.35 * Math.sin(t / 900 + d.x * 20)
-        g.fillStyle = `rgba(217,138,98,${a})`
+        g.fillStyle = `rgba(${tint},${a})`
         g.beginPath()
         g.arc(d.x * w, yy, d.r * devicePixelRatio, 0, Math.PI * 2)
         g.fill()

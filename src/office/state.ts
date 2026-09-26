@@ -3,7 +3,7 @@ import type { Handled, WsTarget } from './workspaces'
 import type { Message } from './comms'
 import { USERS, type Decision, type User } from './team'
 import type { PrintJob } from './Print'
-import { defaultTheme, type ThemeId } from './themes'
+import { applyTheme, defaultTheme, themeOf, type ThemeId } from './themes'
 
 // Demo persistence: the remembered login and today's decisions live in this
 // browser. The real system keeps both on the server.
@@ -185,3 +185,9 @@ export const useOffice = create<OfficeState>((set) => ({
       }
     }),
 }))
+
+// The colour is on the page before anything draws, lock screen included, and follows every change.
+applyTheme(themeOf(useOffice.getState().theme))
+useOffice.subscribe((s, prev) => {
+  if (s.theme !== prev.theme) applyTheme(themeOf(s.theme))
+})

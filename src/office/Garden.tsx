@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { useOffice } from './state'
+import { GARDEN } from './gardenTiming'
 
 /**
  * Secret Garden: typed into the search, a lawn spreads out under the office,
@@ -356,9 +357,9 @@ function trailTexture() {
   return new THREE.CanvasTexture(cv)
 }
 
-const JET_TIME = 2.8 // seconds across the whole sky
+const JET_TIME = 2.2 // seconds across the whole sky
 /** Early in the show, while the first roses are still coming up — not as the finale. */
-const JET_AT = 6
+const JET_AT = GARDEN.jetAt
 /** For rehearsing the finale: ?jet sends it right after the lawn. */
 const JET_SOON = (() => {
   try {
@@ -452,10 +453,10 @@ function Jet({ onDone }: { onDone: () => void }) {
 // ---------------------------------------------------------------------------
 
 const ROSE_SIZE = 2.1
-const RISE = 2.6 // seconds a rose takes to push up out of the ground
-const OPEN = 3.2 // seconds it then takes to open
-const FIRST = 2.2 // the first rose starts once the lawn is mostly there
-const SPREAD = 14 // the last one starts this long after the first
+const RISE = GARDEN.rise
+const OPEN = GARDEN.open
+const FIRST = GARDEN.first
+const SPREAD = GARDEN.spread
 
 export default function Garden({ free, phone }: { free: (x: number, z: number, margin: number) => boolean; phone: boolean }) {
   const on = useOffice((s) => s.garden)

@@ -493,9 +493,27 @@ export function hvMakers({ n, eur, clock, later, L }: Helpers): Partial<Record<s
         }
       }),
     escalation: () => [
-      { id: 'e0', title: 'Heizungsausfall Parkallee 21', sub: 'Posteingang · 8 Parteien betroffen', badge: { text: 'Notfall', tone: 'bad' }, body: 'Notdienst Heizung Meyer ist unterwegs, Ankunft 11:30. Aushang an alle Mieter verschickt.', actions: ['Status ansehen'] },
+      {
+        id: 'e0',
+        title: 'Heizungsausfall Parkallee 21',
+        sub: 'Posteingang · 8 Parteien betroffen',
+        badge: { text: 'Notfall', tone: 'bad' },
+        body: 'Notdienst Heizung Meyer ist unterwegs, Ankunft 11:30. Die Nachricht an alle Mieter liegt als Vorlage bereit.',
+        reply: L.craftAssigned({ person: 'Hausgemeinschaft', object: 'Parkallee 21', craft: 'Heizung & Solar Meyer', topic: 'Heizungsausfall', urgent: true }),
+        actions: ['Mieter antworten', 'Erledigt'],
+      },
       { id: 'e1', title: 'Frist: Einladung ETV Parkallee 21', sub: 'WEG · Versand bis Freitag', badge: { text: 'Mittel', tone: 'warn' }, body: 'Einladung liegt zur Freigabe vor, Frist nach WEG-Gesetz 3 Wochen.', actions: ['Zur Freigabe'] },
-      { id: 'e2', title: 'Wasserschaden seit 3 Tagen ohne Termin', sub: 'Lindenstr. 12, WE 07', badge: { text: 'Mittel', tone: 'warn' }, body: 'Sanitär Kaya hat noch nicht bestätigt. Zweiter Betrieb angefragt.', actions: ['Nachfassen'] },
+      {
+        id: 'e2',
+        title: 'Wasserschaden seit 3 Tagen ohne Termin',
+        sub: 'Lindenstr. 12, WE 07',
+        badge: { text: 'Mittel', tone: 'warn' },
+        body: 'Sanitär Kaya hat noch nicht bestätigt. Vorschlag: den zweiten Betrieb beauftragen, der morgen früh kann.',
+        fields: [['Vorschlag', 'Haustechnik Lange'], ['Termin', 'morgen 8:00']],
+        letter: L.craftOrder({ craft: 'Haustechnik Lange', object: 'Lindenstr. 12', job: 'Wasserschaden WE 07 – Ursache finden und abdichten', amount: 360, no: 'A-2026-352' }),
+        reply: L.craftAssigned({ person: 'Frau Nowak', object: 'Lindenstr. 12', unit: 'WE 07', craft: 'Haustechnik Lange', topic: 'Wasserschaden' }),
+        actions: ['Handwerker beauftragen', 'Mieter antworten', 'Nachfassen'],
+      },
     ],
     damages: (r, pick) =>
       n(9, (i) => {

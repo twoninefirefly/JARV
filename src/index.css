@@ -33,7 +33,20 @@ body,
   overflow: hidden;
 }
 
-/* Faint scanlines + radial falloff so the 3D never sits on flat black. */
+/* Radial falloff so the 3D never sits on flat black. Between the scene and
+   instruments (z 1-2) and the HUD (z 4): it used to share the scanline layer
+   above the HUD, which also darkened the rail labels, the corner text and
+   anything in a blade near the edge by up to 55%. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+/* Faint scanlines, on the glass above everything else. */
 body::after {
   content: '';
   position: fixed;
@@ -41,7 +54,6 @@ body::after {
   pointer-events: none;
   z-index: 5;
   background:
-    radial-gradient(ellipse at center, transparent 30%, rgba(0, 0, 0, 0.55) 100%),
     repeating-linear-gradient(
       0deg,
       rgba(0, 229, 255, 0.028) 0px,
@@ -500,6 +512,13 @@ kbd {
 
 /* A list container is scenery; its rows do the arriving. */
 .p-stagger > :is(.hud-rows, .hud-grid, .hud-gallery) { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .p-stagger > *,
+  .p-stagger > :is(.hud-rows, .hud-grid, .hud-gallery) > * { animation: none; }
+  /* Still reads as "live" without the endless scale pulse. */
+  .dot { animation: none; }
+}
 
 /* Delays are set on everything inside and only read by the rule above, so one
    ladder covers both shapes. Anything past the last step shares it rather than

@@ -135,7 +135,7 @@ function Protocol({ items, onPick }: { items: Array<{ time: string; text: string
 }
 
 /** Agents talking to each other through the brain, newest first. */
-function Feed({ dept, limit }: { dept?: string; limit: number }) {
+export function Feed({ dept, limit }: { dept?: string; limit: number }) {
   const feed = useOffice((s) => s.feed)
   const open = useOffice((s) => s.open)
   const items = (dept ? feed.filter((m) => m.from.dept === dept || m.to.dept === dept) : feed).slice(0, limit)

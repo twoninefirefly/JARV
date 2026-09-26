@@ -11,6 +11,8 @@ import Search from './Search'
 import Lock, { Mark } from './Lock'
 import { useComms } from './comms'
 import { Guard } from './Guard'
+import { MOBILE } from './mobile'
+import MobileHome from './Mobile'
 
 /** One retry: a chunk request that fails once (a flaky connection) usually works the second time. */
 const Scene = lazy(() => import('./Scene').catch(() => import('./Scene')))
@@ -40,6 +42,27 @@ class SceneGuard extends Component<{ children: ReactNode; attempt: number; onRet
       </div>
     )
   }
+}
+
+/** Online or not, live: the office works with the network, so say so when it's gone. */
+function Net() {
+  const [online, setOnline] = useState(() => navigator.onLine)
+  useEffect(() => {
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => {
+      window.removeEventListener('online', on)
+      window.removeEventListener('offline', off)
+    }
+  }, [])
+  return (
+    <span className={`net${online ? '' : ' net--off'}`} role="status" title={online ? 'Verbunden' : 'Keine Internetverbindung'}>
+      <i />
+      {online ? 'Online' : 'Offline · kein Internet'}
+    </span>
+  )
 }
 
 export default function Office() {
@@ -110,14 +133,24 @@ export default function Office() {
     }
   }, [locked, lock])
 
+  const stage = (
+    <div className="stage">
+      <SceneGuard key={attempt} attempt={attempt} onRetry={() => setAttempt((n) => n + 1)}>
+        <Suspense fallback={<div className="loading">Büro wird aufgebaut …</div>}>{started && <Scene />}</Suspense>
+      </SceneGuard>
+    </div>
+  )
+
   return (
     // No native drag anywhere: holding and moving on a label used to pull out a ghost copy of it.
-    <div className={`office${view.kind === 'overview' ? '' : ' is-open'}${garden ? ' is-garden' : ''}`} onDragStart={(e) => e.preventDefault()}>
-      <div className="stage">
-        <SceneGuard key={attempt} attempt={attempt} onRetry={() => setAttempt((n) => n + 1)}>
-          <Suspense fallback={<div className="loading">Büro wird aufgebaut …</div>}>{started && <Scene />}</Suspense>
-        </SceneGuard>
-      </div>
+    <div className={`office${MOBILE ? ' office--m' : ''}${view.kind === 'overview' ? '' : ' is-open'}${garden ? ' is-garden' : ''}`} onDragStart={(e) => e.preventDefault()}>
+      {MOBILE ? (
+        <main className="m-page">
+          <MobileHome stage={stage} />
+        </main>
+      ) : (
+        stage
+      )}
 
       <header className="topbar">
         <span className="topbar__mark" onClick={tapLogo}>
@@ -125,9 +158,9 @@ export default function Office() {
         </span>
         <h1>Agenten-Büro</h1>
         <span className="topbar__meta">
-          <i />
           {COMPANY.name}
           {COMPANY.demo && ' · Demo'}
+          <Net />
         </span>
         <span className="topbar__actions">
           {!locked && (
@@ -169,7 +202,7 @@ export default function Office() {
               </span>
             </button>
           )}
-          {view.kind !== 'overview' && (
+          {view.kind !== 'overview' && !MOBILE && (
             <button className="icon-btn icon-btn--lg" onClick={() => show({ kind: 'overview' })} aria-label="Zur Übersicht">
               ✕
             </button>
@@ -184,7 +217,7 @@ export default function Office() {
       </header>
 
       <AnimatePresence>
-        {(view.kind === 'overview' || view.kind === 'neural') && (
+        {!MOBILE && (view.kind === 'overview' || view.kind === 'neural') && (
           <motion.div key={view.kind} className="hint" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
             {view.kind === 'neural'
               ? 'Jeder Punkt ist ein Agent · antippen öffnet ihn'
@@ -215,7 +248,7 @@ export default function Office() {
           </motion.button>
         )}
       </AnimatePresence>
-      {!locked && <Panel />}
+      {!locked && !MOBILE && <Panel />}
       </Guard>
       <Guard name="window" onError={() => useOffice.setState({ ws: null })}>
         {!locked && <Workspace />}

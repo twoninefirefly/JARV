@@ -9,6 +9,8 @@ import { useOffice, type View } from './state'
 import { Icon, Spark } from './Icon'
 import { agentTarget } from './workspaces'
 import Garden from './Garden'
+import Bonsai, { type Limb } from './Bonsai'
+import { MOBILE } from './mobile'
 
 /**
  * The isometric office: six department floors around a particle brain.
@@ -710,7 +712,7 @@ const INSIDE_GROW = 1.45
  * The platform under the brain: a round landing pad, like a helipad, with the
  * customer's mark where the "H" would be. Drawn once into a sharp texture.
  */
-function padTexture() {
+function padTexture(ringColor = 'rgba(232,162,124,0.85)', dashColor = 'rgba(232,162,124,0.55)') {
   const S = 1024
   const cv = document.createElement('canvas')
   cv.width = cv.height = S
@@ -730,8 +732,8 @@ function padTexture() {
   bg.addColorStop(1, '#0d0b0a')
   g.fillStyle = bg
   g.fillRect(0, 0, S, S)
-  ring(0.955, 6, 'rgba(232,162,124,0.85)')
-  ring(0.87, 14, 'rgba(232,162,124,0.55)', [46, 30])
+  ring(0.955, 6, ringColor)
+  ring(0.87, 14, dashColor, [46, 30])
   ring(0.64, 3, 'rgba(232,162,124,0.45)')
   // Ticks around the inner ring, like a compass rose.
   for (let k = 0; k < 48; k++) {
@@ -772,8 +774,13 @@ function padTexture() {
   return tex
 }
 
+/** Kim Bormann's office glows pink around the mark; everyone else's copper. */
+const PINK_RING: [number, number, number] = [1.9, 0.28, 1.05]
+const COPPER_RING: [number, number, number] = [1.5, 0.75, 0.45]
+
 function Pad() {
-  const tex = useMemo(padTexture, [])
+  const pink = useOffice((s) => s.user?.id === 'leitung2')
+  const tex = useMemo(() => (pink ? padTexture('rgba(255,92,180,0.95)', 'rgba(255,92,180,0.6)') : padTexture()), [pink])
   return (
     <group>
       <mesh position={[0, 0.06, 0]} receiveShadow>
@@ -787,8 +794,15 @@ function Pad() {
       </mesh>
       <mesh position={[0, 0.125, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[2.1, 0.012, 8, 160]} />
-        <meshBasicMaterial color={[1.5, 0.75, 0.45]} toneMapped={false} />
+        <meshBasicMaterial color={pink ? PINK_RING : COPPER_RING} toneMapped={false} />
       </mesh>
+      {pink && (
+        // A soft pink halo just outside the rim, so the ring really glows.
+        <mesh position={[0, 0.123, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[2.13, 0.045, 8, 160]} />
+          <meshBasicMaterial color={[1.2, 0.15, 0.6]} transparent opacity={0.45} toneMapped={false} depthWrite={false} />
+        </mesh>
+      )}
     </group>
   )
 }
@@ -802,6 +816,10 @@ function Brain() {
   const inside = useOffice((s) => s.view.kind === 'neural')
   const light = useRef<THREE.PointLight>(null)
   const dpr = useThree((s) => s.viewport.dpr)
+  // Secret Garden: the brain gives way to a bonsai, one branch per department.
+  const garden = useOffice((s) => s.garden)
+  const tree = useRef(0)
+  const limbs = useMemo<Limb[]>(() => DEPARTMENTS.map((d) => ({ id: d.id, color: d.color, dir: place(d.angle).normalize() })), [])
 
   const { geometry, material, synapses, wire } = useMemo(() => {
     const n = 5200
@@ -884,9 +902,11 @@ function Brain() {
     const flare = useOffice
       .getState()
       .inFlight.reduce((m, f) => Math.max(m, Math.exp(-(((now - f.born) / 1000 - 1.2) ** 2) / 0.02)), 0)
+    tree.current = THREE.MathUtils.clamp(tree.current + (garden ? dt / 3.5 : -dt / 1.2), 0, 1)
+    const gone = 1 - THREE.MathUtils.smoothstep(tree.current, 0, 0.35)
     if (spin.current) {
       spin.current.rotation.y += dt * 0.12
-      spin.current.scale.setScalar(born * (1 + flare * 0.08))
+      spin.current.scale.setScalar(Math.max(0.001, born * (1 + flare * 0.08) * gone))
     }
     wire.opacity = 0.18 + flare * 0.5
     // Stepping inside: the brain swells so its neurons can be told apart.
@@ -897,7 +917,7 @@ function Brain() {
     const g = (grow.current - 1) / (INSIDE_GROW - 1)
     material.uniforms.uDim.value = 1 - 0.6 * g
     wire.opacity *= 1 - 0.5 * g
-    if (light.current) light.current.intensity = 6 * born + flare * 10
+    if (light.current) light.current.intensity = (6 * born + flare * 10) * (0.35 + 0.65 * gone)
   })
 
   return (
@@ -910,7 +930,7 @@ function Brain() {
         </group>
         <Neurons />
         {/* An invisible hit target — points are too sparse to click. Gone inside the brain, so it doesn't catch the taps meant for the neurons. */}
-        {!inside && (
+        {!inside && !garden && (
           <mesh
             onClick={onTap(() => show({ kind: 'brain' }))}
             onDoubleClick={(e) => {
@@ -932,7 +952,10 @@ function Brain() {
         )}
       </group>
       <pointLight ref={light} position={[0, 1.4, 0]} color="#ff9a5c" intensity={6} distance={7} decay={1.6} />
-      <BrainBadge />
+      <group scale={1.55}>
+        <Bonsai limbs={limbs} amount={tree} onPick={(id) => show({ kind: 'dept', id })} />
+      </group>
+      {!garden && <BrainBadge />}
     </group>
   )
 }
@@ -1675,7 +1698,9 @@ function Rig() {
     probe.position.copy(focus).addScaledVector(dir, dist)
     probe.lookAt(focus)
     const shift = new THREE.Vector3()
-    if (view.kind !== 'overview') {
+    if (MOBILE) {
+      // The phone page has no sheet over the 3D card: keep the subject centred.
+    } else if (view.kind !== 'overview') {
       if (wide()) shift.set(1, 0, 0).applyQuaternion(probe.quaternion).multiplyScalar(dist * 0.17)
       else shift.set(0, -1, 0).applyQuaternion(probe.quaternion).multiplyScalar(dist * 0.15)
     } else if (!wide()) {

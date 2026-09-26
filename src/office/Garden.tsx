@@ -356,7 +356,15 @@ function trailTexture() {
   return new THREE.CanvasTexture(cv)
 }
 
-const JET_TIME = 1.9 // seconds across the whole sky
+const JET_TIME = 2.8 // seconds across the whole sky
+/** For rehearsing the finale: ?jet sends it right after the lawn. */
+const JET_SOON = (() => {
+  try {
+    return new URLSearchParams(location.search).has('jet')
+  } catch {
+    return false
+  }
+})()
 
 function Jet({ onDone }: { onDone: () => void }) {
   const { camera } = useThree()
@@ -384,7 +392,7 @@ function Jet({ onDone }: { onDone: () => void }) {
     look.normalize()
     const side = new THREE.Vector3(-look.z, 0, look.x)
     const mid = new THREE.Vector3(0, 4.2, 0).addScaledVector(look, 2)
-    return { from: mid.clone().addScaledVector(side, -38), to: mid.clone().addScaledVector(side, 38).add(new THREE.Vector3(0, 1.6, 0)), side }
+    return { from: mid.clone().addScaledVector(side, -30), to: mid.clone().addScaledVector(side, 30).add(new THREE.Vector3(0, 1.6, 0)), side }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -393,17 +401,17 @@ function Jet({ onDone }: { onDone: () => void }) {
     if (!g) return
     t.current += dt
     const k = t.current / JET_TIME
-    if (k >= 1.35) {
+    if (k >= 1.8) {
       onDone()
       return
     }
-    g.position.lerpVectors(path.from, path.to, Math.min(k, 1.35))
+    g.position.lerpVectors(path.from, path.to, k)
     g.lookAt(g.position.clone().add(path.side.clone().add(new THREE.Vector3(0, 0.04, 0))))
     g.rotateY(-Math.PI / 2)
     g.rotateX(Math.sin(Math.min(k, 1) * Math.PI) * 0.35)
     // Contrails stretch out behind, then fade.
     const len = Math.min(k, 1) * 26
-    const fade = k > 1 ? 1 - (k - 1) / 0.35 : 1
+    const fade = k > 1 ? 1 - (k - 1) / 0.8 : 1
     trails.current.forEach((m) => {
       if (!m) return
       m.scale.x = Math.max(0.01, len)
@@ -570,7 +578,7 @@ export default function Garden({ free, phone }: { free: (x: number, z: number, m
     if (lawn.current) lawn.current.scale.setScalar(Math.max(0.001, Math.min(1, front / LAWN_R)))
 
     const t = clock.current
-    if (on && jet === 'waiting' && t > FIRST + SPREAD + RISE * 0.6 + OPEN + 0.6) setJet('flying')
+    if (on && jet === 'waiting' && t > (JET_SOON ? 3 : FIRST + SPREAD + RISE * 0.6 + OPEN + 0.6)) setJet('flying')
     const fade = on ? 1 : ease
     built.roses.forEach((o, i) => {
       const gr = roseRefs.current[i]

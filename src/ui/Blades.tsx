@@ -537,6 +537,7 @@ function Card({
                   setPos({ x: 0, y: 0 })
                 }}
                 title="Zurück auf Anfang"
+                aria-label="Größe und Position zurücksetzen"
               >
                 ⤾
               </button>
@@ -547,7 +548,8 @@ function Card({
                 e.stopPropagation()
                 onExpand()
               }}
-              title={expanded ? 'Shrink (E)' : 'Full screen (E)'}
+              title={expanded ? 'Verkleinern (E)' : 'Vollbild (E)'}
+              aria-label={expanded ? 'Verkleinern' : 'Vollbild'}
             >
               {expanded ? '⤡' : '⤢'}
             </button>
@@ -557,7 +559,8 @@ function Card({
                 e.stopPropagation()
                 onClose()
               }}
-              title="Close (X)"
+              title="Schließen (X)"
+              aria-label="Schließen"
             >
               ✕
             </button>

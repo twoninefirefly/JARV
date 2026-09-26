@@ -253,7 +253,7 @@ export function Hud() {
           >
             <span className="tool-kicker">
               <span className="spinner" />
-              accessing
+              Zugriff
             </span>
             <span className="tool-name">{activeTool.replace(/[_-]/g, ' ')}</span>
           </motion.div>
@@ -306,21 +306,31 @@ export function Hud() {
           system it documents stays findable. */}
       <Blades />
 
-      {ui.chrome.suggestions && <Suggestions />}
+      {/* One stack for everything pinned to the bottom edge. They used to be
+          positioned independently, a few pixels apart, and a two-line error
+          (the bridge-unreachable one, say) grew straight up over the hint
+          line. In a column they push each other instead of overlapping. */}
+      <div className="hud-foot">
+        {ui.chrome.suggestions && <Suggestions />}
 
-      {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        )}
 
-      <footer className="hud-bottom">
-        <span className="hint">
-          sag <b>„hey jarvis“</b> · <kbd>Leertaste</kbd> zum Sprechen · <kbd>G</kbd> Hände
-          {voice && (
-            <>
-              {' · '}
-              <kbd>V</kbd> Stimme: {voice.replace(/\(.*?\)/g, '').trim()}
-            </>
-          )}
-        </span>
-      </footer>
+        <footer className="hud-bottom">
+          <span className="hint">
+            sag <b>„hey jarvis“</b> · <kbd>Leertaste</kbd> zum Sprechen · <kbd>G</kbd> Hände
+            {voice && (
+              <>
+                {' · '}
+                <kbd>V</kbd> Stimme: {voice.replace(/\(.*?\)/g, '').trim()}
+              </>
+            )}
+          </span>
+        </footer>
+      </div>
 
       {/* Last, so a flash or a tear reads as being on the glass rather than
           underneath the chrome. It is pointer-events: none and unmounts the
@@ -332,7 +342,7 @@ export function Hud() {
       <Pointer />
       {(gestures || looking) && (
         <div className="hands-live">
-          {looking ? `LOOKING — ${looking.toUpperCase()}` : 'CAMERA ON · G TO STOP'}
+          {looking ? `SUCHE — ${looking.toUpperCase()}` : 'KAMERA AN · G ZUM STOPPEN'}
         </div>
       )}
       <GestureGuide live={gestures} />

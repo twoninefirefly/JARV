@@ -14,6 +14,16 @@
   box-sizing: border-box;
 }
 
+/* One visible keyboard focus ring for every control. Mouse and gesture
+   presses do not trigger :focus-visible, so it only shows for the keyboard. */
+:focus-visible {
+  outline: 2px solid var(--interface);
+  outline-offset: 2px;
+}
+.ignition:focus-visible {
+  outline-offset: -6px;
+}
+
 html,
 body,
 #root {
@@ -23,7 +33,20 @@ body,
   overflow: hidden;
 }
 
-/* Faint scanlines + radial falloff so the 3D never sits on flat black. */
+/* Radial falloff so the 3D never sits on flat black. Between the scene and
+   instruments (z 1-2) and the HUD (z 4): it used to share the scanline layer
+   above the HUD, which also darkened the rail labels, the corner text and
+   anything in a blade near the edge by up to 55%. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  background: radial-gradient(ellipse at center, transparent 30%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+/* Faint scanlines, on the glass above everything else. */
 body::after {
   content: '';
   position: fixed;
@@ -31,7 +54,6 @@ body::after {
   pointer-events: none;
   z-index: 5;
   background:
-    radial-gradient(ellipse at center, transparent 30%, rgba(0, 0, 0, 0.55) 100%),
     repeating-linear-gradient(
       0deg,
       rgba(0, 229, 255, 0.028) 0px,
@@ -97,7 +119,7 @@ body::after {
   margin-top: 5px;
   font-size: 9px;
   letter-spacing: 0.22em;
-  opacity: 0.42;
+  opacity: 0.6;
 }
 
 .status {
@@ -141,8 +163,8 @@ body::after {
 .rail-right { right: 92px; align-items: flex-end; }
 
 .rail-title {
-  font-size: 8px;
-  opacity: 0.4;
+  font-size: 9px;
+  opacity: 0.6;
   letter-spacing: 0.34em;
   margin-bottom: 4px;
 }
@@ -153,7 +175,7 @@ body::after {
   gap: 8px;
   opacity: 0.82;
 }
-.rail-item.dim { opacity: 0.3; }
+.rail-item.dim { opacity: 0.55; }
 .rail-item.mono { font-family: 'JetBrains Mono', monospace; letter-spacing: 0.1em; }
 
 .tick {
@@ -277,14 +299,14 @@ body::after {
 
 .log-who {
   flex: 0 0 54px;
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.26em;
   text-transform: uppercase;
-  opacity: 0.45;
+  opacity: 0.6;
   padding-top: 3px;
 }
 
-.log-user .log-text { opacity: 0.52; }
+.log-user .log-text { opacity: 0.72; }
 .log-jarvis .log-text {
   color: #eaf9ff;
   text-shadow: 0 0 26px color-mix(in srgb, var(--accent) 45%, transparent);
@@ -306,11 +328,20 @@ body::after {
   text-align: center;
 }
 
-.error {
+/* Suggestions, errors and the hint line share one column pinned to the bottom
+   edge, so a long error pushes the others up rather than landing on them. */
+.hud-foot {
   position: absolute;
-  left: 50%;
-  bottom: 52px;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  bottom: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+}
+
+.error {
   color: #ff6b6b;
   font-size: 10px;
   text-transform: none;
@@ -320,13 +351,10 @@ body::after {
 }
 
 .hud-bottom {
-  position: absolute;
-  bottom: 44px;
-  left: 0;
-  right: 0;
   text-align: center;
-  font-size: 9px;
-  opacity: 0.38;
+  font-size: 10px;
+  /* 0.6 is roughly where the cyan clears 4.5:1 against the background. */
+  opacity: 0.62;
   letter-spacing: 0.2em;
 }
 
@@ -484,6 +512,13 @@ kbd {
 
 /* A list container is scenery; its rows do the arriving. */
 .p-stagger > :is(.hud-rows, .hud-grid, .hud-gallery) { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .p-stagger > *,
+  .p-stagger > :is(.hud-rows, .hud-grid, .hud-gallery) > * { animation: none; }
+  /* Still reads as "live" without the endless scale pulse. */
+  .dot { animation: none; }
+}
 
 /* Delays are set on everything inside and only read by the rule above, so one
    ladder covers both shapes. Anything past the last step shares it rather than
@@ -772,10 +807,6 @@ kbd {
 /* ------------------------------------------------------------ suggestions */
 
 .suggest {
-  position: absolute;
-  left: 50%;
-  bottom: 96px;
-  transform: translateX(-50%);
   display: flex;
   align-items: baseline;
   gap: 14px;
@@ -783,9 +814,9 @@ kbd {
 }
 
 .suggest-lead {
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.34em;
-  opacity: 0.3;
+  opacity: 0.55;
 }
 
 .suggest-text {
@@ -834,13 +865,14 @@ kbd {
 }
 
 .ignition-sub {
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0.28em;
-  opacity: 0.4;
+  opacity: 0.65;
   text-transform: uppercase;
 }
 
-.ignition:hover .ignition-word {
+.ignition:hover .ignition-word,
+.ignition:focus-visible .ignition-word {
   text-shadow: 0 0 44px rgba(79, 214, 255, 1);
 }
 
@@ -1546,6 +1578,9 @@ kbd {
   font-size: 11px;
   line-height: 1;
   padding: 4px 7px;
+  /* WCAG 2.2 target size: nothing clickable under 24x24 CSS px. */
+  min-width: 24px;
+  min-height: 24px;
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease;
 }

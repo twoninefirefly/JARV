@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { MotionConfig } from 'framer-motion'
 import { Scene } from './scene/Scene'
 import { Hud } from './ui/Hud'
 import { Boot, BOOT_EXIT_MS, BOOT_MS } from './ui/Boot'
@@ -804,14 +805,16 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // reducedMotion="user": with the OS "reduce motion" setting on, framer
+  // drops movement (slides, springs, scale) and keeps the fades.
   return (
-    <>
+    <MotionConfig reducedMotion="user">
       <Scene />
       <Hud />
       <Boot />
       <Film />
       <Diagnostics />
       <Ignition onStart={() => void powerOn()} />
-    </>
+    </MotionConfig>
   )
 }

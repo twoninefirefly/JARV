@@ -265,17 +265,17 @@ function connect(): Promise<WebSocket> {
        */
       settle(
         new Error(
-          `Cannot reach the bridge at ${BRIDGE_WS_URL}. Either it is not ` +
-            'running (start it with `npm start`), or this page is on a port it ' +
-            `refuses — it accepts localhost:5173-5199 and 4173-4199, and this ` +
-            `page is on ${location.port || '80'}.`,
+          `Bridge unter ${BRIDGE_WS_URL} nicht erreichbar. Entweder läuft sie ` +
+            'nicht (mit `npm start` starten), oder diese Seite läuft auf einem ' +
+            `Port, den sie ablehnt — erlaubt sind localhost:5173-5199 und ` +
+            `4173-4199, diese Seite läuft auf ${location.port || '80'}.`,
         ),
       )
     }
     ws.onclose = () => {
       // A close before open is just a failed dial; after open it's a lost
       // session, and the two want different handling.
-      settle(new Error('The bridge closed the connection.'))
+      settle(new Error('Die Bridge hat die Verbindung geschlossen.'))
       if (socket === ws) {
         socket = null
         onConnection?.('lost')

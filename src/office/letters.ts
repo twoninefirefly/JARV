@@ -160,7 +160,7 @@ export function craftAssigned(o: { person: string; object: string; unit?: string
   return {
     channel: 'E-Mail',
     template: 'Antwort: Handwerker beauftragt',
-    to: all ? [`Aushang und Mail an alle Parteien`, f(o.object)] : [`${o.person.replace(/^(Fam\.|Frau|Herr) /, '').toLowerCase().replace(/ /g, '.')}@mail.de`],
+    to: all ? [`Aushang und Mail an alle Parteien`, o.object] : [`${o.person.replace(/^(Fam\.|Frau|Herr) /, '').toLowerCase().replace(/ /g, '.')}@mail.de`],
     subject: `${o.urgent ? 'Notdienst ist unterwegs' : 'Handwerker ist beauftragt'} – ${f(o.topic)}, ${f(o.unit ? `${o.object}, ${o.unit}` : o.object)}`,
     salutation: all ? 'Liebe Mieterinnen und Mieter,' : greet(o.person),
     body: [

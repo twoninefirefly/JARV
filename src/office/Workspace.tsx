@@ -497,7 +497,7 @@ function Window({ ws }: { ws: WsTarget }) {
   /** The prepared reply goes out as it stands; the record notes it. */
   const sendReply = (it: WsItem) => {
     const now = new Date()
-    const to = it.reply!.to[0].includes('@') ? it.reply!.to[0] : it.reply!.to.join(' ')
+    const to = it.reply!.to[0].includes('@') ? it.reply!.to[0] : it.reply!.to.join(', ').replace('Aushang und Mail an ', '')
     handle(`${key}/${it.id}#reply`, {
       label: `Antwort gesendet an ${to}`,
       short: 'Beantwortet',

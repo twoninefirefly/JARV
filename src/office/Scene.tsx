@@ -9,8 +9,9 @@ import { useOffice, type View } from './state'
 import { Icon, Spark } from './Icon'
 import { agentTarget } from './workspaces'
 import Garden from './Garden'
-import Bonsai, { type Limb } from './Bonsai'
+import Bonsai from './Bonsai'
 import { MOBILE } from './mobile'
+import { themeOf, type Theme } from './themes'
 
 /**
  * The isometric office: six department floors around a particle brain.
@@ -50,6 +51,32 @@ const PLANTS: Array<[number, number]> = [
   [-1.3, 1.3],
   [0.25, 0.7],
 ]
+
+/**
+ * A press on a label that may be moving (the camera is still flying): the
+ * browser only counts a click when press and release land on the same element,
+ * and a moving label slips away in between. So the press and the release are
+ * judged by where the pointer went, not by what is under it. Keys still click.
+ */
+function press(fn: () => void) {
+  return {
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.button !== 0) return
+      const x = e.clientX
+      const y = e.clientY
+      const t = performance.now()
+      const up = (u: PointerEvent) => {
+        window.removeEventListener('pointerup', up, true)
+        if (Math.hypot(u.clientX - x, u.clientY - y) < 12 && performance.now() - t < 900) fn()
+      }
+      window.addEventListener('pointerup', up, true)
+    },
+    onClick: (e: React.MouseEvent) => {
+      // detail 0: Enter or Space on a focused label.
+      if (e.detail === 0) fn()
+    },
+  }
+}
 
 function onTap(fn: () => void) {
   return (e: ThreeEvent<MouseEvent>) => {
@@ -396,7 +423,9 @@ function Plant() {
 
 /** How long resting on a department's badge takes to open it; the bar fills in the same time. */
 const DWELL_MS = 1400
-const canDwell = (v: View, id: string) => v.kind === 'overview' || v.kind === 'brain' || (v.kind === 'dept' && v.id !== id)
+/** Resting to open needs a real mouse; on touch screens a tap does it, and nothing opens by itself. */
+const HOVER = !MOBILE && typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches
+const canDwell = (v: View, id: string) => HOVER && (v.kind === 'overview' || v.kind === 'brain' || (v.kind === 'dept' && v.id !== id))
 
 function Floor({ dept }: { dept: Department }) {
   const view = useOffice((s) => s.view)
@@ -559,7 +588,7 @@ function Floor({ dept }: { dept: Department }) {
           <button
             className={`floor-badge${tagHover ? ' is-hover' : ''}${dwell ? ' is-dwell' : ''}`}
             style={{ ['--c' as string]: dept.color }}
-            onClick={pick}
+            {...press(pick)}
             onMouseEnter={enterTag}
             onMouseLeave={leaveTag}
           >
@@ -599,10 +628,10 @@ function Floor({ dept }: { dept: Department }) {
                   onMouseLeave={() => setHoverAgent((h) => (h === a.id ? null : h))}
                   onFocus={() => setHoverAgent(a.id)}
                   onBlur={() => setHoverAgent((h) => (h === a.id ? null : h))}
-                  onClick={() => {
+                  {...press(() => {
                     show({ kind: 'dept', id: dept.id, agent: a.id })
                     open(agentTarget(dept, a))
-                  }}
+                  })}
                 >
                   <span className="agent-tag__more" aria-hidden={!on}>
                     <span>
@@ -712,7 +741,21 @@ const INSIDE_GROW = 1.45
  * The platform under the brain: a round landing pad, like a helipad, with the
  * customer's mark where the "H" would be. Drawn once into a sharp texture.
  */
-function padTexture(ringColor = 'rgba(232,162,124,0.85)', dashColor = 'rgba(232,162,124,0.55)') {
+/** Rgba of a theme colour, for the canvas. */
+const rgba = (hex: string, a: number) => {
+  const c = new THREE.Color(hex)
+  return `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${a})`
+}
+
+/** The office's colour in the 3D scene: brain, pad, trails follow the chosen theme. */
+function useTheme(): Theme {
+  const id = useOffice((s) => s.theme)
+  return themeOf(id)
+}
+
+function padTexture(t: Theme) {
+  const ringColor = rgba(t.hi, 0.9)
+  const dashColor = rgba(t.accent, 0.6)
   const S = 1024
   const cv = document.createElement('canvas')
   cv.width = cv.height = S
@@ -734,7 +777,7 @@ function padTexture(ringColor = 'rgba(232,162,124,0.85)', dashColor = 'rgba(232,
   g.fillRect(0, 0, S, S)
   ring(0.955, 6, ringColor)
   ring(0.87, 14, dashColor, [46, 30])
-  ring(0.64, 3, 'rgba(232,162,124,0.45)')
+  ring(0.64, 3, rgba(t.hi, 0.45))
   // Ticks around the inner ring, like a compass rose.
   for (let k = 0; k < 48; k++) {
     const a = (k / 48) * Math.PI * 2
@@ -742,7 +785,7 @@ function padTexture(ringColor = 'rgba(232,162,124,0.85)', dashColor = 'rgba(232,
     g.beginPath()
     g.setLineDash([])
     g.lineWidth = k % 4 === 0 ? 4 : 2
-    g.strokeStyle = 'rgba(232,162,124,0.4)'
+    g.strokeStyle = rgba(t.hi, 0.4)
     g.moveTo(c + Math.cos(a) * r0 * c, c + Math.sin(a) * r0 * c)
     g.lineTo(c + Math.cos(a) * 0.75 * c, c + Math.sin(a) * 0.75 * c)
     g.stroke()
@@ -759,11 +802,11 @@ function padTexture(ringColor = 'rgba(232,162,124,0.85)', dashColor = 'rgba(232,
       const tint = document.createElement('canvas')
       tint.width = sw
       tint.height = sh
-      const t = tint.getContext('2d')!
-      t.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
-      t.globalCompositeOperation = 'source-in'
-      t.fillStyle = '#f0b48e'
-      t.fillRect(0, 0, sw, sh)
+      const tc = tint.getContext('2d')!
+      tc.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+      tc.globalCompositeOperation = 'source-in'
+      tc.fillStyle = t.hi
+      tc.fillRect(0, 0, sw, sh)
       const h = S * 0.5
       const w = (sw / sh) * h
       g.drawImage(tint, c - w / 2, c - h / 2, w, h)
@@ -774,13 +817,11 @@ function padTexture(ringColor = 'rgba(232,162,124,0.85)', dashColor = 'rgba(232,
   return tex
 }
 
-/** Kim Bormann's office glows pink around the mark; everyone else's copper. */
-const PINK_RING: [number, number, number] = [1.9, 0.28, 1.05]
-const COPPER_RING: [number, number, number] = [1.5, 0.75, 0.45]
-
 function Pad() {
-  const pink = useOffice((s) => s.user?.id === 'leitung2')
-  const tex = useMemo(() => (pink ? padTexture('rgba(255,92,180,0.95)', 'rgba(255,92,180,0.6)') : padTexture()), [pink])
+  const theme = useTheme()
+  const tex = useMemo(() => padTexture(theme), [theme])
+  const ring = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(1.7), [theme])
+  const halo = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(0.9), [theme])
   return (
     <group>
       <mesh position={[0, 0.06, 0]} receiveShadow>
@@ -794,15 +835,13 @@ function Pad() {
       </mesh>
       <mesh position={[0, 0.125, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[2.1, 0.012, 8, 160]} />
-        <meshBasicMaterial color={pink ? PINK_RING : COPPER_RING} toneMapped={false} />
+        <meshBasicMaterial color={ring} toneMapped={false} />
       </mesh>
-      {pink && (
-        // A soft pink halo just outside the rim, so the ring really glows.
-        <mesh position={[0, 0.123, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[2.13, 0.045, 8, 160]} />
-          <meshBasicMaterial color={[1.2, 0.15, 0.6]} transparent opacity={0.45} toneMapped={false} depthWrite={false} />
-        </mesh>
-      )}
+      {/* A soft halo just outside the rim, so the ring really glows. */}
+      <mesh position={[0, 0.123, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[2.13, 0.045, 8, 160]} />
+        <meshBasicMaterial color={halo} transparent opacity={0.4} toneMapped={false} depthWrite={false} />
+      </mesh>
     </group>
   )
 }
@@ -819,13 +858,15 @@ function Brain() {
   // Secret Garden: the brain gives way to a bonsai, one branch per department.
   const garden = useOffice((s) => s.garden)
   const tree = useRef(0)
-  const limbs = useMemo<Limb[]>(() => DEPARTMENTS.map((d) => ({ id: d.id, color: d.color, dir: place(d.angle).normalize() })), [])
+  const limbs = useMemo(() => DEPARTMENTS.map((d) => ({ d, dir: place(d.angle).normalize() })), [])
+  const openWs = useOffice((s) => s.open)
 
-  const { geometry, material, synapses, wire } = useMemo(() => {
+  const { geometry, material, synapses, wire, cat } = useMemo(() => {
     const n = 5200
     const pos = new Float32Array(n * 3)
     const col = new Float32Array(n * 3)
     const seed = new Float32Array(n)
+    const cat = new Uint8Array(n)
     const hot = new THREE.Color('#fff0d8')
     const copper = new THREE.Color('#e3895a')
     const ember = new THREE.Color('#7a3a22')
@@ -850,6 +891,7 @@ function Brain() {
       if (py < -0.18) py = -0.18 + (py + 0.18) * 0.45
       pos.set([(x * 0.6 * k + side * 0.05) * 1, py, z * 0.82 * k], i * 3)
       const t = r()
+      cat[i] = t < 0.35 ? 0 : t < 0.85 ? 1 : 2
       c.copy(t < 0.35 ? hot : t < 0.85 ? copper : ember)
       col.set([c.r, c.g, c.b], i * 3)
       seed[i] = r()
@@ -890,8 +932,24 @@ function Brain() {
       depthWrite: false,
       toneMapped: false,
     })
-    return { geometry, material, synapses, wire }
+    return { geometry, material, synapses, wire, cat }
   }, [])
+
+  // The chosen colour runs through the brain: its sparks, its wiring, its light.
+  const theme = useTheme()
+  useEffect(() => {
+    const hot = new THREE.Color('#ffffff').lerp(new THREE.Color(theme.hi), 0.35)
+    const main = new THREE.Color(theme.accent)
+    const ember = new THREE.Color(theme.deep)
+    const attr = geometry.getAttribute('aColor') as THREE.BufferAttribute
+    for (let i = 0; i < cat.length; i++) {
+      const c = cat[i] === 0 ? hot : cat[i] === 1 ? main : ember
+      attr.setXYZ(i, c.r, c.g, c.b)
+    }
+    attr.needsUpdate = true
+    wire.color.set(theme.accent).multiplyScalar(1.25)
+    light.current?.color.set(theme.accent)
+  }, [theme, geometry, wire, cat])
 
   useFrame(({ clock }, dt) => {
     material.uniforms.uTime.value = clock.elapsedTime
@@ -952,10 +1010,22 @@ function Brain() {
         )}
       </group>
       <pointLight ref={light} position={[0, 1.4, 0]} color="#ff9a5c" intensity={6} distance={7} decay={1.6} />
-      <group scale={1.55}>
-        <Bonsai limbs={limbs} amount={tree} onPick={(id) => show({ kind: 'dept', id })} />
+      <group scale={1.32} position={[0, 0.02, 0]}>
+        <Bonsai
+          depts={limbs}
+          amount={tree}
+          onTrunk={() => show({ kind: 'brain' })}
+          onDept={(id) => show({ kind: 'dept', id })}
+          onAgent={(deptId, agentId) => {
+            const d = DEPARTMENTS.find((x) => x.id === deptId)
+            const a = d?.agents.find((x) => x.id === agentId)
+            if (!d || !a) return
+            show({ kind: 'dept', id: d.id, agent: a.id })
+            openWs(agentTarget(d, a))
+          }}
+        />
       </group>
-      {!garden && <BrainBadge />}
+      <BrainBadge />
     </group>
   )
 }
@@ -1050,7 +1120,7 @@ function Neurons() {
           ))}
           {inside && (
             <Html portal={overlay} position={at.clone().multiplyScalar(1.28)} center zIndexRange={[25, 0]}>
-              <button className="neuron-tag" style={{ ['--c' as string]: d.color }} onClick={() => show({ kind: 'dept', id: d.id })}>
+              <button className="neuron-tag" style={{ ['--c' as string]: d.color }} {...press(() => show({ kind: 'dept', id: d.id }))}>
                 <Icon name={d.icon} size={14} />
                 {d.short}
                 <small>{d.agents.length}</small>
@@ -1066,12 +1136,23 @@ function Neurons() {
 function BrainBadge() {
   const view = useOffice((s) => s.view)
   const show = useOffice((s) => s.show)
+  const garden = useOffice((s) => s.garden)
   if (view.kind !== 'overview') return null
+  // Same size and style as the departments' badges; in the garden it names the bonsai.
   return (
-    <Html portal={overlay} position={[0, 2.85, 0]} center zIndexRange={[20, 0]}>
-      <button className="brain-badge" onClick={() => show({ kind: 'brain' })}>
-        <span className="brain-badge__dot" />
-        Das Gehirn · <b>{fmt(BRAIN.stats[0].value)}</b> Dokumente
+    <Html portal={overlay} position={[0, garden ? 4.6 : 2.85, 0]} center zIndexRange={[20, 0]}>
+      <button className="floor-badge floor-badge--brain" {...press(() => show({ kind: 'brain' }))}>
+        <span className="floor-badge__icon">
+          <Icon name="brain" size={16} />
+        </span>
+        <span className="floor-badge__text">
+          Das Gehirn
+          <span className="floor-badge__more">
+            <span>
+              {fmt(BRAIN.stats[0].value)} Dokumente · Doppelklick zoomt hinein
+            </span>
+          </span>
+        </span>
       </button>
     </Html>
   )
@@ -1082,6 +1163,15 @@ function BrainBadge() {
 // ---------------------------------------------------------------------------
 
 function Links() {
+  const theme = useTheme()
+  const tones = useMemo(
+    () => ({
+      trail: new THREE.Color(theme.deep).lerp(new THREE.Color(theme.accent), 0.35),
+      packet: new THREE.Color(theme.hi).multiplyScalar(2.6),
+      pulse: new THREE.Color(theme.accent).multiplyScalar(2.2),
+    }),
+    [theme],
+  )
   const curves = useMemo(
     () =>
       DEPARTMENTS.map((d) => {
@@ -1168,11 +1258,11 @@ function Links() {
   return (
     <group>
       <points geometry={trail}>
-        <pointsMaterial color="#8a5a40" size={0.035} transparent opacity={0.55} depthWrite={false} />
+        <pointsMaterial color={tones.trail} size={0.035} transparent opacity={0.55} depthWrite={false} />
       </points>
       <points geometry={packets}>
         <pointsMaterial
-          color={[3.2, 2.4, 1.6]}
+          color={tones.packet}
           size={0.2}
           transparent
           depthWrite={false}
@@ -1182,7 +1272,7 @@ function Links() {
       </points>
       <points geometry={pulses}>
         <pointsMaterial
-          color={[2.4, 1.3, 0.8]}
+          color={tones.pulse}
           size={0.09}
           transparent
           depthWrite={false}
@@ -1336,6 +1426,97 @@ function makeStars(n: number) {
   return g
 }
 
+/**
+ * Capricornus, drawn where it would be: its brightest stars by right ascension
+ * and declination, joined as the classic figure — a faint line drawing in the
+ * sky behind the office.
+ */
+const CAPRICORN: Array<[string, number, number, number]> = [
+  // name, RA (h), Dec (°), brightness 0..1
+  ['α', 20.3, -12.5, 0.7],
+  ['β', 20.35, -14.8, 0.85],
+  ['ψ', 20.77, -25.3, 0.55],
+  ['ω', 20.86, -26.9, 0.55],
+  ['ζ', 21.44, -22.4, 0.65],
+  ['ε', 21.62, -19.5, 0.45],
+  ['δ', 21.78, -16.1, 1],
+  ['γ', 21.67, -16.7, 0.7],
+  ['ι', 21.37, -16.8, 0.45],
+  ['θ', 21.1, -17.2, 0.55],
+]
+const CAPRICORN_LINES = [
+  ['α', 'β'],
+  ['β', 'ψ'],
+  ['ψ', 'ω'],
+  ['ω', 'ζ'],
+  ['ζ', 'ε'],
+  ['ε', 'δ'],
+  ['δ', 'γ'],
+  ['γ', 'ι'],
+  ['ι', 'θ'],
+  ['θ', 'β'],
+]
+
+function Capricorn() {
+  const { geometry, lines, label } = useMemo(() => {
+    // Behind the office as the camera first sees it, a little below the horizon,
+    // so it shows above the far departments.
+    const dir = new THREE.Vector3(-1.35, -0.86, -0.72).normalize()
+    const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize()
+    const up = new THREE.Vector3().crossVectors(right, dir).normalize()
+    const R = 118
+    const deg = Math.PI / 180
+    const at = new Map<string, THREE.Vector3>()
+    const pos: number[] = []
+    const col: number[] = []
+    const size: number[] = []
+    const seed: number[] = []
+    for (const [name, ra, dec, b] of CAPRICORN) {
+      const x = (21.05 - ra) * 15 * Math.cos(dec * deg) * 0.8
+      const y = (dec + 19.5) * 0.8
+      const p = dir
+        .clone()
+        .addScaledVector(right, Math.tan(x * deg))
+        .addScaledVector(up, Math.tan(y * deg))
+        .normalize()
+        .multiplyScalar(R)
+      at.set(name, p)
+      pos.push(p.x, p.y, p.z)
+      const c = new THREE.Color('#e6eeff').multiplyScalar(0.9 + b * 0.9)
+      col.push(c.r, c.g, c.b)
+      size.push(3.2 + b * 3.4)
+      seed.push(0.6 + b * 0.4)
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    geometry.setAttribute('aColor', new THREE.Float32BufferAttribute(col, 3))
+    geometry.setAttribute('aSize', new THREE.Float32BufferAttribute(size, 1))
+    geometry.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1))
+    const seg: number[] = []
+    for (const [a, b] of CAPRICORN_LINES) seg.push(...at.get(a)!.toArray(), ...at.get(b)!.toArray())
+    const lines = new THREE.BufferGeometry()
+    lines.setAttribute('position', new THREE.Float32BufferAttribute(seg, 3))
+    return { geometry, lines, label: at.get('ω')!.clone().add(up.clone().multiplyScalar(-5)) }
+  }, [])
+  const mat = useMemo(() => pointsMaterial(), [])
+  const dpr = useThree((s) => s.viewport.dpr)
+  useFrame(({ clock }) => {
+    mat.uniforms.uTime.value = clock.elapsedTime
+    mat.uniforms.uPixel.value = dpr
+  })
+  return (
+    <group>
+      <points geometry={geometry} material={mat} frustumCulled={false} />
+      <lineSegments geometry={lines} frustumCulled={false}>
+        <lineBasicMaterial color="#9fb6e8" transparent opacity={0.28} depthWrite={false} fog={false} />
+      </lineSegments>
+      <Html portal={overlay} position={label} center zIndexRange={[1, 0]} style={{ pointerEvents: 'none' }}>
+        <div className="constellation">♑ Capricorn</div>
+      </Html>
+    </group>
+  )
+}
+
 function Cosmos() {
   const sky = useRef<THREE.Group>(null)
   const dpr = useThree((s) => s.viewport.dpr)
@@ -1394,6 +1575,7 @@ function Cosmos() {
       </mesh>
       <group ref={sky}>
         <points geometry={stars} material={starMat} frustumCulled={false} />
+        <Capricorn />
       </group>
       <points geometry={trail} frustumCulled={false}>
         <pointsMaterial color={[1.4, 1.2, 1.0]} size={1.6} sizeAttenuation={false} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} fog={false} />
@@ -1420,110 +1602,167 @@ const KID = {
   nose: std('#1a1414', 0.4),
 }
 
-/** A running child, standing height about `h`; limbs swing with `phase`. */
+/**
+ * A running child, standing height about `h`. A real running gait: the hip
+ * swings the thigh, the knee folds the calf up behind on the way forward, the
+ * bent arms pump against the legs, the body leans in and bounces twice a stride.
+ */
 function Runner({ h, hair, top, long, phase }: { h: number; hair: THREE.Material; top: THREE.Material; long: boolean; phase: React.RefObject<number> }) {
-  const legL = useRef<THREE.Group>(null)
-  const legR = useRef<THREE.Group>(null)
-  const armL = useRef<THREE.Group>(null)
-  const armR = useRef<THREE.Group>(null)
+  const hips = useRef<(THREE.Group | null)[]>([])
+  const knees = useRef<(THREE.Group | null)[]>([])
+  const shoulders = useRef<(THREE.Group | null)[]>([])
+  const elbows = useRef<(THREE.Group | null)[]>([])
   const body = useRef<THREE.Group>(null)
+  const chest = useRef<THREE.Group>(null)
+  const head = useRef<THREE.Group>(null)
+  const tail = useRef<THREE.Group>(null)
   useFrame(() => {
     const p = phase.current ?? 0
-    const s = Math.sin(p)
-    if (legL.current) legL.current.rotation.x = s * 0.8
-    if (legR.current) legR.current.rotation.x = -s * 0.8
-    if (armL.current) armL.current.rotation.x = -s * 0.9
-    if (armR.current) armR.current.rotation.x = s * 0.9
-    if (body.current) body.current.position.y = Math.abs(Math.cos(p)) * 0.03 * h
+    for (let i = 0; i < 2; i++) {
+      const q = p + i * Math.PI
+      const hip = Math.sin(q) * 0.78
+      // The knee folds most while the leg swings through, and nearly straightens on landing.
+      const knee = -(0.25 + 1.25 * Math.pow(Math.max(0, Math.cos(q + 0.5)), 1.5))
+      if (hips.current[i]) hips.current[i]!.rotation.x = hip
+      if (knees.current[i]) knees.current[i]!.rotation.x = knee
+      // Arms pump against the legs, elbows bent, a little across the body.
+      if (shoulders.current[i]) {
+        shoulders.current[i]!.rotation.x = -Math.sin(q) * 0.75
+        shoulders.current[i]!.rotation.z = (i ? -1 : 1) * 0.12
+      }
+      if (elbows.current[i]) elbows.current[i]!.rotation.x = 1.35 + Math.sin(q) * 0.25
+    }
+    if (body.current) {
+      body.current.position.y = Math.abs(Math.cos(p)) * 0.045 * h - 0.012
+      body.current.rotation.x = -0.16 // leaning into the run
+    }
+    // The chest turns against the hips; the head stays steady, looking ahead.
+    if (chest.current) chest.current.rotation.y = Math.sin(p) * 0.16
+    if (head.current) {
+      head.current.rotation.y = -Math.sin(p) * 0.12
+      head.current.rotation.x = 0.12
+    }
+    if (tail.current) tail.current.rotation.x = 0.35 + Math.abs(Math.cos(p)) * 0.3
   })
   const k = h / 0.62
   return (
     <group scale={k}>
       <group ref={body}>
-        {/* legs from the hip, so they swing */}
-        {[
-          [-0.035, legL],
-          [0.035, legR],
-        ].map(([x, ref]) => (
-          <group key={x as number} ref={ref as React.RefObject<THREE.Group>} position={[x as number, 0.26, 0]}>
-            <mesh material={KID.jeans} position={[0, -0.12, 0]}>
-              <capsuleGeometry args={[0.028, 0.18, 4, 10]} />
+        {/* legs: hip → thigh → knee → calf → foot */}
+        {[-0.036, 0.036].map((x, i) => (
+          <group key={x} ref={(g) => void (hips.current[i] = g)} position={[x, 0.26, 0]}>
+            <mesh material={KID.jeans} position={[0, -0.065, 0]}>
+              <capsuleGeometry args={[0.03, 0.08, 4, 10]} />
             </mesh>
-            <mesh material={KID.sneaker} position={[0, -0.245, -0.02]} scale={[1, 0.7, 1.5]}>
-              <sphereGeometry args={[0.03, 10, 8]} />
-            </mesh>
-          </group>
-        ))}
-        <mesh material={top} position={[0, 0.37, 0]} scale={[1, 1, 0.75]} castShadow>
-          <capsuleGeometry args={[0.058, 0.11, 6, 14]} />
-        </mesh>
-        {[
-          [-0.075, armL],
-          [0.075, armR],
-        ].map(([x, ref]) => (
-          <group key={x as number} ref={ref as React.RefObject<THREE.Group>} position={[x as number, 0.43, 0]}>
-            <mesh material={top} position={[0, -0.05, 0]}>
-              <capsuleGeometry args={[0.02, 0.06, 4, 8]} />
-            </mesh>
-            <mesh material={KID.skin} position={[0, -0.12, 0]}>
-              <capsuleGeometry args={[0.017, 0.06, 4, 8]} />
-            </mesh>
-          </group>
-        ))}
-        <group position={[0, 0.53, 0]}>
-          <mesh material={KID.skin} scale={[0.95, 1.05, 1]} castShadow>
-            <sphereGeometry args={[0.06, 18, 14]} />
-          </mesh>
-          <mesh geometry={G.cap} material={hair} position={[0, 0.008, 0.004]} scale={[1.05, 1.12, 1.06]} />
-          {long ? (
-            <>
-              <mesh geometry={G.bob} material={hair} position={[0, 0.004, 0.008]} scale={[1.05, 1.1, 1.02]} />
-              <mesh geometry={G.long} material={hair} position={[0, -0.07, 0.045]} scale={[1.4, 1.05, 0.55]} />
-              {/* the fringe */}
-              <mesh material={hair} position={[0, 0.035, -0.052]} scale={[1, 0.45, 0.35]}>
-                <sphereGeometry args={[0.05, 12, 8]} />
+            <group ref={(g) => void (knees.current[i] = g)} position={[0, -0.13, 0]}>
+              <mesh material={KID.jeans} position={[0, -0.055, 0]}>
+                <capsuleGeometry args={[0.025, 0.08, 4, 10]} />
               </mesh>
-            </>
-          ) : (
-            <mesh geometry={G.back} material={hair} position={[0, 0.006, 0.004]} scale={[1.02, 1.08, 1.02]} />
-          )}
+              <mesh material={KID.sneaker} position={[0, -0.115, -0.022]} scale={[1, 0.65, 1.6]}>
+                <sphereGeometry args={[0.03, 10, 8]} />
+              </mesh>
+            </group>
+          </group>
+        ))}
+        <group ref={chest} position={[0, 0.3, 0]}>
+          <mesh material={top} position={[0, 0.07, 0]} scale={[1, 1, 0.75]} castShadow>
+            <capsuleGeometry args={[0.058, 0.11, 6, 14]} />
+          </mesh>
+          {/* arms: shoulder → upper arm → elbow → forearm */}
+          {[-0.075, 0.075].map((x, i) => (
+            <group key={x} ref={(g) => void (shoulders.current[i] = g)} position={[x, 0.13, 0]}>
+              <mesh material={top} position={[0, -0.04, 0]}>
+                <capsuleGeometry args={[0.02, 0.05, 4, 8]} />
+              </mesh>
+              <group ref={(g) => void (elbows.current[i] = g)} position={[0, -0.08, 0]}>
+                <mesh material={KID.skin} position={[0, -0.035, 0]}>
+                  <capsuleGeometry args={[0.017, 0.05, 4, 8]} />
+                </mesh>
+                <mesh material={KID.skin} position={[0, -0.075, 0]}>
+                  <sphereGeometry args={[0.019, 8, 6]} />
+                </mesh>
+              </group>
+            </group>
+          ))}
+          <group ref={head} position={[0, 0.23, 0]}>
+            <mesh material={KID.skin} scale={[0.95, 1.05, 1]} castShadow>
+              <sphereGeometry args={[0.06, 18, 14]} />
+            </mesh>
+            <mesh geometry={G.cap} material={hair} position={[0, 0.008, 0.004]} scale={[1.05, 1.12, 1.06]} />
+            {long ? (
+              <>
+                <mesh geometry={G.bob} material={hair} position={[0, 0.004, 0.008]} scale={[1.05, 1.1, 1.02]} />
+                {/* the hair flies behind her with every step */}
+                <group ref={tail} position={[0, -0.01, 0.05]}>
+                  <mesh geometry={G.long} material={hair} position={[0, -0.06, 0.01]} scale={[1.35, 1, 0.55]} />
+                </group>
+                <mesh material={hair} position={[0, 0.035, -0.052]} scale={[1, 0.45, 0.35]}>
+                  <sphereGeometry args={[0.05, 12, 8]} />
+                </mesh>
+              </>
+            ) : (
+              <mesh geometry={G.back} material={hair} position={[0, 0.006, 0.004]} scale={[1.02, 1.08, 1.02]} />
+            )}
+          </group>
         </group>
       </group>
     </group>
   )
 }
 
-/** Cookie: small, fluffy, ears flying, tail going. */
+/**
+ * Cookie at a gallop: the front legs reach together, then the hind legs drive,
+ * the back flexes, ears flop and the tail streams.
+ */
 function Dog({ phase }: { phase: React.RefObject<number> }) {
-  const legs = useRef<THREE.Group[]>([])
+  const legs = useRef<(THREE.Group | null)[]>([])
   const tail = useRef<THREE.Group>(null)
   const body = useRef<THREE.Group>(null)
+  const spine = useRef<THREE.Mesh>(null)
+  const ears = useRef<(THREE.Mesh | null)[]>([])
+  const head = useRef<THREE.Group>(null)
   useFrame(() => {
-    const p = (phase.current ?? 0) * 1.4
+    const p = phase.current ?? 0
+    // Rotary gallop: fronts a beat apart, hinds half a stride later.
+    const offs = [0, 0.35, Math.PI * 0.95, Math.PI * 0.95 + 0.35]
     legs.current.forEach((l, i) => {
-      if (l) l.rotation.x = Math.sin(p + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI / 2 : 0)) * 0.9
+      if (l) l.rotation.x = Math.sin(p + offs[i]) * (i < 2 ? 0.95 : 1.1)
     })
-    if (tail.current) tail.current.rotation.z = Math.sin(p * 2.2) * 0.6
-    if (body.current) body.current.position.y = Math.abs(Math.sin(p)) * 0.02
+    if (body.current) {
+      body.current.position.y = Math.max(0, Math.sin(p + 0.4)) * 0.045
+      body.current.rotation.x = Math.sin(p + 1.2) * 0.14
+    }
+    if (spine.current) spine.current.scale.y = 1 + Math.sin(p) * 0.08
+    if (head.current) head.current.rotation.x = -Math.sin(p + 1.2) * 0.12
+    ears.current.forEach((e, i) => {
+      if (e) e.rotation.x = 0.6 + Math.sin(p * 2 + i) * 0.35
+    })
+    if (tail.current) {
+      tail.current.rotation.x = -0.9 + Math.sin(p) * 0.2
+      tail.current.rotation.z = Math.sin(p * 2) * 0.35
+    }
   })
   return (
     <group ref={body} scale={0.9}>
-      <mesh material={KID.dog} position={[0, 0.13, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+      <mesh ref={spine} material={KID.dog} position={[0, 0.13, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
         <capsuleGeometry args={[0.05, 0.1, 6, 12]} />
       </mesh>
       {[
-        [-0.03, -0.06],
-        [0.03, -0.06],
-        [-0.03, 0.06],
-        [0.03, 0.06],
+        [-0.03, -0.065],
+        [0.03, -0.065],
+        [-0.03, 0.065],
+        [0.03, 0.065],
       ].map(([x, z], i) => (
-        <group key={i} ref={(g) => void (legs.current[i] = g!)} position={[x, 0.1, z]}>
-          <mesh material={KID.dog} position={[0, -0.045, 0]}>
-            <capsuleGeometry args={[0.014, 0.05, 4, 6]} />
+        <group key={i} ref={(g) => void (legs.current[i] = g)} position={[x, 0.11, z]}>
+          <mesh material={KID.dog} position={[0, -0.05, 0]}>
+            <capsuleGeometry args={[0.015, 0.055, 4, 6]} />
+          </mesh>
+          <mesh material={KID.dogDark} position={[0, -0.09, -0.008]} scale={[1, 0.6, 1.3]}>
+            <sphereGeometry args={[0.014, 8, 6]} />
           </mesh>
         </group>
       ))}
-      <group position={[0, 0.2, -0.1]}>
+      <group ref={head} position={[0, 0.2, -0.1]}>
         <mesh material={KID.dog} castShadow>
           <sphereGeometry args={[0.052, 14, 12]} />
         </mesh>
@@ -1533,34 +1772,61 @@ function Dog({ phase }: { phase: React.RefObject<number> }) {
         <mesh material={KID.nose} position={[0, -0.005, -0.072]}>
           <sphereGeometry args={[0.009, 8, 6]} />
         </mesh>
-        {[-1, 1].map((sd) => (
-          <mesh key={sd} material={KID.dogDark} position={[sd * 0.045, 0.015, 0.005]} rotation={[0, 0, sd * 0.5]} scale={[0.45, 1, 0.8]}>
+        {[-1, 1].map((sd, i) => (
+          <mesh key={sd} ref={(m) => void (ears.current[i] = m)} material={KID.dogDark} position={[sd * 0.045, 0.015, 0.005]} rotation={[0.6, 0, sd * 0.5]} scale={[0.45, 1, 0.8]}>
             <sphereGeometry args={[0.032, 10, 8]} />
           </mesh>
         ))}
       </group>
       <group ref={tail} position={[0, 0.16, 0.085]}>
-        <mesh material={KID.dog} position={[0, 0.03, 0.01]} rotation={[-0.6, 0, 0]}>
-          <capsuleGeometry args={[0.012, 0.05, 4, 6]} />
+        <mesh material={KID.dog} position={[0, 0.03, 0.01]}>
+          <capsuleGeometry args={[0.012, 0.055, 4, 6]} />
         </mesh>
       </group>
     </group>
   )
 }
 
-/** Where on the run the pack is: in from outside, a lap around the brain, out again. */
-function rompPoint(u: number, v: THREE.Vector3) {
-  const lap = 1.25
-  const a = -0.6 + u * Math.PI * 2 * lap
-  const inner = 3.75
-  const r = u < 0.14 ? THREE.MathUtils.lerp(14, inner, u / 0.14) : u > 0.86 ? THREE.MathUtils.lerp(inner, 14, (u - 0.86) / 0.14) : inner
-  return v.set(Math.cos(a) * r, 0.01, Math.sin(a) * r)
+/**
+ * The run: in from far out through the gap between two departments, a lap
+ * round the landing pad inside the ring of floors, and out through the next
+ * gap — never through a building. Measured by distance, so the speed is even.
+ */
+const ROMP_R = 2.95
+const ROMP_FAR = 15
+const rompGap = (() => {
+  const sorted = [...DEPARTMENTS].sort((a, b) => a.angle - b.angle)
+  const a = sorted[0].angle
+  const b = sorted[1 % sorted.length].angle
+  const mid = place((a + b) / 2)
+  return { at: Math.atan2(mid.z, mid.x), step: (Math.PI * 2) / Math.max(1, sorted.length) }
+})()
+const ROMP_IN = ROMP_FAR - ROMP_R
+const ROMP_ARC = ROMP_R * (Math.PI * 2 + rompGap.step)
+const ROMP_LEN = ROMP_IN * 2 + ROMP_ARC
+
+/** Where on the run a runner is, `d` units along it; `side` shifts them off the line. */
+function rompPoint(d: number, side: number, v: THREE.Vector3) {
+  const a0 = rompGap.at
+  if (d < ROMP_IN) {
+    const r = ROMP_FAR - d
+    return v.set(Math.cos(a0) * r - Math.sin(a0) * side, 0.01, Math.sin(a0) * r + Math.cos(a0) * side)
+  }
+  if (d < ROMP_IN + ROMP_ARC) {
+    const a = a0 + (d - ROMP_IN) / ROMP_R
+    const r = ROMP_R + side
+    return v.set(Math.cos(a) * r, 0.01, Math.sin(a) * r)
+  }
+  const a1 = a0 + ROMP_ARC / ROMP_R
+  const r = ROMP_R + (d - ROMP_IN - ROMP_ARC)
+  return v.set(Math.cos(a1) * r - Math.sin(a1) * side, 0.01, Math.sin(a1) * r + Math.cos(a1) * side)
 }
 
 const PACK = [
-  { id: 'cookie', lag: 0 },
-  { id: 'adrian', lag: 0.035 },
-  { id: 'soley', lag: 0.065 },
+  // gap: how far behind the dog, in units; side: off the line; stride: length of one step cycle
+  { id: 'cookie', gap: 0, side: 0, stride: 0.55 },
+  { id: 'adrian', gap: 1.1, side: 0.22, stride: 1.05 },
+  { id: 'soley', gap: 1.9, side: -0.2, stride: 0.95 },
 ] as const
 
 function Romp() {
@@ -1568,10 +1834,11 @@ function Romp() {
   const [active, setActive] = useState(false)
   const start = useRef(0)
   const groups = useRef<Record<string, THREE.Group | null>>({})
-  const phase = useRef(0)
+  const phases = useRef<Record<string, { current: number }>>({ cookie: { current: 0 }, adrian: { current: 1 }, soley: { current: 2.2 } })
   const v = useMemo(() => new THREE.Vector3(), [])
   const ahead = useMemo(() => new THREE.Vector3(), [])
-  const DURATION = 13
+  const behind = useMemo(() => new THREE.Vector3(), [])
+  const SPEED = 3.4 // units per second
 
   useEffect(() => {
     if (!romp) return
@@ -1582,20 +1849,27 @@ function Romp() {
   useFrame(({ clock }, dt) => {
     if (!active) return
     if (start.current < 0) start.current = clock.elapsedTime
-    const t = (clock.elapsedTime - start.current) / DURATION
-    phase.current += dt * 16
+    const run = (clock.elapsedTime - start.current) * SPEED
+    const step = Math.min(dt, 0.05) * SPEED
     for (const p of PACK) {
       const g = groups.current[p.id]
       if (!g) continue
-      const u = THREE.MathUtils.clamp(t - p.lag, 0, 1)
-      rompPoint(u, v)
-      rompPoint(Math.min(1, u + 0.004), ahead)
+      const d = run - p.gap
+      g.visible = d > 0 && d < ROMP_LEN
+      if (!g.visible) continue
+      // The legs keep time with the ground covered.
+      phases.current[p.id].current += (step / p.stride) * Math.PI * 2
+      rompPoint(d, p.side, v)
+      rompPoint(d + 0.15, p.side, ahead)
+      rompPoint(Math.max(0, d - 0.15), p.side, behind)
       g.position.copy(v)
       g.lookAt(ahead.x, v.y, ahead.z)
       g.rotateY(Math.PI) // the figures face -z
-      g.visible = t - p.lag > 0 && u < 1
+      // Lean into the bend, like a child taking a curve at full speed.
+      const turn = (ahead.x - v.x) * (v.z - behind.z) - (ahead.z - v.z) * (v.x - behind.x)
+      g.rotateZ(THREE.MathUtils.clamp(-turn * 6, -0.22, 0.22))
     }
-    if (t > 1 + PACK[PACK.length - 1].lag) setActive(false)
+    if (run - PACK[PACK.length - 1].gap > ROMP_LEN) setActive(false)
   })
 
   if (!active) return null
@@ -1605,12 +1879,12 @@ function Romp() {
         <group key={p.id} ref={(g) => void (groups.current[p.id] = g)} visible={false}>
           {p.id === 'cookie' ? (
             <group scale={1.6}>
-              <Dog phase={phase} />
+              <Dog phase={phases.current.cookie} />
             </group>
           ) : p.id === 'adrian' ? (
-            <Runner h={1.0} hair={KID.adrianHair} top={KID.tshirt} long={false} phase={phase} />
+            <Runner h={1.0} hair={KID.adrianHair} top={KID.tshirt} long={false} phase={phases.current.adrian} />
           ) : (
-            <Runner h={0.85} hair={KID.soleyHair} top={KID.blouse} long phase={phase} />
+            <Runner h={0.85} hair={KID.soleyHair} top={KID.blouse} long phase={phases.current.soley} />
           )}
         </group>
       ))}

@@ -13,6 +13,8 @@ import { useComms } from './comms'
 import { Guard } from './Guard'
 import { MOBILE } from './mobile'
 import MobileHome from './Mobile'
+import Palette from './Palette'
+import { applyTheme, themeOf } from './themes'
 
 /** One retry: a chunk request that fails once (a flaky connection) usually works the second time. */
 const Scene = lazy(() => import('./Scene').catch(() => import('./Scene')))
@@ -84,6 +86,9 @@ export default function Office() {
     if (locked) setStarted(false)
   }, [locked])
   useComms(!locked)
+  const theme = useOffice((s) => s.theme)
+  const showPalette = useOffice((s) => s.showPalette)
+  useEffect(() => applyTheme(themeOf(theme)), [theme])
 
   // The space bar sends Soley, Adrian and Cookie running through the office
   // (not while typing). On a phone: tap the logo three times.
@@ -182,6 +187,12 @@ export default function Office() {
               <span>Einrichtung</span>
             </button>
           )}
+          {!locked && (
+            <button className="topbar__setup topbar__palette" onClick={() => showPalette(true)} aria-label="Farbe des Büros" title="Farbe des Büros">
+              <span className="topbar__dot" aria-hidden />
+              <span>Farbe</span>
+            </button>
+          )}
           {!locked && user?.role === 'leitung' && (
             <button className="topbar__setup topbar__leitung" onClick={() => showCockpit(true)} aria-label="Leitung" title="Bereich der Leitung">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -258,6 +269,9 @@ export default function Office() {
       </Guard>
  <Guard name="search" onError={() => useOffice.setState({ search: false })}>
         {!locked && <Search />}
+      </Guard>
+      <Guard name="palette" onError={() => useOffice.setState({ palette: false })}>
+        {!locked && <Palette />}
       </Guard>
       <Guard name="cockpit" onError={() => useOffice.setState({ cockpit: false })}>
         {!locked && user?.role === 'leitung' && <Cockpit />}

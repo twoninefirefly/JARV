@@ -19,7 +19,7 @@ const STEPS = ['Identität geprüft', 'Verbinde mit dem Gehirn', 'Lade Abteilung
 export function Mark({ size = 26 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M19 7.5A8 8 0 1 0 20 13h-7" stroke="#d98a62" strokeWidth="3" strokeLinecap="round" />
+      <path d="M19 7.5A8 8 0 1 0 20 13h-7" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" />
     </svg>
   )
 }

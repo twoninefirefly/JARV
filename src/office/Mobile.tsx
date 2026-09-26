@@ -126,6 +126,7 @@ export default function MobileHome({ stage }: { stage: ReactNode }) {
   const showSetup = useOffice((s) => s.showSetup)
   const showCockpit = useOffice((s) => s.showCockpit)
   const signOut = useOffice((s) => s.signOut)
+  const showPalette = useOffice((s) => s.showPalette)
 
   const waiting = DEPARTMENTS.flatMap((d) => d.waiting.map((w, i) => ({ d, w, i }))).filter(({ w }) => !approved.includes(w))
   const mine = waiting.filter(({ d, w }) => mayDecide(user, d.id, w).ok)
@@ -276,6 +277,10 @@ export default function MobileHome({ stage }: { stage: ReactNode }) {
                   Leitung
                 </button>
               )}
+              <button onClick={() => showPalette(true)}>
+                <span className="topbar__dot" aria-hidden />
+                Farbe
+              </button>
               <button onClick={signOut}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11" />

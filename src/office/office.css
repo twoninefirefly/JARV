@@ -7,6 +7,8 @@
   --text: #f2e8dd;
   --muted: #8f7e70;
   --accent: #d98a62;
+  --accent-hi: #f0b48e;
+  --accent-deep: #7a3a22;
   --sans: 'Space Grotesk', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, monospace;
   color-scheme: dark;
@@ -141,7 +143,7 @@ button {
   width: 44px;
   height: 44px;
   font-size: 16px;
-  background: rgba(20, 16, 13, 0.92);
+  background: var(--surface);
 }
 
 .hint {
@@ -152,8 +154,8 @@ button {
   z-index: 30;
   padding: 10px 20px;
   border-radius: 999px;
-  border: 1px solid rgba(217, 138, 98, 0.45);
-  background: rgba(20, 15, 12, 0.88);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--surface);
   font: 12px var(--mono);
   letter-spacing: 0.22em;
   text-transform: uppercase;
@@ -172,7 +174,7 @@ button {
   padding: 7px 19px 7px 7px;
   border-radius: 15px;
   border: 1px solid var(--line);
-  background: rgba(22, 18, 15, 0.94);
+  background: var(--surface);
   font-size: 17px;
   font-weight: 600;
   white-space: nowrap;
@@ -275,7 +277,7 @@ button {
   padding: 8px 16px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: rgba(22, 18, 15, 0.94);
+  background: var(--surface);
   font: 11px var(--mono);
   letter-spacing: 0.2em;
   text-transform: uppercase;
@@ -300,7 +302,7 @@ button {
   padding: 0;
   border-radius: 12px;
   border: 1px solid rgba(255, 228, 205, 0.18);
-  background: rgba(16, 13, 11, 0.95);
+  background: var(--surface);
   color: var(--text);
   text-align: left;
   cursor: pointer;
@@ -382,7 +384,7 @@ button {
   color: var(--accent);
 }
 .agent-tag.is-lead {
-  border-color: rgba(217, 138, 98, 0.6);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
 }
 .agent-tag.is-lead .agent-tag__name {
   color: #ffd9c2;
@@ -795,7 +797,7 @@ button {
 }
 .composer__box:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 4px rgba(217, 138, 98, 0.14);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 .composer textarea {
   flex: 1;
@@ -863,7 +865,7 @@ button {
   padding: 14px 16px;
   border-radius: 16px;
   border: 1px solid var(--line);
-  background: rgba(22, 18, 15, 0.94);
+  background: var(--surface);
   text-align: left;
 }
 .overview__tasks > span:first-child {
@@ -960,14 +962,14 @@ button {
   padding: 11px 14px;
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  background: rgba(217, 138, 98, 0.1);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
   font: 600 12px var(--mono);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   text-align: left;
 }
 .open-ws:hover {
-  background: rgba(217, 138, 98, 0.2);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .protocol li {
   padding: 0;
@@ -1419,7 +1421,7 @@ button {
 }
 .letter mark,
 .paper mark {
-  background: rgba(217, 138, 98, 0.22);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
   color: inherit;
   border-bottom: 1.5px solid rgba(190, 100, 60, 0.7);
   border-radius: 2px;
@@ -1693,7 +1695,7 @@ button {
   height: 520px;
   max-width: 120vw;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(217, 138, 98, 0.18), transparent 65%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 18%, transparent), transparent 65%);
   animation: pulse 5s ease-in-out infinite;
 }
 .lock__inner {
@@ -1719,7 +1721,7 @@ button {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 6px 30px rgba(217, 138, 98, 0.25));
+  filter: drop-shadow(0 6px 30px color-mix(in srgb, var(--accent) 25%, transparent));
 }
 .lock__brand {
   margin: 20px 0 16px;
@@ -1745,7 +1747,7 @@ button {
   padding: 4px;
   margin-bottom: 6px;
   border-radius: 999px;
-  border: 1px solid rgba(217, 138, 98, 0.28);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
   background: rgba(20, 15, 12, 0.7);
 }
 .lock__areas button {
@@ -1764,7 +1766,7 @@ button {
     color 0.2s;
 }
 .lock__areas button[aria-selected='true'] {
-  background: rgba(217, 138, 98, 0.2);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
   color: var(--text);
 }
 .lock__people {
@@ -1793,11 +1795,11 @@ button {
     background 0.2s;
 }
 .lock__person:hover {
-  border-color: rgba(217, 138, 98, 0.45);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .lock__person[aria-selected='true'] {
   border-color: var(--accent);
-  background: rgba(217, 138, 98, 0.14);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 .lock__person > span:not(.avatar) {
   display: flex;
@@ -1824,12 +1826,12 @@ button {
   font-weight: 600;
   color: #f6e7da;
   background: linear-gradient(135deg, #6a4a3a, #3b2a22);
-  border: 1px solid rgba(217, 138, 98, 0.45);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .avatar--leitung {
   color: #1d130d;
-  background: linear-gradient(135deg, #f0b48e, #c9764e);
-  border-color: #f0b48e;
+  background: linear-gradient(135deg, var(--accent-hi), var(--accent));
+  border-color: var(--accent-hi);
 }
 .lock__remember {
   display: flex;
@@ -1853,7 +1855,7 @@ button {
   gap: 12px 14px;
   padding: 16px;
   border-radius: 16px;
-  border: 1px solid rgba(217, 138, 98, 0.35);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   background: rgba(20, 15, 12, 0.7);
   text-align: left;
 }
@@ -1956,8 +1958,8 @@ button {
   width: 100%;
   padding: 15px 18px;
   border-radius: 14px;
-  border: 1px solid rgba(217, 138, 98, 0.4);
-  background: rgba(20, 15, 12, 0.88);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--surface);
   color: var(--text);
   font: 16px var(--mono);
   letter-spacing: 0.2em;
@@ -1966,7 +1968,7 @@ button {
 }
 .lock__form input[type='password']:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 4px rgba(217, 138, 98, 0.15);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 .lock__form button {
   padding: 14px;
@@ -2000,8 +2002,8 @@ button {
 }
 .lock__bar div {
   height: 100%;
-  background: linear-gradient(90deg, #b8603f, #f0b48e);
-  box-shadow: 0 0 16px #d98a62;
+  background: linear-gradient(90deg, #b8603f, var(--accent-hi));
+  box-shadow: 0 0 16px var(--accent);
 }
 .lock__steps {
   display: flex;
@@ -2030,8 +2032,8 @@ button {
   padding: 0 14px;
   height: 36px;
   border-radius: 999px;
-  border: 1px solid rgba(217, 138, 98, 0.35);
-  background: rgba(20, 16, 13, 0.92);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: var(--surface);
   color: var(--text);
   font: 500 12px var(--mono);
   letter-spacing: 0.08em;
@@ -2110,7 +2112,7 @@ button {
   top: 36px;
   bottom: 0;
   width: 2px;
-  background: rgba(217, 138, 98, 0.25);
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
 }
 .setup__num {
   width: 36px;
@@ -2118,8 +2120,8 @@ button {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: rgba(217, 138, 98, 0.16);
-  border: 1px solid rgba(217, 138, 98, 0.55);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--accent);
   font: 600 14px var(--mono);
 }
@@ -2295,7 +2297,7 @@ button {
   transform: translateY(-18px);
   padding: 4px 8px;
   border-radius: 8px;
-  background: rgba(22, 18, 15, 0.94);
+  background: var(--surface);
   border: 1px solid var(--line);
   color: var(--text);
   font: 11.5px var(--sans);
@@ -2325,7 +2327,7 @@ button {
   padding: 0 12px 0 4px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: rgba(20, 16, 13, 0.92);
+  background: var(--surface);
   color: var(--text);
   cursor: pointer;
 }
@@ -2350,7 +2352,7 @@ button {
   color: var(--muted);
 }
 .topbar__leitung {
-  border-color: rgba(240, 180, 142, 0.7);
+  border-color: color-mix(in srgb, var(--accent-hi) 70%, transparent);
   color: #ffd9c2;
 }
 @media (max-width: 820px) {
@@ -2385,8 +2387,8 @@ button {
   gap: 2px;
   padding: 14px 16px;
   border-radius: 14px;
-  border: 1px solid rgba(240, 180, 142, 0.25);
-  background: linear-gradient(160deg, rgba(240, 180, 142, 0.08), rgba(255, 236, 220, 0.02));
+  border: 1px solid color-mix(in srgb, var(--accent-hi) 25%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent-hi) 8%, transparent), rgba(255, 236, 220, 0.02));
 }
 .cockpit__figure b {
   font-size: 24px;
@@ -2416,8 +2418,8 @@ button {
   gap: 10px;
   padding: 11px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(224, 138, 115, 0.4);
-  background: rgba(224, 138, 115, 0.07);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
   color: var(--text);
   text-align: left;
   cursor: pointer;
@@ -2506,7 +2508,7 @@ button {
   align-items: flex-start;
   border-radius: 18px;
   border: 1px solid rgba(255, 228, 205, 0.14);
-  background: rgba(34, 28, 24, 0.97);
+  background: var(--surface);
   box-shadow:
     0 20px 50px rgba(0, 0, 0, 0.55),
     0 2px 0 rgba(255, 255, 255, 0.04) inset;
@@ -2542,7 +2544,7 @@ button {
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #f0b48e, #c9764e);
+  background: linear-gradient(135deg, var(--accent-hi), var(--accent));
   color: #1d130d;
   font: 800 18px var(--sans);
 }
@@ -2622,8 +2624,8 @@ button {
   gap: 2px;
   padding: 14px 16px;
   border-radius: 14px;
-  border: 1px solid rgba(240, 180, 142, 0.25);
-  background: linear-gradient(160deg, rgba(240, 180, 142, 0.08), rgba(255, 236, 220, 0.02));
+  border: 1px solid color-mix(in srgb, var(--accent-hi) 25%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent-hi) 8%, transparent), rgba(255, 236, 220, 0.02));
 }
 .cockpit__figure b {
   font-size: 24px;
@@ -2653,8 +2655,8 @@ button {
   gap: 10px;
   padding: 11px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(224, 138, 115, 0.4);
-  background: rgba(224, 138, 115, 0.07);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
   color: var(--text);
   text-align: left;
   cursor: pointer;
@@ -2828,8 +2830,8 @@ button {
   width: min(520px, 100%);
   padding: 20px;
   border-radius: 18px;
-  border: 1px solid rgba(240, 180, 142, 0.35);
-  background: #17120f;
+  border: 1px solid color-mix(in srgb, var(--accent-hi) 35%, transparent);
+  background: var(--surface);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
 }
 .sig__card h3 {
@@ -2952,7 +2954,7 @@ button {
 .confirm__form input {
   padding: 12px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(217, 138, 98, 0.4);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   background: rgba(10, 8, 7, 0.6);
   color: var(--text);
   font: 15px var(--mono);
@@ -3050,7 +3052,7 @@ button {
 }
 .print__printer[aria-checked='true'] {
   border-color: var(--accent);
-  background: rgba(217, 138, 98, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .print__printer > span {
   flex: 1;
@@ -3169,7 +3171,7 @@ button {
   display: flex;
   flex-direction: column;
   border-radius: 18px;
-  border: 1px solid rgba(240, 180, 142, 0.3);
+  border: 1px solid color-mix(in srgb, var(--accent-hi) 30%, transparent);
   background: #16110e;
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.65);
   overflow: hidden;
@@ -3221,7 +3223,7 @@ button {
   cursor: pointer;
 }
 .search__hit[aria-selected='true'] {
-  background: rgba(217, 138, 98, 0.13);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
 }
 .search__icon {
   flex: none;
@@ -3514,9 +3516,7 @@ button {
   position: fixed;
   gap: 8px;
   padding: max(10px, env(safe-area-inset-top)) 12px 10px;
-  background: rgba(6, 5, 5, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(6, 5, 5, 0.96);
   border-bottom: 1px solid rgba(255, 236, 220, 0.06);
 }
 .office--m .topbar h1 {
@@ -3930,4 +3930,93 @@ button {
   padding: 4px 8px;
   font-size: 9px;
   letter-spacing: 0.08em;
+}
+
+/* ------------------------------------------------------------ colour picker */
+.sig__card.palette {
+  width: min(560px, 100%);
+}
+.palette__grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px 8px;
+  margin: 16px 0 18px;
+}
+.palette__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 11px var(--mono);
+  color: var(--muted);
+  text-align: center;
+}
+.palette__item[aria-checked='true'] {
+  color: var(--text);
+}
+.palette__swatch {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 6px 16px rgba(0, 0, 0, 0.45);
+  color: #111;
+  font-weight: 700;
+  transition: transform 0.15s;
+}
+.palette__item:hover .palette__swatch {
+  transform: scale(1.07);
+}
+.palette__item[aria-checked='true'] .palette__swatch {
+  border-color: var(--text);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 6px 16px rgba(0, 0, 0, 0.45);
+}
+@media (max-width: 480px) {
+  .palette__grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.topbar__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: conic-gradient(#e8976c, #f06fa8, #a386f2, #6fa3f0, #72c98a, #f0cf5e, #d4af37, #e8976c);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.floor-badge--brain {
+  --c: var(--accent);
+}
+/* The constellation's name, as faint as the lines. */
+.constellation {
+  font: 10px var(--mono);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(190, 206, 240, 0.45);
+  user-select: none;
+}
+/* Bonsai: the name of what is under the mouse, on the tree itself. */
+.bonsai-tip {
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  background: var(--surface);
+  font: 600 12px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.bonsai-tip.is-agent {
+  text-transform: none;
+  letter-spacing: 0.02em;
 }

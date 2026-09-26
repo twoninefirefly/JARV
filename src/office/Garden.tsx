@@ -357,6 +357,8 @@ function trailTexture() {
 }
 
 const JET_TIME = 2.8 // seconds across the whole sky
+/** Early in the show, while the first roses are still coming up — not as the finale. */
+const JET_AT = 6
 /** For rehearsing the finale: ?jet sends it right after the lawn. */
 const JET_SOON = (() => {
   try {
@@ -465,7 +467,7 @@ export default function Garden({ free, phone }: { free: (x: number, z: number, m
   const daisyRef = useRef<THREE.InstancedMesh>(null)
   const roseRefs = useRef<(THREE.Group | null)[]>([])
   const headRefs = useRef<(THREE.Mesh | null)[]>([])
-  // The jet flies once per garden, when the last rose has opened.
+  // The jet flies once per garden, early on, while the roses are still coming up.
   const [jet, setJet] = useState<'waiting' | 'flying' | 'done'>('waiting')
 
   const built = useMemo(() => {
@@ -578,7 +580,7 @@ export default function Garden({ free, phone }: { free: (x: number, z: number, m
     if (lawn.current) lawn.current.scale.setScalar(Math.max(0.001, Math.min(1, front / LAWN_R)))
 
     const t = clock.current
-    if (on && jet === 'waiting' && t > (JET_SOON ? 3 : FIRST + SPREAD + RISE * 0.6 + OPEN + 0.6)) setJet('flying')
+    if (on && jet === 'waiting' && t > (JET_SOON ? 3 : JET_AT)) setJet('flying')
     const fade = on ? 1 : ease
     built.roses.forEach((o, i) => {
       const gr = roseRefs.current[i]

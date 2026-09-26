@@ -3,6 +3,7 @@ import type { Handled, WsTarget } from './workspaces'
 import type { Message } from './comms'
 import { USERS, type Decision, type User } from './team'
 import type { PrintJob } from './Print'
+import { defaultTheme, type ThemeId } from './themes'
 
 // Demo persistence: the remembered login and today's decisions live in this
 // browser. The real system keeps both on the server.
@@ -27,6 +28,8 @@ const save = (key: string, value: unknown) => {
   }
 }
 const today = new Date().toDateString()
+/** The colour someone chose last time on this computer, or their default. */
+const themeFor = (userId: string | undefined): ThemeId => (userId ? load<ThemeId | null>(`office.theme.${userId}`, null) : null) ?? defaultTheme(userId)
 const stored = load<{ day: string; list: Decision[] }>(KEY_DECISIONS, { day: today, list: [] })
 const initialDecisions = stored.day === today ? stored.list : []
 const storedHandled = load<{ day: string; map: Record<string, Handled> }>(KEY_HANDLED, { day: today, map: {} })
@@ -61,6 +64,12 @@ type OfficeState = {
   remembered: User | null
   signIn: (user: User, remember: boolean) => void
   signOut: () => void
+  /** The office's colour, per person, kept on this computer. */
+  theme: ThemeId
+  setTheme: (id: ThemeId) => void
+  /** The colour picker, on top of everything. */
+  palette: boolean
+  showPalette: (open: boolean) => void
   /** Secret Garden: lawn and roses under the office. */
   garden: boolean
   setGarden: (on: boolean) => void
@@ -125,12 +134,20 @@ export const useOffice = create<OfficeState>((set) => ({
   remembered: USERS.find((x) => x.id === load<string | null>(KEY_USER, null)) ?? null,
   signIn: (user, remember) => {
     save(KEY_USER, remember ? user.id : null)
-    set({ user, remembered: remember ? user : null })
+    set({ user, remembered: remember ? user : null, theme: themeFor(user.id) })
   },
   signOut: () => {
     save(KEY_USER, null)
     set({ user: null, remembered: null, locked: true, ws: null, setup: false, cockpit: false, garden: false, view: { kind: 'overview' } })
   },
+  theme: themeFor(load<string | null>(KEY_USER, null) ?? undefined),
+  setTheme: (theme) =>
+    set((s) => {
+      if (s.user) save(`office.theme.${s.user.id}`, theme)
+      return { theme }
+    }),
+  palette: false,
+  showPalette: (palette) => set({ palette }),
   garden: false,
   setGarden: (garden) => set({ garden }),
   search: false,

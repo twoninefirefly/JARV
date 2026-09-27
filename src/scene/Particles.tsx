@@ -76,7 +76,11 @@ const fragment = /* glsl */ `
   }
 `
 
-export function Particles({ drive }: { drive: Drive }) {
+/**
+ * `dim` scales the whole cloud: full strength around the sphere on its own,
+ * held back behind the figure so the dust reads as air, not as a second body.
+ */
+export function Particles({ drive, dim = 1 }: { drive: Drive; dim?: number }) {
   const mat = useRef<THREE.ShaderMaterial>(null)
   const pts = useRef<THREE.Points>(null)
 
@@ -116,7 +120,7 @@ export function Particles({ drive }: { drive: Drive }) {
     if (!mat.current || !pts.current) return
     const u = mat.current.uniforms
     pts.current.visible = drive.reactor.visible
-    u.uIntensity.value = drive.reactor.intensity
+    u.uIntensity.value = drive.reactor.intensity * dim
     u.uTime.value = state.clock.elapsedTime
     u.uLevel.value += (drive.level - u.uLevel.value) * Math.min(1, dt * 6)
     u.uListen.value = drive.listen

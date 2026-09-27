@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore } from '../store'
 import { BACKEND, LOCALE } from '../config'
 import { caps, capabilitiesProbed } from '../lib/capabilities'
+import { coreOnScreen } from '../scene/layout'
 
 /**
  * The start-up sequence.
@@ -65,9 +66,9 @@ const DIM = 'rgba(150, 186, 192, 0.62)'
 const FAINT = 'rgba(150, 186, 192, 0.22)'
 
 /**
- * The ring's radius as a fraction of the shorter viewport side. Matched to the
- * reactor (Core.tsx draws it at 0.60 of that side across, with a wandering
- * edge), because the whole hand-off depends on the two rings coinciding.
+ * The neural ring's radius as a fraction of the shorter viewport side, before
+ * it sinks into the reactor (see coreOnScreen). The size of the sphere on its
+ * own, so with that stage the sink is barely a move.
  */
 const RING = 0.297
 
@@ -405,6 +406,19 @@ function draw(
   // its midpoint sinks so the arc's centre ends on the screen's; the ends rise
   // and meet at the top. Each neuron rides it at its own offset across the
   // band, which narrows as the ring closes.
+  //
+  // Then the closed ring sinks into the reactor: it slides to the core's place
+  // on screen and shrinks to the core's size, so the network's last frame is
+  // drawn exactly over the thing it is about to become. With the sphere alone
+  // that is barely a move — the core is centred and ring-sized already; with
+  // the figure it is the ring collapsing into the heart of a face.
+  const core = coreOnScreen(w, h)
+  const sink = easeIO(span(t, 0.84, 0.95))
+  const into = (x: number, y: number): [number, number] => {
+    if (sink <= 0) return [x, y]
+    const scale = 1 + (core.r / R - 1) * sink
+    return [cx + (x - cx) * scale + (core.x - cx) * sink, cy + (y - cy) * scale + (core.y - cy) * sink]
+  }
   const pos = net.nodes.map((n) => {
     // A touch of individual lag so the move breathes, small enough that
     // neighbours never drift apart.
@@ -420,11 +434,8 @@ function draw(
     // Offset along the arc's own normal, which starts out vertical.
     const nx = Math.sin(th)
     const ny = Math.cos(th)
-    return [
-      cx + rho * nx + nx * band,
-      my - rho + rho * ny + ny * band,
-      m,
-    ] as const
+    const [px, py] = into(cx + rho * nx + nx * band, my - rho + rho * ny + ny * band)
+    return [px, py, m] as const
   })
 
   // How awake each neuron is: dark ahead of the loading front, lit behind it,

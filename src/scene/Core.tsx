@@ -2,6 +2,7 @@ import { useRef, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Drive } from './Scene'
+import { HIST, VOICE_AT } from './voice'
 
 /**
  * The reactor.
@@ -19,21 +20,6 @@ import type { Drive } from './Scene'
  * real per-pixel turbulence instead of a displaced mesh pretending to be a
  * ring — which is how the old build ended up with a lumpy sphere.
  */
-
-/**
- * The voice history the waves are drawn from.
- *
- * A wave is only readable as "that was a syllable" if it keeps the strength it
- * was born with all the way across the ring. A shader has no memory, so the
- * memory lives here: the last couple of seconds of level, sampled on a fixed
- * clock, and the shader maps radius to age. A ring at radius r was emitted
- * (r - start) / speed seconds ago, and is exactly as bright as the voice was
- * then — which is what makes a spoken sentence leave the core as a train of
- * distinct rings rather than as a uniform throb.
- */
-const HIST = 64
-/** Seconds between history samples. 64 x 30ms = just under two seconds. */
-const HIST_STEP = 0.03
 
 const vertex = /* glsl */ `
   varying vec2 vUv;
@@ -59,14 +45,7 @@ const fragment = /* glsl */ `
 
   varying vec2 vUv;
 
-  // The voice level \`age\` seconds ago, 0 outside the recorded window.
-  float voiceAt(float age) {
-    float i = age / ${HIST_STEP.toFixed(3)};
-    if (i < 0.0 || i > ${(HIST - 1).toFixed(1)}) return 0.0;
-    int i0 = int(floor(i));
-    int i1 = min(i0 + 1, ${HIST - 1});
-    return mix(uHist[i0], uHist[i1], fract(i));
-  }
+  ${VOICE_AT}
 
   // -- value noise + fbm ----------------------------------------------------
   vec2 hash(vec2 p) {
@@ -272,16 +251,28 @@ const HALF = 2.7
 /** Radius, in the shader's own field units, at which the ring is drawn. */
 const RING_R = 0.74
 /**
- * Ring diameter as a fraction of the SHORTER viewport dimension.
- *
- * Framing has to be driven by the viewport rather than by a constant, because
- * the plane is a fixed size in world units while the frame is not: the same
- * scale that leaves a comfortable margin on a 16:9 monitor runs the ring off
- * both edges of a portrait window.
+ * How far past the ring the quad has to reach, in ring radii: the outward
+ * waves travel to about one and a half, and the bloom falls off beyond that.
  */
-const FIT = 0.60
+const REACH = 2.4
 
-export function Core({ drive }: { drive: Drive }) {
+/**
+ * `fit` is the ring's diameter as a fraction of the SHORTER viewport side
+ * (see CORE_FIT in layout.ts). Framing has to be driven by the viewport rather
+ * than by a constant, because the plane is a fixed size in world units while
+ * the frame is not: the same scale that leaves a comfortable margin on a 16:9
+ * monitor runs the ring off both edges of a portrait window.
+ */
+export function Core({
+  drive,
+  fit: FIT,
+  gain = 1,
+}: {
+  drive: Drive
+  fit: number
+  /** Extra brightness on top of the ui intensity — the figure's core burns hotter. */
+  gain?: number
+}) {
   const mat = useRef<THREE.ShaderMaterial>(null)
   const mesh = useRef<THREE.Mesh>(null)
   const viewport = useThree((s) => s.viewport)
@@ -304,13 +295,12 @@ export function Core({ drive }: { drive: Drive }) {
       uListen: { value: 0 },
       uSpeak: { value: 0 },
       uTime: { value: 0 },
-      uHist: { value: new Array<number>(HIST).fill(0) },
+      // The shared history array itself, not a copy: Rig mutates it in place
+      // and three uploads it every frame.
+      uHist: { value: drive.hist },
     }),
-    [],
+    [drive],
   )
-  // Newest first. Filled on a fixed clock, not per frame, so the waves travel
-  // at the same speed on a 60Hz laptop and a 120Hz display.
-  const clock = useRef(0)
 
   useFrame((_, dt) => {
     if (!mat.current || !mesh.current) return
@@ -318,14 +308,21 @@ export function Core({ drive }: { drive: Drive }) {
     const r = drive.reactor
 
     mesh.current.visible = r.visible
+    const fit = Math.min(viewport.width, viewport.height)
+    // The ring's radius in world units, and a quad just big enough for it.
+    // Full size, the authored quad already fits (k stays 1 and nothing changes).
+    // Small, as the figure's core, a full-size quad would run this whole
+    // shader — five octaves of noise, several times over — across most of the
+    // screen for a ring a tenth of its width; shrinking the quad with the ring
+    // keeps the cost where the pixels are.
+    const ringWorld = FIT * 0.5 * fit
+    const k = Math.min(1, (ringWorld * REACH) / HALF)
     // Scaling the mesh rather than the shader's field. The ring sits at a fixed
     // radius inside a fixed quad with dark margin around it, so zooming the
     // field out would push the ring past the quad's own edge and cut it off in
     // a square; moving the quad takes the margin along with it.
-    mesh.current.scale.setScalar(r.scale)
-
-    const fit = Math.min(viewport.width, viewport.height)
-    u.uZoom.value = (RING_R * HALF) / (FIT * 0.5 * fit)
+    mesh.current.scale.setScalar(r.scale * k)
+    u.uZoom.value = (RING_R * HALF * k) / ringWorld
     u.uLevel.value += (drive.level - u.uLevel.value) * Math.min(1, dt * 8)
     // Accumulated, not derived from elapsed time scaled by level — scaling the
     // clock would rewrite all the turbulence that has already happened, and the
@@ -337,18 +334,9 @@ export function Core({ drive }: { drive: Drive }) {
     u.uSpeak.value = drive.speak
     u.uTime.value += dt
 
-    const hist = u.uHist.value as number[]
-    clock.current += dt
-    // A long frame (a background tab coming back) would otherwise replay a
-    // burst of identical samples; two seconds of catch-up is the whole buffer.
-    clock.current = Math.min(clock.current, HIST * HIST_STEP)
-    while (clock.current >= HIST_STEP) {
-      clock.current -= HIST_STEP
-      hist.pop()
-      hist.unshift(drive.voice)
-    }
+
     u.uOpen.value += (drive.open - u.uOpen.value) * Math.min(1, dt * 1.6)
-    u.uIntensity.value = r.intensity
+    u.uIntensity.value = r.intensity * gain
     u.uStyle.value = r.style
     ;(u.uColor.value as THREE.Color).lerp(r.color, Math.min(1, dt * 2.5))
   })

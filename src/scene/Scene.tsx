@@ -12,7 +12,30 @@ import * as THREE from 'three'
 import { Core } from './Core'
 import { Particles } from './Particles'
 import { Orbits } from './Orbits'
+import { Bust } from './Bust'
+import { Veins } from './Veins'
+import { Halo } from './Halo'
+import { Terrain } from './Terrain'
 import { useStore, phaseColor, accentFor, type Phase } from '../store'
+import { STAGE } from '../config'
+import { CAMERA_Z, CORE_FIT, FOV, LOOK_Y } from './layout'
+import { HIST, HIST_STEP } from './voice'
+
+/**
+ * The core's colour as the figure's heart: warm in every state, brighter and
+ * yellower the more engaged he is. The accent colours still dress the HUD; the
+ * core is the one warm thing on a cold figure, as in the reference.
+ */
+const warmFor: Record<Phase, string> = {
+  offline: '#5a2608',
+  boot: '#ff7a14',
+  dormant: '#e8661a',
+  waking: '#ffb04a',
+  listening: '#ffa640',
+  thinking: '#ff9a2e',
+  tooling: '#ffc46b',
+  speaking: '#ffb85c',
+}
 
 /** Rings spin harder while JARVIS is working — reads as effort. */
 const spinFor: Record<Phase, number> = {
@@ -85,6 +108,13 @@ export type Drive = {
    * it would send waves out of a reactor that is not saying anything.
    */
   voice: number
+  /** Voice level history, newest first — see HIST. Mutated in place. */
+  hist: number[]
+  /**
+   * 0..1: how far the figure has formed. Zero until the start-up is over,
+   * then it streams out of the core over a few seconds.
+   */
+  form: number
   /**
    * The reactor slice of the ui state, already resolved and smoothed.
    *
@@ -135,6 +165,8 @@ function Rig() {
       listen: 0,
       speak: 0,
       voice: 0,
+      hist: new Array<number>(HIST).fill(0),
+      form: 0,
       reactor: {
         color: new THREE.Color(phaseColor.offline),
         scale: 1,
@@ -151,6 +183,7 @@ function Rig() {
     () => ({ key: '', color: new THREE.Color() }),
     [],
   )
+  const histClock = useMemo(() => ({ t: 0 }), [])
 
   useFrame((state, dt) => {
     // Read imperatively rather than subscribing — see the note on Drive.
@@ -164,7 +197,7 @@ function Rig() {
 
     const r = ui.reactor
     drive.reactor.color.lerp(
-      aim(reactorTarget, r.color ?? accent),
+      aim(reactorTarget, r.color ?? (STAGE === 'bust' ? warmFor[phase] : accent)),
       Math.min(1, dt * 2.5),
     )
     // Smoothed rather than assigned, so "make it twice the size" grows into
@@ -199,11 +232,31 @@ function Rig() {
     drive.listen += (listening - drive.listen) * Math.min(1, dt * (listening ? 5 : 2.5))
     drive.speak += (speaking - drive.speak) * Math.min(1, dt * (speaking ? 5 : 2.5))
 
-    // Slow drift on the camera keeps handheld-ish life in the shot.
+    // History on a fixed clock, not per frame, so waves travel at the same
+    // speed on a 60Hz laptop and a 120Hz display. A long frame (a background
+    // tab coming back) would otherwise replay a burst of identical samples; two
+    // seconds of catch-up is the whole buffer.
+    histClock.t = Math.min(histClock.t + dt, HIST * HIST_STEP)
+    while (histClock.t >= HIST_STEP) {
+      histClock.t -= HIST_STEP
+      drive.hist.pop()
+      drive.hist.unshift(level)
+    }
+
+    // The figure forms once the start-up is over, and not before: during the
+    // sequence's reveal only the core is there, so the intro lands on the core
+    // and the figure then streams out of it.
+    if (phase === 'offline' || phase === 'boot') drive.form = 0
+    else drive.form = Math.min(1, drive.form + dt / 3.2)
+
+    // Slow drift on the camera keeps handheld-ish life in the shot. Smaller
+    // with the figure: the start-up lands its last frame on the core's screen
+    // position, and a wide drift would move the core out from under it.
     const t = state.clock.elapsedTime
-    state.camera.position.x = Math.sin(t * 0.13) * 0.35
-    state.camera.position.y = Math.cos(t * 0.17) * 0.22
-    state.camera.lookAt(0, 0, 0)
+    const sway = STAGE === 'bust' ? 0.3 : 1
+    state.camera.position.x = Math.sin(t * 0.13) * 0.35 * sway
+    state.camera.position.y = Math.cos(t * 0.17) * 0.22 * sway
+    state.camera.lookAt(0, LOOK_Y, 0)
   })
 
   // Nothing in here is lit: both the core and the dust are raw ShaderMaterials,
@@ -213,10 +266,25 @@ function Rig() {
   // crossing in front of a complete circle do not read as depth — they read as
   // scratches on the lens, and as broken circles in a design whose whole
   // subject is one unbroken one.
+  if (STAGE === 'sphere') {
+    return (
+      <>
+        <Core drive={drive} fit={CORE_FIT} />
+        <Particles drive={drive} />
+        <Orbits />
+      </>
+    )
+  }
+  // Back to front. Everything is additive with no depth writes, so order only
+  // matters for readability here, not for the picture.
   return (
     <>
-      <Core drive={drive} />
-      <Particles drive={drive} />
+      <Terrain drive={drive} />
+      <Halo drive={drive} />
+      <Particles drive={drive} dim={0.18} />
+      <Bust drive={drive} />
+      <Veins drive={drive} />
+      <Core drive={drive} fit={CORE_FIT} gain={1.9} />
       <Orbits />
     </>
   )
@@ -231,7 +299,7 @@ export function Scene() {
     <Canvas
       className="scene"
       frameloop={hidden ? 'never' : 'always'}
-      camera={{ position: [0, 0, 6.2], fov: 45 }}
+      camera={{ position: [0, 0, CAMERA_Z], fov: FOV }}
       gl={{ antialias: true, alpha: true }}
       dpr={[1, 2]}
     >

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { STAGE } from './config'
 
 export type Phase =
   | 'offline'   // waiting for the click that unlocks audio
@@ -144,7 +145,16 @@ export type UiState = {
 
 export const UI_DEFAULTS: UiState = {
   accent: null, background: null, palette: {},
-  reactor: { color: null, scale: 1, intensity: 1, spin: 1, style: 'ring', visible: true },
+  // As the figure's core the reactor is a filled, glowing body rather than a
+  // ring: a bright hoop in the middle of a face reads as one enormous eye.
+  reactor: {
+    color: null,
+    scale: 1,
+    intensity: 1,
+    spin: 1,
+    style: STAGE === 'bust' ? 'sphere' : 'ring',
+    visible: true,
+  },
   orbits: [],
   chrome: { transcript: true, toolBadge: true, suggestions: true, brand: true },
   effect: null,

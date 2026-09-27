@@ -14,6 +14,8 @@
  * the sequence's length has to be known before it starts.
  */
 
+import { FILM_ENABLED } from '../config'
+
 /** Where the clip lives. Absent is a supported state, not an error. */
 export const FILM_SRC = '/film/intro.mp4'
 
@@ -98,7 +100,7 @@ function ready(): boolean {
  * sequence therefore runs for. Call at power-on, before the sequence starts.
  */
 export function armFilm(): number {
-  armed = ready()
+  armed = FILM_ENABLED && ready()
   if (!armed) return 0
   const ms = (el as HTMLVideoElement).duration * 1000
   return Math.min(Number.isFinite(ms) && ms > 500 ? ms : FALLBACK_MS, MAX_MS)

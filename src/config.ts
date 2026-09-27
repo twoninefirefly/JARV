@@ -121,6 +121,17 @@ export const INTRO_LINE =
  * it. Leave a couple of seconds at the end: a line that fills every second of
  * the film leaves no beat before the interface arrives.
  */
+/**
+ * Whether the start-up plays an intro film at all. Off by default: the
+ * sequence itself carries the start-up and hands straight over to the
+ * reactor, and a clip on top of it was one scene too many. VITE_FILM=on brings
+ * the film back, using whatever sits at public/film/intro.mp4.
+ *
+ * A switch rather than deleting the file, on purpose: a local copy of the clip
+ * is a modified tracked file, and a pull that deleted it would refuse to run.
+ */
+export const FILM_ENABLED = str(import.meta.env.VITE_FILM) === 'on'
+
 export const FILM_LINE =
   str(import.meta.env.VITE_FILM_LINE) ??
   'Vollständige Abbildung. Sprachverarbeitung, Gedächtnis und Urteil im Abgleich. ' +

@@ -15,7 +15,7 @@ import * as hands from './lib/hands'
 import { listenForClap } from './lib/clap'
 import * as camera from './lib/camera'
 import * as kokoro from './lib/kokoro'
-import { TTS_ENGINE, INTRO_LINE, FILM_LINE } from './config'
+import { TTS_ENGINE, INTRO_LINE, FILM_LINE, FILM_ENABLED } from './config'
 import { forTool, attention, working } from './lib/fillers'
 import {
   ask,
@@ -854,7 +854,9 @@ export default function App() {
       <Scene />
       <Hud />
       <Boot />
-      <Film />
+      {/* Only mounted when the film is switched on: the element preloads,
+          and a 4K clip nobody will see is a lot to buffer for nothing. */}
+      {FILM_ENABLED && <Film />}
       <Diagnostics />
       <Ignition onStart={() => void powerOn()} />
     </>

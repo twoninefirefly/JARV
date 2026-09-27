@@ -229,6 +229,12 @@ type State = {
   looking: string | null
   /** Transient status line during boot, e.g. the voice model download. */
   bootNote: string
+  /**
+   * True while the start-up sequence covers the whole screen with an opaque
+   * ground. The 3D scene stops rendering for exactly that stretch: nobody can
+   * see it, and every frame it drew was a frame the sequence could not.
+   */
+  stageHidden: boolean
   /** Cards currently on the display, newest last. */
   panels: Panel[]
   /** Blades currently open, newest last — which is also front-most. */
@@ -244,6 +250,7 @@ type State = {
   setGestures: (on: boolean) => void
   setLooking: (why: string | null) => void
   setBootNote: (n: string) => void
+  setStageHidden: (v: boolean) => void
   pushPanel: (p: Panel) => void
   clearPanels: () => void
   pushBlade: (b: Blade) => void
@@ -285,12 +292,14 @@ export const useStore = create<State>((set) => ({
   focusedBlade: null,
   expandedBlade: null,
   bootNote: '',
+  stageHidden: false,
   ui: defaultUi(),
 
   setVoice: (voice) => set({ voice }),
   setGestures: (gestures) => set({ gestures }),
   setLooking: (looking) => set({ looking }),
   setBootNote: (bootNote) => set({ bootNote }),
+  setStageHidden: (stageHidden) => set({ stageHidden }),
   // Three is as many as fits around the reactor without crowding it. Sticky
   // panels are exempt from the cull — the tool description promises they stay
   // until replaced, and a plain slice(-3) silently evicted them the moment a

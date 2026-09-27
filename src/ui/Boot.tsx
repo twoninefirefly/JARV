@@ -162,10 +162,66 @@ function buildNet(): Net {
   return { nodes, edges }
 }
 
+/**
+ * Soft glow dots, drawn once and stamped.
+ *
+ * The first version lit every neuron and every signal with canvas shadowBlur,
+ * which runs a blur pass per draw call: at retina density that was well over a
+ * hundred full blurs a frame, and the start-up stuttered on exactly the
+ * machines it is meant to look best on. A pre-rendered gradient stamped with
+ * drawImage costs a texture copy instead, and additive compositing ('lighter')
+ * gives the same bloom where glows overlap.
+ */
+type Glow = { cyan: HTMLCanvasElement; amber: HTMLCanvasElement }
+
+function makeGlow(): Glow {
+  const one = (rgb: string) => {
+    const c = document.createElement('canvas')
+    c.width = c.height = 64
+    const g = c.getContext('2d')
+    if (g) {
+      const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32)
+      grad.addColorStop(0, `rgba(${rgb}, 1)`)
+      grad.addColorStop(0.18, `rgba(${rgb}, 0.55)`)
+      grad.addColorStop(0.45, `rgba(${rgb}, 0.12)`)
+      grad.addColorStop(1, `rgba(${rgb}, 0)`)
+      g.fillStyle = grad
+      g.fillRect(0, 0, 64, 64)
+    }
+    return c
+  }
+  return { cyan: one('150, 240, 255'), amber: one('255, 170, 70') }
+}
+
+/**
+ * Lines grouped by colour, stroked once per group. Two hundred-odd separate
+ * stroke() calls a frame become a handful. Alphas are quantised so the groups
+ * stay few; a step of 0.02 is below what the eye separates on a 1px line.
+ */
+function strokeGroups(ctx: CanvasRenderingContext2D) {
+  const groups = new Map<string, Path2D>()
+  return {
+    line(rgb: string, alpha: number, x1: number, y1: number, x2: number, y2: number) {
+      const a = Math.round(alpha * 50) / 50
+      if (a <= 0) return
+      const key = `rgba(${rgb}, ${a})`
+      let p = groups.get(key)
+      if (!p) groups.set(key, (p = new Path2D()))
+      p.moveTo(x1, y1)
+      p.lineTo(x2, y2)
+    },
+    flush() {
+      for (const [style, p] of groups) {
+        ctx.strokeStyle = style
+        ctx.stroke(p)
+      }
+    },
+  }
+}
+
 // Signals travelling the synapses: amber against the cold blue, the one warm
 // colour in the piece — the same pairing as a nerve firing in the dark.
 const SIGNAL = '#ffb24a'
-const SIGNAL_GLOW = '#ff8a1e'
 const NEURON = '#bff8ff'
 const BG = '#01060c'
 
@@ -218,6 +274,7 @@ function draw(
   now: number,
   facts: Fact[],
   net: Net,
+  glow: Glow,
   calm: boolean,
 ) {
   const cx = w / 2
@@ -393,29 +450,24 @@ function draw(
       ctx.globalAlpha = vanish
     }
 
-    // Synapses. Dark ones first, lit ones over them.
+    // Synapses, batched by colour. Dark ones first, lit ones over them.
     ctx.lineWidth = 1
+    const lines = strokeGroups(ctx)
     for (const e of net.edges) {
+      const shown = Math.min(appearOf(net.nodes[e.a]), appearOf(net.nodes[e.b]))
+      if (shown <= 0) continue
       const [x1, y1] = pos[e.a]
       const [x2, y2] = pos[e.b]
       const on = Math.min(lit[e.a], lit[e.b])
-      const shown = Math.min(appearOf(net.nodes[e.a]), appearOf(net.nodes[e.b]))
-      if (shown <= 0) continue
-      ctx.strokeStyle = on > 0.02
-        ? `rgba(34, 208, 208, ${(0.16 + on * 0.3 + flash * 0.25).toFixed(3)})`
-        : `rgba(150, 186, 192, ${(0.07 * shown).toFixed(3)})`
-      ctx.beginPath()
-      ctx.moveTo(x1, y1)
-      ctx.lineTo(x2, y2)
-      ctx.stroke()
+      if (on > 0.02) lines.line('34, 208, 208', 0.16 + on * 0.3 + flash * 0.25, x1, y1, x2, y2)
+      else lines.line('150, 186, 192', 0.07 * shown, x1, y1, x2, y2)
     }
 
     // Signals: a pulse running each firing synapse toward the front. Stateless
     // — a function of the clock and the synapse's seed — so nothing needs to be
     // spawned, tracked or cleaned up, and a hidden tab resumes exactly in step.
+    const sparks: [number, number, number][] = []
     if (!calm) {
-      ctx.shadowColor = SIGNAL_GLOW
-      ctx.shadowBlur = 8
       for (const e of net.edges) {
         const on = Math.min(lit[e.a], lit[e.b])
         if (on < 0.6 || e.seed > 0.55 + flash * 0.45) continue
@@ -429,20 +481,16 @@ function draw(
         const px = x1 + (x2 - x1) * u
         const py = y1 + (y2 - y1) * u
         const tail = Math.max(0, u - 0.25)
-        ctx.strokeStyle = `rgba(255, 178, 74, ${(0.55 * on).toFixed(3)})`
-        ctx.beginPath()
-        ctx.moveTo(x1 + (x2 - x1) * tail, y1 + (y2 - y1) * tail)
-        ctx.lineTo(px, py)
-        ctx.stroke()
-        ctx.fillStyle = SIGNAL
-        ctx.beginPath()
-        ctx.arc(px, py, 1.4, 0, Math.PI * 2)
-        ctx.fill()
+        lines.line('255, 178, 74', 0.55 * on, x1 + (x2 - x1) * tail, y1 + (y2 - y1) * tail, px, py)
+        sparks.push([px, py, on])
       }
-      ctx.shadowBlur = 0
     }
+    lines.flush()
 
-    // Neurons.
+    // Neurons: crisp cores batched into two paths, glows stamped additively.
+    const dark = new Path2D()
+    const bright = new Map<number, Path2D>()
+    const glows: [number, number, number, number][] = []
     net.nodes.forEach((n, i) => {
       const shown = appearOf(n)
       if (shown <= 0) return
@@ -452,23 +500,43 @@ function draw(
         const twinkle = calm ? 1 : 0.78 + 0.22 * Math.sin(secs * 3 + n.seed * 40)
         // Freshly woken neurons flare, then settle.
         const fresh = 1 - Math.min(1, Math.abs(prog - n.x) * 12)
-        ctx.shadowColor = ACCENT
-        ctx.shadowBlur = 6 + fresh * 10 + flash * 6
-        ctx.fillStyle = NEURON
-        ctx.globalAlpha = vanish * Math.min(1, on * twinkle + fresh * 0.4)
-        ctx.beginPath()
-        ctx.arc(x, y, n.r * (1.05 + fresh * 0.8 + flash * 0.3), 0, Math.PI * 2)
-        ctx.fill()
+        const a = Math.round(Math.min(1, on * twinkle + fresh * 0.4) * 10) / 10
+        const r = n.r * (1.05 + fresh * 0.8 + flash * 0.3)
+        let p = bright.get(a)
+        if (!p) bright.set(a, (p = new Path2D()))
+        p.moveTo(x + r, y)
+        p.arc(x, y, r, 0, Math.PI * 2)
+        glows.push([x, y, r * (7 + fresh * 6 + flash * 4), a * 0.55])
       } else {
-        ctx.shadowBlur = 0
-        ctx.fillStyle = FAINT
-        ctx.globalAlpha = vanish * shown
-        ctx.beginPath()
-        ctx.arc(x, y, n.r * 0.8, 0, Math.PI * 2)
-        ctx.fill()
+        dark.moveTo(x + n.r * 0.8, y)
+        dark.arc(x, y, n.r * 0.8, 0, Math.PI * 2)
       }
     })
-    ctx.shadowBlur = 0
+
+    ctx.globalCompositeOperation = 'lighter'
+    for (const [x, y, size, a] of glows) {
+      ctx.globalAlpha = vanish * a
+      ctx.drawImage(glow.cyan, x - size / 2, y - size / 2, size, size)
+    }
+    for (const [x, y, on] of sparks) {
+      ctx.globalAlpha = vanish * on
+      ctx.drawImage(glow.amber, x - 9, y - 9, 18, 18)
+    }
+    ctx.globalCompositeOperation = 'source-over'
+
+    ctx.globalAlpha = vanish * Math.min(1, span(t, 0.04, 0.16) + 0.3)
+    ctx.fillStyle = FAINT
+    ctx.fill(dark)
+    ctx.fillStyle = NEURON
+    for (const [a, p] of bright) {
+      ctx.globalAlpha = vanish * a
+      ctx.fill(p)
+    }
+    ctx.fillStyle = SIGNAL
+    for (const [x, y, on] of sparks) {
+      ctx.globalAlpha = vanish * on
+      ctx.fillRect(x - 1, y - 1, 2, 2)
+    }
     ctx.globalAlpha = vanish
 
     // The loading front: a soft vertical light sweeping the band.
@@ -543,7 +611,13 @@ export function Boot() {
     const start = Date.now()
     const facts = readFacts()
     const net = buildNet()
+    const glow = makeGlow()
     let first = true
+    // The scene behind stays paused until the ground starts to thin (see the
+    // `ground` term in draw, which begins at t = 0.84); resumed a little ahead
+    // of that so its first frames are already moving when it shows through.
+    const setHidden = useStore.getState().setStageHidden
+    setHidden(true)
     let raf = 0
     let stopped = false
 
@@ -569,7 +643,8 @@ export function Boot() {
       const now = Date.now()
       const ms = now - start
       const t = clamp01(ms / BOOT_MS)
-      draw(ctx, w, h, t, ms, now, facts, net, Boolean(reduced))
+      if (t >= 0.78 && useStore.getState().stageHidden) setHidden(false)
+      draw(ctx, w, h, t, ms, now, facts, net, glow, Boolean(reduced))
       // The canvas paints its own ground from here on (see draw), so the
       // overlay's CSS background has to step aside for it to be able to thin
       // out. Not before the first frame, or the live scene would show for one.
@@ -587,6 +662,9 @@ export function Boot() {
     return () => {
       stopped = true
       cancelAnimationFrame(raf)
+      // However the sequence ends — run out, skipped, or failed — the stage
+      // must never be left paused.
+      setHidden(false)
     }
   }, [phase, reduced])
 

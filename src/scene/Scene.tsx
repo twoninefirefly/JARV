@@ -223,9 +223,14 @@ function Rig() {
 }
 
 export function Scene() {
+  // Paused while the start-up sequence covers it completely. It still renders
+  // during the ignition screen, which is what compiles its shaders ahead of
+  // time, so resuming never has to compile anything at the reveal.
+  const hidden = useStore((s) => s.stageHidden)
   return (
     <Canvas
       className="scene"
+      frameloop={hidden ? 'never' : 'always'}
       camera={{ position: [0, 0, 6.2], fov: 45 }}
       gl={{ antialias: true, alpha: true }}
       dpr={[1, 2]}

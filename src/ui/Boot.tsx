@@ -18,10 +18,13 @@ import { caps, capabilitiesProbed } from '../lib/capabilities'
  * screen are this Mac's numbers. A boot log that invents its figures is set
  * dressing; one that states real ones is an instrument.
  *
- * One move carries it: a hairline loads, then bends into a circle of exactly
- * the size and position of the live reactor behind the overlay, picks up a
- * bezel of fine ticks, and the name resolves inside it. The hand-off is then a
- * cross-fade between two drawings of the same ring.
+ * The loading bar is a neural network: a band of neurons and synapses that
+ * wakes from left to right behind the loading front, with amber signals running
+ * the lit synapses toward it. At a hundred the whole net fires once, then the
+ * neurons stream out of the bar into a ring of exactly the size and position of
+ * the live reactor, and the network fades out ON the reactor — the overlay's
+ * ground thins away underneath it, so the sphere is already there when the
+ * last neuron goes. No cut, and nothing between the bar and the bot.
  *
  * Canvas, drawn at the display's full pixel density, on a wall clock (see the
  * effect below for why not a frame count).
@@ -60,9 +63,6 @@ const ACCENT_SOFT = 'rgba(34, 208, 208, 0.35)'
 const INK = 'rgba(220, 246, 248, 0.92)'
 const DIM = 'rgba(150, 186, 192, 0.62)'
 const FAINT = 'rgba(150, 186, 192, 0.22)'
-
-/** Glyphs the name decodes through. Capitals, digits and rules only. */
-const GLYPHS = 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789/\\<>=+#'
 
 /**
  * The ring's radius as a fraction of the shorter viewport side. Matched to the
@@ -104,6 +104,71 @@ function load(x: number): number {
   return 1
 }
 
+/**
+ * The loading bar is a small neural network: neurons scattered through a
+ * band, each wired to its nearest neighbours ahead of it. Built once per
+ * start-up from a fixed seed, so the layout is the same every time — a
+ * network that reshuffled itself on each boot would read as noise, not as a
+ * structure being brought up.
+ */
+type Neuron = {
+  /** 0..1 along the bar, sorted. */
+  x: number
+  /** -0.5..0.5 across the bar. */
+  y: number
+  /** Radius in px. */
+  r: number
+  seed: number
+  /** 0..1, how late this one joins the move into the ring. */
+  lag: number
+}
+type Synapse = { a: number; b: number; seed: number }
+type Net = { nodes: Neuron[]; edges: Synapse[] }
+
+function buildNet(): Net {
+  let st = 2909
+  const rnd = () => (st = (st * 16807) % 2147483647) / 2147483647
+  const N = 104
+  const nodes: Neuron[] = []
+  for (let i = 0; i < N; i++) {
+    nodes.push({
+      x: (i + 0.15 + rnd() * 0.7) / N,
+      y: rnd() - 0.5,
+      r: 0.8 + rnd() * rnd() * 1.8,
+      seed: rnd(),
+      lag: rnd(),
+    })
+  }
+  // The band is roughly eight times wider than it is tall; distances are
+  // judged in that shape so "nearest" means nearest on screen.
+  const ASPECT = 8
+  const edges: Synapse[] = []
+  const seen = new Set<string>()
+  for (let i = 0; i < N; i++) {
+    const cands: [number, number][] = []
+    for (let j = i + 1; j < Math.min(N, i + 9); j++) {
+      const d = Math.hypot((nodes[j].x - nodes[i].x) * ASPECT, nodes[j].y - nodes[i].y)
+      cands.push([d, j])
+    }
+    cands.sort((p, q) => p[0] - q[0])
+    const take = rnd() < 0.3 ? 3 : 2
+    for (const [, j] of cands.slice(0, take)) {
+      const k = `${i}-${j}`
+      if (seen.has(k)) continue
+      seen.add(k)
+      edges.push({ a: i, b: j, seed: rnd() })
+    }
+  }
+  return { nodes, edges }
+}
+
+// Signals travelling the synapses: amber against the cold blue, the one warm
+// colour in the piece — the same pairing as a nerve firing in the dark.
+const SIGNAL = '#ffb24a'
+const SIGNAL_GLOW = '#ff8a1e'
+const NEURON = '#bff8ff'
+const BG = '#01060c'
+
 type Fact = { key: string; value: () => string | null }
 
 /**
@@ -136,15 +201,6 @@ function readFacts(): Fact[] {
   ]
 }
 
-/** Text with tracking, centred on x without the trailing gap letterSpacing adds. */
-function tracked(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, track: number) {
-  ctx.letterSpacing = `${track}px`
-  const w = ctx.measureText(text).width - track
-  ctx.textAlign = 'left'
-  ctx.fillText(text, x - w / 2, y)
-  ctx.letterSpacing = '0px'
-}
-
 /**
  * One frame, at normalised time `t` from 0 to 1. `ms` is real elapsed time,
  * for the clock readout; `now` seeds the decode noise.
@@ -161,6 +217,7 @@ function draw(
   ms: number,
   now: number,
   facts: Fact[],
+  net: Net,
   calm: boolean,
 ) {
   const cx = w / 2
@@ -174,6 +231,20 @@ function draw(
   const inset = 92 // the HUD header's own side margin, so the name does not jump at the hand-off
 
   const readouts = 1 - ease(span(t, 0.66, 0.78))
+
+  // The ground is painted here rather than by CSS so it can go: over the last
+  // part of the sequence it thins to nothing and the live reactor — already
+  // running behind the overlay — shows through underneath the network as it
+  // settles onto the reactor's ring. That is the hand-over: the neurons fade
+  // out ON the sphere instead of cutting to it.
+  const ground = 1 - ease(span(t, 0.84, 0.98))
+  if (ground > 0) {
+    ctx.save()
+    ctx.globalAlpha = ground
+    ctx.fillStyle = BG
+    ctx.fillRect(0, 0, w, h)
+    ctx.restore()
+  }
 
   // -- corner brackets, matching the HUD's so nothing moves at the hand-off --
   const frame = ease(span(t, 0, 0.1))
@@ -256,164 +327,185 @@ function draw(
     ctx.restore()
   }
 
-  // -- the line: loads, then bends into the ring ---------------------------
-  const grow = ease(span(t, 0.04, 0.16))
+  // -- the neural bar -------------------------------------------------------
+  const W = clampN(w * 0.46, 280, 760)
+  const H = clampN(unit * 0.075, 36, 72)
+  const bx = cx - W / 2
   const prog = load(span(t, 0.1, 0.62))
-  const morph = easeIO(span(t, 0.62, 0.8))
-  const L = unit * 0.2 * grow
+  // Everything lights for a beat at a hundred, before the move.
+  const flash = Math.sin(Math.PI * span(t, 0.62, 0.72))
+  // The move into the ring, and the fade that follows it.
+  const gather = span(t, 0.64, 0.84)
+  const vanish = 1 - ease(span(t, 0.9, 1))
+  const secs = now / 1000
 
-  if (grow > 0) {
-    const STEPS = 240
-    /**
-     * The line bends; it does not get tweened into a circle.
-     *
-     * Interpolating each point from its place on the line to its place on the
-     * ring — the obvious way — passes through a pinched teardrop with the two
-     * ends crossing over each other, because a short line and a long circle do
-     * not share a parameterisation. So the curve is an arc throughout: its
-     * curvature rises from nothing to 1/R while its length grows to the full
-     * circumference, and its midpoint slides down so that at the end the
-     * arc's own centre is the screen's. It closes, at the top, into the ring.
-     */
-    const k = morph / R
-    const s = 2 * L + (2 * Math.PI * R - 2 * L) * morph
-    const my = cy + R * morph
-    const point = (u: number): [number, number] => {
-      const d = (u - 0.5) * s
-      if (k < 1e-5) return [cx + d, cy]
-      const rho = 1 / k
-      const th = d / rho
-      return [cx + rho * Math.sin(th), my - rho + rho * Math.cos(th)]
+  // Where each neuron is right now. The whole band BENDS into the ring
+  // rather than each neuron flying to its own seat: with individual flights
+  // the left half of the bar crossed over to the right of the ring and the
+  // network became a tangle of stretched synapses. Bent, every neuron keeps
+  // its neighbours the whole way. The band is an arc throughout, its curvature
+  // rising from nothing to 1/R while its length grows to the circumference and
+  // its midpoint sinks so the arc's centre ends on the screen's; the ends rise
+  // and meet at the top. Each neuron rides it at its own offset across the
+  // band, which narrows as the ring closes.
+  const pos = net.nodes.map((n) => {
+    // A touch of individual lag so the move breathes, small enough that
+    // neighbours never drift apart.
+    const m = easeIO(gather + (n.lag - 0.5) * 0.08 * Math.sin(Math.PI * gather))
+    const band = n.y * H * (1 - 0.65 * m)
+    if (m <= 0) return [bx + n.x * W, cy + band, 0] as const
+    const k = m / R
+    const len = W + (2 * Math.PI * R - W) * m
+    const my = cy + R * m
+    const d = (n.x - 0.5) * len
+    const rho = 1 / k
+    const th = d / rho
+    // Offset along the arc's own normal, which starts out vertical.
+    const nx = Math.sin(th)
+    const ny = Math.cos(th)
+    return [
+      cx + rho * nx + nx * band,
+      my - rho + rho * ny + ny * band,
+      m,
+    ] as const
+  })
+
+  // How awake each neuron is: dark ahead of the loading front, lit behind it,
+  // with a short soft edge so the front reads as a wave, not a cut.
+  const lit = net.nodes.map((n, i) => {
+    const appear = span(t, 0.04 + n.x * 0.08, 0.1 + n.x * 0.08)
+    const awake = clamp01((prog - n.x) * (W / 22) + 0.5)
+    return appear * Math.max(awake, pos[i][2])
+  })
+  const appearOf = (n: Neuron) => span(t, 0.04 + n.x * 0.08, 0.1 + n.x * 0.08)
+
+  if (t > 0.04 && vanish > 0) {
+    ctx.save()
+    ctx.globalAlpha = vanish
+
+    // End marks: the only thing that says "this is a bar" in so many words.
+    const marks = readouts * (1 - span(gather, 0, 0.3))
+    if (marks > 0) {
+      ctx.globalAlpha = vanish * marks
+      ctx.fillStyle = FAINT
+      ctx.fillRect(bx - 10, cy - H * 0.6, 1, H * 1.2)
+      ctx.fillRect(bx + W + 10, cy - H * 0.6, 1, H * 1.2)
+      ctx.globalAlpha = vanish
     }
-    const path = (u0: number, u1: number) => {
+
+    // Synapses. Dark ones first, lit ones over them.
+    ctx.lineWidth = 1
+    for (const e of net.edges) {
+      const [x1, y1] = pos[e.a]
+      const [x2, y2] = pos[e.b]
+      const on = Math.min(lit[e.a], lit[e.b])
+      const shown = Math.min(appearOf(net.nodes[e.a]), appearOf(net.nodes[e.b]))
+      if (shown <= 0) continue
+      ctx.strokeStyle = on > 0.02
+        ? `rgba(34, 208, 208, ${(0.16 + on * 0.3 + flash * 0.25).toFixed(3)})`
+        : `rgba(150, 186, 192, ${(0.07 * shown).toFixed(3)})`
       ctx.beginPath()
-      for (let i = 0; i <= STEPS; i++) {
-        const u = u0 + ((u1 - u0) * i) / STEPS
-        const [x, y] = point(u)
-        if (i === 0) ctx.moveTo(x, y)
-        else ctx.lineTo(x, y)
+      ctx.moveTo(x1, y1)
+      ctx.lineTo(x2, y2)
+      ctx.stroke()
+    }
+
+    // Signals: a pulse running each firing synapse toward the front. Stateless
+    // — a function of the clock and the synapse's seed — so nothing needs to be
+    // spawned, tracked or cleaned up, and a hidden tab resumes exactly in step.
+    if (!calm) {
+      ctx.shadowColor = SIGNAL_GLOW
+      ctx.shadowBlur = 8
+      for (const e of net.edges) {
+        const on = Math.min(lit[e.a], lit[e.b])
+        if (on < 0.6 || e.seed > 0.55 + flash * 0.45) continue
+        const period = 1.6 + e.seed * 1.8
+        const f = (secs / period + e.seed * 7) % 1
+        const RUN = 0.38
+        if (f > RUN) continue
+        const u = f / RUN
+        const [x1, y1] = pos[e.a]
+        const [x2, y2] = pos[e.b]
+        const px = x1 + (x2 - x1) * u
+        const py = y1 + (y2 - y1) * u
+        const tail = Math.max(0, u - 0.25)
+        ctx.strokeStyle = `rgba(255, 178, 74, ${(0.55 * on).toFixed(3)})`
+        ctx.beginPath()
+        ctx.moveTo(x1 + (x2 - x1) * tail, y1 + (y2 - y1) * tail)
+        ctx.lineTo(px, py)
+        ctx.stroke()
+        ctx.fillStyle = SIGNAL
+        ctx.beginPath()
+        ctx.arc(px, py, 1.4, 0, Math.PI * 2)
+        ctx.fill()
       }
+      ctx.shadowBlur = 0
     }
-    ctx.save()
-    ctx.lineWidth = 1
-    // The unloaded track, then the loaded part over it. Once the line has
-    // closed into the ring it is all loaded, and the track has gone.
-    ctx.strokeStyle = FAINT
-    path(0, 1)
-    ctx.stroke()
-    ctx.strokeStyle = ACCENT
-    ctx.shadowColor = ACCENT
-    ctx.shadowBlur = 6
-    path(0, Math.max(prog, morph))
-    ctx.stroke()
-    ctx.restore()
 
-    // Percent and task, riding the two ends of the line until it bends.
-    const flat = 1 - span(morph, 0, 0.25)
-    if (flat > 0.02 && readouts > 0) {
-      ctx.save()
-      ctx.globalAlpha = flat * readouts
-      ctx.font = `400 ${fs}px ${MONO}`
-      ctx.textBaseline = 'alphabetic'
-      ctx.fillStyle = INK
-      ctx.textAlign = 'right'
-      ctx.fillText(String(Math.round(prog * 100)).padStart(3, '0'), cx + L, cy - fs)
-      ctx.fillStyle = DIM
-      ctx.textAlign = 'left'
-      const task = TASKS[Math.min(TASKS.length - 1, Math.floor(prog * TASKS.length))]
-      ctx.fillText(prog >= 1 ? 'BEREIT' : task, cx - L, cy + fs * 2)
-      ctx.restore()
-    }
-  }
+    // Neurons.
+    net.nodes.forEach((n, i) => {
+      const shown = appearOf(n)
+      if (shown <= 0) return
+      const [x, y] = pos[i]
+      const on = lit[i]
+      if (on > 0.02) {
+        const twinkle = calm ? 1 : 0.78 + 0.22 * Math.sin(secs * 3 + n.seed * 40)
+        // Freshly woken neurons flare, then settle.
+        const fresh = 1 - Math.min(1, Math.abs(prog - n.x) * 12)
+        ctx.shadowColor = ACCENT
+        ctx.shadowBlur = 6 + fresh * 10 + flash * 6
+        ctx.fillStyle = NEURON
+        ctx.globalAlpha = vanish * Math.min(1, on * twinkle + fresh * 0.4)
+        ctx.beginPath()
+        ctx.arc(x, y, n.r * (1.05 + fresh * 0.8 + flash * 0.3), 0, Math.PI * 2)
+        ctx.fill()
+      } else {
+        ctx.shadowBlur = 0
+        ctx.fillStyle = FAINT
+        ctx.globalAlpha = vanish * shown
+        ctx.beginPath()
+        ctx.arc(x, y, n.r * 0.8, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    })
+    ctx.shadowBlur = 0
+    ctx.globalAlpha = vanish
 
-  // -- bezel ticks, revealed clockwise once the ring has closed -------------
-  // Only once the ring has closed: ticks round a circle that is not there yet
-  // hang in the air.
-  const bezel = ease(span(t, 0.79, 0.92))
-  if (bezel > 0) {
-    ctx.save()
-    ctx.strokeStyle = ACCENT_SOFT
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    const N = 120
-    for (let i = 0; i < N; i++) {
-      if (i / N > bezel) break
-      const a = -Math.PI / 2 + (i / N) * Math.PI * 2
-      const long = i % 10 === 0
-      const r0 = R + 9
-      const r1 = r0 + (long ? 7 : 3)
-      ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0)
-      ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1)
+    // The loading front: a soft vertical light sweeping the band.
+    if (prog > 0 && prog < 1 && gather === 0) {
+      const fx = bx + prog * W
+      const g = ctx.createLinearGradient(fx, cy - H * 0.8, fx, cy + H * 0.8)
+      g.addColorStop(0, 'rgba(191, 248, 255, 0)')
+      g.addColorStop(0.5, 'rgba(191, 248, 255, 0.85)')
+      g.addColorStop(1, 'rgba(191, 248, 255, 0)')
+      ctx.fillStyle = g
+      ctx.fillRect(fx - 0.5, cy - H * 0.8, 1, H * 1.6)
+      const halo = ctx.createRadialGradient(fx, cy, 0, fx, cy, H * 0.9)
+      halo.addColorStop(0, 'rgba(34, 208, 208, 0.16)')
+      halo.addColorStop(1, 'rgba(34, 208, 208, 0)')
+      ctx.fillStyle = halo
+      ctx.fillRect(fx - H, cy - H, H * 2, H * 2)
     }
-    ctx.stroke()
     ctx.restore()
   }
 
-  // -- a single bright arc travelling the closed ring ----------------------
-  if (!calm && morph > 0.98) {
-    const a0 = -Math.PI / 2 + ((now / 1000) * 1.6) % (Math.PI * 2)
+  // Percent and task, riding the two ends of the bar until the move begins.
+  const labels = readouts * (1 - span(gather, 0, 0.25))
+  if (labels > 0.02) {
     ctx.save()
-    ctx.strokeStyle = INK
-    ctx.shadowColor = ACCENT
-    ctx.shadowBlur = 10
-    ctx.lineWidth = 1.2
-    ctx.globalAlpha = span(t, 0.8, 0.86)
-    ctx.beginPath()
-    ctx.arc(cx, cy, R, a0, a0 + 0.35)
-    ctx.stroke()
-    ctx.restore()
-  }
-
-  // -- the name, resolving in the ring -------------------------------------
-  const decode = span(t, 0.8, 0.94)
-  if (decode > 0) {
-    const size = clampN(unit * 0.026, 15, 24)
-    const track = size * 0.62
-    ctx.save()
-    ctx.font = `500 ${size}px ${SANS}`
-    ctx.textBaseline = 'middle'
+    ctx.globalAlpha = labels
+    ctx.font = `400 ${fs}px ${MONO}`
+    ctx.textBaseline = 'alphabetic'
     ctx.fillStyle = INK
-    let text = NAME
-    if (calm) {
-      ctx.globalAlpha = ease(decode)
-    } else {
-      const fixed = Math.floor(decode * (NAME.length + 1))
-      const seed = Math.floor(now / 55)
-      text = NAME.split('')
-        .map((c, i) =>
-          i < fixed ? c : GLYPHS[(seed * 31 + i * 17 + c.charCodeAt(0)) % GLYPHS.length],
-        )
-        .join('')
-      ctx.globalAlpha = 0.35 + 0.65 * ease(decode)
-    }
-    tracked(ctx, text, cx, cy - size * 0.2, track)
-
-    // A short rule and the state beneath it.
-    const sub = ease(span(t, 0.88, 0.98))
-    if (sub > 0) {
-      ctx.globalAlpha = sub
-      ctx.fillStyle = ACCENT_SOFT
-      ctx.fillRect(cx - 12, cy + size * 0.72, 24, 1)
-      ctx.font = `400 ${fs * 0.95}px ${MONO}`
-      ctx.fillStyle = DIM
-      tracked(ctx, 'SYSTEM BEREIT', cx, cy + size * 1.5, fs * 0.3)
-    }
-    ctx.restore()
-  }
-
-  // -- the hand-off glow: the reactor's inner light, arriving early --------
-  const glow = ease(span(t, 0.86, 1))
-  if (glow > 0) {
-    ctx.save()
-    ctx.globalAlpha = glow * 0.9
-    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R)
-    g.addColorStop(0, 'rgba(34, 208, 208, 0.10)')
-    g.addColorStop(0.7, 'rgba(34, 208, 208, 0.03)')
-    g.addColorStop(1, 'rgba(34, 208, 208, 0)')
-    ctx.fillStyle = g
-    ctx.beginPath()
-    ctx.arc(cx, cy, R, 0, Math.PI * 2)
-    ctx.fill()
+    ctx.textAlign = 'right'
+    ctx.fillText(String(Math.round(prog * 100)).padStart(3, '0'), bx + W, cy - H * 0.6 - fs * 0.6)
+    ctx.fillStyle = DIM
+    ctx.textAlign = 'left'
+    const task = TASKS[Math.min(TASKS.length - 1, Math.floor(prog * TASKS.length))]
+    ctx.fillText(prog >= 1 ? 'BEREIT' : task, bx, cy + H * 0.6 + fs * 1.6)
+    ctx.textAlign = 'right'
+    ctx.fillStyle = FAINT
+    ctx.fillText(`${net.nodes.length} NEURONEN · ${net.edges.length} SYNAPSEN`, bx + W, cy + H * 0.6 + fs * 1.6)
     ctx.restore()
   }
 }
@@ -450,6 +542,8 @@ export function Boot() {
      */
     const start = Date.now()
     const facts = readFacts()
+    const net = buildNet()
+    let first = true
     let raf = 0
     let stopped = false
 
@@ -475,7 +569,14 @@ export function Boot() {
       const now = Date.now()
       const ms = now - start
       const t = clamp01(ms / BOOT_MS)
-      draw(ctx, w, h, t, ms, now, facts, Boolean(reduced))
+      draw(ctx, w, h, t, ms, now, facts, net, Boolean(reduced))
+      // The canvas paints its own ground from here on (see draw), so the
+      // overlay's CSS background has to step aside for it to be able to thin
+      // out. Not before the first frame, or the live scene would show for one.
+      if (first && cv.parentElement) {
+        cv.parentElement.style.background = 'transparent'
+        first = false
+      }
 
       // Keeps running past t = 1: the clock readout and the travelling arc are
       // still live while the overlay waits to hand over. Stopped by cleanup.

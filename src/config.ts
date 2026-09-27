@@ -124,13 +124,13 @@ export const INTRO_LINE =
 /**
  * What the assistant looks like on screen.
  *
+ *   'sphere' — V1, the default: the reactor on its own, full size.
  *   'bust'   — V2: a figure drawn in contour lines of light, head and
  *              shoulders, with the reactor as the glowing core in its face.
- *   'sphere' — V1: the reactor on its own, full size. Lighter on the GPU, and
- *              the fallback if the figure ever runs slowly on a machine.
+ *              Kept, and one setting away: VITE_STAGE=bust.
  */
 export const STAGE: 'bust' | 'sphere' =
-  str(import.meta.env.VITE_STAGE) === 'sphere' ? 'sphere' : 'bust'
+  str(import.meta.env.VITE_STAGE) === 'bust' ? 'bust' : 'sphere'
 
 /**
  * Whether the start-up plays an intro film at all. Off by default: the

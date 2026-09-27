@@ -151,7 +151,6 @@ export function Hud() {
   const caption = useStore((s) => s.caption)
   const turns = useStore((s) => s.turns)
   const activeTool = useStore((s) => s.activeTool)
-  const connected = useStore((s) => s.connected)
   const error = useStore((s) => s.error)
   const level = useStore((s) => s.level)
   const voice = useStore((s) => s.voice)
@@ -206,24 +205,6 @@ export function Hud() {
           </span>
         </div>
       </header>
-
-      {/* Left rail: which integrations are live */}
-      {ui.chrome.systems && (
-        <aside className="rail rail-left">
-          <div className="rail-title">SYSTEME</div>
-          {connected.length === 0 && <div className="rail-item dim">nichts verbunden</div>}
-          {connected.map((c) => (
-            <div key={c} className="rail-item">
-              <span className="tick" />
-              {c}
-            </div>
-          ))}
-          <div className="rail-item">
-            <span className="tick" />
-            Web
-          </div>
-        </aside>
-      )}
 
       {/* Right rail: live telemetry, mostly for flavour */}
       <aside className="rail rail-right">

@@ -269,7 +269,6 @@ Rules that matter:
     feel it; put it in a panel when they need to look at it.`
 
 const chromeSchema = {
-  systems: looseBool('The SYSTEMS rail down the left — connected servers and status.'),
   transcript: looseBool('The running conversation log.'),
   tool_badge: looseBool('The active-tool readout under the reactor.'),
   suggestions: looseBool('The "try saying…" hint.'),
@@ -440,7 +439,6 @@ export function uiServer(emit) {
 
       tool('ui_chrome', CHROME_DESCRIPTION, chromeSchema, async (args) => {
         const chrome = {}
-        put(chrome, 'systems', toBool(args.systems))
         put(chrome, 'transcript', toBool(args.transcript))
         // Snake case at the tool boundary, camel case in the store — the model
         // writes the former far more reliably and the store cannot change.

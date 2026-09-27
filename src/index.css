@@ -137,7 +137,6 @@ body::after {
   gap: 9px;
   font-size: 10px;
 }
-.rail-left { left: 92px; }
 .rail-right { right: 92px; align-items: flex-end; }
 
 .rail-title {
@@ -915,7 +914,6 @@ kbd {
 
 @media (max-width: 900px) {
   .hud-top { padding: 0 46px; }
-  .rail-left { left: 30px; }
   .rail-right { right: 30px; }
   .log { width: 84vw; }
 }

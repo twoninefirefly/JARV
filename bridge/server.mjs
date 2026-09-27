@@ -470,6 +470,47 @@ function elevenKey() {
 const VOICE_ID = process.env.JARVIS_VOICE_ID ?? 'JBFqnCBsd6RMkjVDRZzb'
 
 /**
+ * Which ElevenLabs model speaks.
+ *
+ * Multilingual v2 by default, because it is the one that sounds like a person
+ * speaking German rather than a fast reader of it: the stress falls where it
+ * should and compound words hold together. It is slower to the first sound
+ * than Flash, by a few hundred milliseconds a sentence. Set
+ * JARVIS_TTS_MODEL=eleven_flash_v2_5 to take the speed back at the cost of
+ * that quality. If the configured model is refused (an account without
+ * access, a model retired upstream), the request is retried once on Flash, so
+ * a model problem costs quality for a sentence and never his voice.
+ */
+const TTS_MODEL = process.env.JARVIS_TTS_MODEL ?? 'eleven_multilingual_v2'
+const TTS_FALLBACK = 'eleven_flash_v2_5'
+let ttsFellBack = false
+
+/** Request body for one sentence on one model. */
+function ttsRequest(text, model) {
+  return {
+    text,
+    model_id: model,
+    // The 2.5-generation models (and v3) take an explicit language, which
+    // stops a short German line with an English-looking word in it from being
+    // read with English vowels. Multilingual v2 rejects the field, so it is
+    // only sent where it is understood.
+    ...(/v2_5|v3/.test(model) ? { language_code: 'de' } : {}),
+    voice_settings: {
+      // Steadier than it was (0.4): at the low end the delivery wanders in
+      // pitch from one sentence to the next, which reads as two different
+      // speakers taking turns.
+      stability: 0.5,
+      similarity_boost: 0.8,
+      // A little colour, not a performance.
+      style: 0.15,
+      use_speaker_boost: true,
+      // 1.05 rushed German, whose words are long already.
+      speed: 1.0,
+    },
+  }
+}
+
+/**
  * The language Scribe is told to expect, as ISO-639.
  *
  * Scribe detects the language on its own and is good at it, but detection is
@@ -862,28 +903,42 @@ const handleRequest = async (req, res) => {
       return res.end('no text')
     }
     try {
-      const upstream = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream` +
-          // 22kHz mono is half the bytes of 44kHz and indistinguishable through
-          // a laptop speaker; optimize_streaming_latency=3 trades a little
-          // prosody for a much earlier first byte.
-          `?output_format=mp3_22050_32&optimize_streaming_latency=3`,
-        {
-          method: 'POST',
-          headers: { 'xi-api-key': key, 'content-type': 'application/json' },
-          body: JSON.stringify({
-            text,
-            // Flash is the low-latency model — a conversation needs speed more
-            // than it needs the last few percent of quality.
-            model_id: 'eleven_flash_v2_5',
-            voice_settings: {
-              stability: 0.4,
-              similarity_boost: 0.75,
-              speed: 1.05,
-            },
-          }),
-        },
-      )
+      // Full-quality MP3. The old 32 kbit/s at 22 kHz was audibly dull on
+      // headphones — the "tinny" half of "the German voice is not good" — and
+      // saved nothing that mattered: a sentence is a few seconds of audio
+      // served to the same machine.
+      //
+      // No optimize_streaming_latency. Its higher settings switch off text
+      // normalisation, so "22 Grad" and "3,5 Prozent" were read out as
+      // strings of symbols rather than as German numbers.
+      const speak = (model) =>
+        fetch(
+          `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream` +
+            `?output_format=mp3_44100_128`,
+          {
+            method: 'POST',
+            headers: { 'xi-api-key': key, 'content-type': 'application/json' },
+            body: JSON.stringify(ttsRequest(text, model)),
+          },
+        )
+      // Once refused, stop asking: retrying the refused model first on every
+      // sentence would double the wait before each one. Only a refusal ABOUT
+      // the request (400/404/422) counts — a rate limit or a bad key would
+      // fail on Flash just the same, and must not downgrade the voice for good.
+      let upstream = await speak(ttsFellBack ? TTS_FALLBACK : TTS_MODEL)
+      if (
+        !upstream.ok &&
+        !ttsFellBack &&
+        TTS_MODEL !== TTS_FALLBACK &&
+        [400, 404, 422].includes(upstream.status)
+      ) {
+        ttsFellBack = true
+        console.warn(
+          `[jarvis] voice model ${TTS_MODEL} refused (${upstream.status}: ` +
+            `${(await upstream.text()).slice(0, 160)}) — using ${TTS_FALLBACK}`,
+        )
+        upstream = await speak(TTS_FALLBACK)
+      }
       if (!upstream.ok) {
         res.writeHead(upstream.status, cors)
         return res.end(await upstream.text())
@@ -1039,6 +1094,7 @@ console.log(
   `[jarvis] voice ${VOICE_ID}` +
     (process.env.JARVIS_VOICE_ID ? '' : ' (default — set JARVIS_VOICE_ID to change it)'),
 )
+console.log(`[jarvis] voice model ${TTS_MODEL}`)
 console.log(`[jarvis] model ${MODEL} · effort ${EFFORT}`)
 console.log(
   `[jarvis] writes ${ALLOW_WRITES ? 'ENABLED' : 'disabled'}` +

@@ -45,11 +45,20 @@ export function Ignition({ onStart }: { onStart: () => void }) {
         finishing — AnimatePresence waits for a leaving subtree's animations,
         and an infinite one never ends.
       */}
-      <span className="ignition-ring" />
-      <span className="ignition-label">
-        <span className="ignition-word">AKTIVIEREN</span>
-        <span className="ignition-sub">klicken oder klatschen zum Hochfahren</span>
+      {/* The same frame, header and colour the start-up sequence opens with,
+          so pressing the button changes what happens on screen and not what
+          the screen is. */}
+      <span className="ignition-corner ignition-tl" />
+      <span className="ignition-corner ignition-tr" />
+      <span className="ignition-corner ignition-bl" />
+      <span className="ignition-corner ignition-br" />
+      <span className="ignition-head">
+        <span className="ignition-name">GEHIRN</span>
+        <span className="ignition-state">BEREIT ZUM START</span>
       </span>
+      <span className="ignition-ring" />
+      <span className="ignition-word">AKTIVIEREN</span>
+      <span className="ignition-sub">Klicken, Leertaste oder Klatschen</span>
     </button>
   )
 }

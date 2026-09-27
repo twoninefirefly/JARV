@@ -1,26 +1,30 @@
 import { useEffect, useRef } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useStore } from '../store'
+import { BACKEND, LOCALE } from '../config'
+import { caps, capabilitiesProbed } from '../lib/capabilities'
 
 /**
  * The start-up sequence.
  *
- * One continuous move rather than four chapters. The percent counter is the
- * spine: it is on screen from the first frame to the last, and everything else
- * is something happening to it. The loading bar stops being a bar and becomes
- * a waveform; the waveform rolls into a ring; the counter travels into that
- * ring, shrinks, reaches a hundred, and then lets go. What is left standing in
- * the ring is the mark; END_MARK below decides which one.
+ * Built to read as a real system starting, not as a title card. That is a
+ * question of scale and restraint more than of content: small type, hairlines,
+ * a lot of black, one colour, and nothing that shouts. The previous sequence
+ * was a counter a third of the screen tall; this one is a line and a column of
+ * small print, and it looks more expensive for it.
  *
- * The last frame is a circle at rest, in the same place and at the same size as
- * the live reactor behind this overlay. That is the whole reason the sequence
- * ends where it does: the hand-off is a cross-fade between two drawings of the
- * same object, so there is nothing to see at the cut.
+ * The log is true. It reads the machine it is running on — cores, memory,
+ * display, language, which voice engine the bridge reported — so the numbers on
+ * screen are this Mac's numbers. A boot log that invents its figures is set
+ * dressing; one that states real ones is an instrument.
  *
- * Canvas rather than SVG and CSS. The previous sequence was hand-authored
- * shapes because it was made of discrete parts; this one is a curve that is
- * continuously re-evaluated, which is what canvas is for. Still no file to
- * load, still nothing that can arrive late and stall the first beat.
+ * One move carries it: a hairline loads, then bends into a circle of exactly
+ * the size and position of the live reactor behind the overlay, picks up a
+ * bezel of fine ticks, and the name resolves inside it. The hand-off is then a
+ * cross-fade between two drawings of the same ring.
+ *
+ * Canvas, drawn at the display's full pixel density, on a wall clock (see the
+ * effect below for why not a frame count).
  */
 
 /**
@@ -43,35 +47,35 @@ export const BOOT_MS = 5500
  */
 export const BOOT_EXIT_MS = 800
 
-const LOG = [
-  'EINBINDEN F:/BACKUP/GHOST (VERBORGEN)',
-  'SYSTEMSPEICHER ERWEITERN ...... OK',
-  'TELEMETRIE / KOMP-ABGLEICH',
-  'SYSTEMKONFIGURATION ENTFERNEN',
-  'PRUEFSUMME .................... OK',
-  'SYSTEMWERKZEUG STARTEN',
-]
+/** The name, as it resolves in the ring. */
+const NAME = 'GEHIRN'
+
+const MONO = "'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace"
+const SANS = "Inter, 'Helvetica Neue', system-ui, sans-serif"
+
+// One accent — the reactor's own boot teal, a touch brighter so a 1px line
+// holds its colour — and three greys. Anything more is decoration.
+const ACCENT = '#22d0d0'
+const ACCENT_SOFT = 'rgba(34, 208, 208, 0.35)'
+const INK = 'rgba(220, 246, 248, 0.92)'
+const DIM = 'rgba(150, 186, 192, 0.62)'
+const FAINT = 'rgba(150, 186, 192, 0.22)'
+
+/** Glyphs the name decodes through. Capitals, digits and rules only. */
+const GLYPHS = 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789/\\<>=+#'
 
 /**
- * What stands in the ring once the counter reaches a hundred.
- *
- *   'wortmarke' — SYSTEM ONLINE, set in two lines across the ring. Reads
- *     instantly, in any language, and needs no artwork that does not exist yet.
- *
- *   'monogramm' — 2, the lily, 9, as one figure. The stronger ending, because
- *     the counter's own digits are what stay behind: a hundred becomes
- *     twenty-nine in the same face in the same place, so it reads as a
- *     transformation rather than a cut to a logo.
- *
- * One word decides it, and nothing else in the file cares which.
+ * The ring's radius as a fraction of the shorter viewport side. Matched to the
+ * reactor (Core.tsx draws it at 0.60 of that side across, with a wandering
+ * edge), because the whole hand-off depends on the two rings coinciding.
  */
-const END_MARK: 'wortmarke' | 'monogramm' = 'monogramm'
+const RING = 0.297
 
-const CYAN = '#00e5ff'
-const HOT = '#dffbff'
-const DIM = 'rgba(109,148,164,0.85)'
+/** What the loading line reports it is doing, in order. */
+const TASKS = ['KERN', 'SPEICHER', 'SPRACHE', 'STIMME', 'WERKZEUGE', 'VERBINDUNG', 'KALIBRIERUNG']
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
+const clampN = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v)
 
 /** Progress of a beat that runs from `a` to `b` on the master clock. */
 const span = (t: number, a: number, b: number) => clamp01((t - a) / (b - a))
@@ -84,258 +88,342 @@ const easeIO = (t: number) => {
 }
 
 /**
- * The mark: a lily crest over the number.
- *
- * The first attempt put the digits where a fleur-de-lis keeps its outer
- * petals, on the theory that one figure beats three objects. Drawn, it did not
- * survive: the digits are far too loud to read as petals, so the lily shrank to
- * a sliver between them and the crest disappeared. The lesson is that the
- * numerals cannot do two jobs at once.
- *
- * So the lily sits above them instead, as a crest — lance, two petals curling
- * away from it, a short band closing the group — and the number stands on its
- * own base rule beneath. Read top to bottom it is a crest and a number, which
- * is what a coat of arms is, rather than a number wearing a leaf.
- *
- * Geometry is in units of `s`, the mark's full height, so it holds at any size.
+ * Loading that looks like work rather than like a tween: a quick run, a
+ * pause while something heavier is read, a jump, a creep, done. A perfectly
+ * even bar is the tell of a fake one.
  */
-function mark(ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) {
-  const crestFoot = cy - s * 0.12
-  const baseline = cy + s * 0.3
-  const rule = cy + s * 0.42
-
-  // The lance: a full leaf with a waist, not a sliver.
-  ctx.beginPath()
-  ctx.moveTo(cx, cy - s * 0.52)
-  ctx.bezierCurveTo(cx + s * 0.075, cy - s * 0.38, cx + s * 0.06, cy - s * 0.22, cx, crestFoot)
-  ctx.bezierCurveTo(cx - s * 0.06, cy - s * 0.22, cx - s * 0.075, cy - s * 0.38, cx, cy - s * 0.52)
-  ctx.stroke()
-
-  // The two petals, curling out and back down to the crest's foot. Drawn as
-  // closed shapes rather than open arcs — an open curve at this size reads as
-  // a scratch.
-  for (const dir of [-1, 1]) {
-    ctx.beginPath()
-    ctx.moveTo(cx + dir * s * 0.02, crestFoot)
-    ctx.bezierCurveTo(
-      cx + dir * s * 0.07, cy - s * 0.38,
-      cx + dir * s * 0.23, cy - s * 0.4,
-      cx + dir * s * 0.2, cy - s * 0.22,
-    )
-    ctx.bezierCurveTo(
-      cx + dir * s * 0.19, cy - s * 0.15,
-      cx + dir * s * 0.12, cy - s * 0.12,
-      cx + dir * s * 0.02, crestFoot,
-    )
-    ctx.stroke()
+function load(x: number): number {
+  const k: [number, number][] = [
+    [0, 0], [0.18, 0.34], [0.34, 0.37], [0.46, 0.71], [0.78, 0.8], [1, 1],
+  ]
+  for (let i = 1; i < k.length; i++) {
+    const [x1, y1] = k[i]
+    const [x0, y0] = k[i - 1]
+    if (x <= x1) return y0 + (y1 - y0) * ease((x - x0) / (x1 - x0))
   }
+  return 1
+}
 
-  // The band that closes the crest, with a filled seed at its centre — the one
-  // solid element, and what holds the middle together when the hairlines merge
-  // at small sizes.
-  ctx.beginPath()
-  ctx.moveTo(cx - s * 0.19, crestFoot)
-  ctx.lineTo(cx + s * 0.19, crestFoot)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.arc(cx, crestFoot - s * 0.055, s * 0.032, 0, Math.PI * 2)
-  ctx.fill()
+type Fact = { key: string; value: () => string | null }
 
-  // The number, standing on its own rule.
-  ctx.save()
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'alphabetic'
-  ctx.font = `700 ${s * 0.46}px 'Chakra Petch', system-ui, sans-serif`
-  ctx.fillText('29', cx, baseline)
-  ctx.restore()
+/**
+ * The log lines, read from the machine at the moment the sequence starts.
+ *
+ * `null` means "not known yet" and is drawn as a pending ellipsis — the voice
+ * engine is only known once the bridge has answered the capability probe,
+ * which happens during the sequence, so that line genuinely resolves late.
+ */
+function readFacts(): Fact[] {
+  const nav = navigator as Navigator & { deviceMemory?: number }
+  const dpr = window.devicePixelRatio || 1
+  const cores = nav.hardwareConcurrency
+  // Chrome caps the reported figure at 8 for privacy, so 8 means "8 or more".
+  const mem = nav.deviceMemory
+  return [
+    { key: 'PROZESSOR', value: () => (cores ? `${cores} KERNE` : 'BEREIT') },
+    { key: 'SPEICHER', value: () => (mem ? (mem >= 8 ? '8+ GB' : `${mem} GB`) : 'BEREIT') },
+    {
+      key: 'ANZEIGE',
+      value: () => `${Math.round(screen.width * dpr)} × ${Math.round(screen.height * dpr)}`,
+    },
+    { key: 'SPRACHE', value: () => LOCALE.toUpperCase() },
+    { key: 'EINGABE', value: () => 'MIKROFON' },
+    {
+      key: 'STIMME',
+      value: () => (capabilitiesProbed() ? (caps().tts ? 'ELEVENLABS' : 'SYSTEM') : null),
+    },
+    { key: 'VERBINDUNG', value: () => (BACKEND === 'bridge' ? 'BRIDGE :8787' : 'DIREKT') },
+  ]
+}
 
-  // The base rule, turned down at both ends so it closes rather than trails.
-  ctx.beginPath()
-  ctx.moveTo(cx - s * 0.34, rule - s * 0.05)
-  ctx.lineTo(cx - s * 0.34, rule)
-  ctx.lineTo(cx + s * 0.34, rule)
-  ctx.lineTo(cx + s * 0.34, rule - s * 0.05)
-  ctx.stroke()
+/** Text with tracking, centred on x without the trailing gap letterSpacing adds. */
+function tracked(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, track: number) {
+  ctx.letterSpacing = `${track}px`
+  const w = ctx.measureText(text).width - track
+  ctx.textAlign = 'left'
+  ctx.fillText(text, x - w / 2, y)
+  ctx.letterSpacing = '0px'
 }
 
 /**
- * One frame, at normalised time `t` from 0 to 1.
+ * One frame, at normalised time `t` from 0 to 1. `ms` is real elapsed time,
+ * for the clock readout; `now` seeds the decode noise.
  *
- * `calm` is prefers-reduced-motion. It does NOT mean "show the last frame and
- * be done": the sequence is where the counter, the log and the loading bar
- * live, so skipping it does not calm anything down, it deletes the content.
- * What it removes is the restlessness — the ripple travelling along the
- * waveform and the wobble in the ring — while the structure still arrives in
- * order and at the same pace.
+ * `calm` is prefers-reduced-motion. It removes restlessness — the decode noise
+ * and the travelling highlight — but never content: the log, the line and the
+ * name still arrive in order and at the same pace.
  */
 function draw(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
   t: number,
+  ms: number,
+  now: number,
+  facts: Fact[],
   calm: boolean,
 ) {
   const cx = w / 2
   const cy = h / 2
   const unit = Math.min(w, h)
-  const R = unit * 0.29
+  const R = unit * RING
 
-  const climb = easeIO(span(t, 0.02, 0.75))
-  const pct = Math.min(100, Math.round(climb * 100))
-  const toCentre = ease(span(t, 0.5, 0.8))
-  const dissolve = ease(span(t, 0.74, 0.86))
-  const markIn = ease(span(t, 0.84, 1))
+  // Small type at every size. Real system text does not grow with the window.
+  const fs = clampN(unit * 0.0145, 10, 12)
+  const lh = fs * 1.75
+  const inset = 92 // the HUD header's own side margin, so the name does not jump at the hand-off
 
-  const wave = ease(span(t, 0.2, 0.55))
-  const wrap = easeIO(span(t, 0.5, 0.78))
-  const settle = ease(span(t, 0.74, 0.96))
-  const halfLine = Math.min(w * 0.36, R * 3)
-  const amp = unit * (calm ? 0.05 : 0.085) * wave * (1 - settle * 0.88)
+  const readouts = 1 - ease(span(t, 0.66, 0.78))
 
-  // -- the line: loading bar, then waveform, then ring ----------------------
-  ctx.save()
-  ctx.strokeStyle = wrap > 0.55 ? HOT : CYAN
-  ctx.shadowColor = CYAN
-  ctx.shadowBlur = 13
-  ctx.lineWidth = 1.6
-  ctx.beginPath()
-  const STEPS = 220
-  for (let i = 0; i <= STEPS; i++) {
-    const u = i / STEPS
-    // The envelope pins both ends flat, which is what lets the curve close on
-    // itself without a kink once it wraps.
-    const env = Math.sin(u * Math.PI)
-    // Frozen phase when calm: the same curve, no longer travelling.
-    const p1 = calm ? 0 : t * 7
-    const p2 = calm ? 0 : t * 4
-    const wv =
-      Math.sin(u * Math.PI * 9 - p1) * 0.6 + Math.sin(u * Math.PI * 17 + p2) * 0.4
-    const a = amp * env * wv
-
-    const lx = cx + (u - 0.5) * 2 * halfLine
-    const ly = cy + unit * 0.11 + a
-    const ang = -Math.PI / 2 + u * Math.PI * 2
-    const rr = R + a
-    const kx = cx + Math.cos(ang) * rr
-    const ky = cy + Math.sin(ang) * rr
-
-    const x = lx + (kx - lx) * wrap
-    const y = ly + (ky - ly) * wrap
-    if (i === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  }
-  ctx.stroke()
-  ctx.restore()
-
-  // -- the segment cells, the literal "loading" read ------------------------
-  const cells = (1 - wrap) * (1 - span(t, 0.42, 0.58) * 0.4)
-  if (cells > 0.02) {
+  // -- corner brackets, matching the HUD's so nothing moves at the hand-off --
+  const frame = ease(span(t, 0, 0.1))
+  if (frame > 0) {
     ctx.save()
-    ctx.globalAlpha = cells
-    const N = 28
-    const gap = (halfLine * 2) / N
-    for (let i = 0; i < N; i++) {
-      const on = i / N < climb
-      ctx.fillStyle = on ? CYAN : 'rgba(0,229,255,0.14)'
-      ctx.shadowBlur = on ? 8 : 0
-      ctx.shadowColor = CYAN
-      ctx.fillRect(cx - halfLine + i * gap, cy + unit * 0.155, gap * 0.62, unit * 0.018)
-    }
+    ctx.strokeStyle = ACCENT_SOFT
+    ctx.lineWidth = 1
+    ctx.globalAlpha = frame
+    const c = 46 * frame
+    const o = 26.5
+    ctx.beginPath()
+    ctx.moveTo(o, o + c); ctx.lineTo(o, o); ctx.lineTo(o + c, o)
+    ctx.moveTo(w - o - c, o); ctx.lineTo(w - o, o); ctx.lineTo(w - o, o + c)
+    ctx.moveTo(o, h - o - c); ctx.lineTo(o, h - o); ctx.lineTo(o + c, h - o)
+    ctx.moveTo(w - o - c, h - o); ctx.lineTo(w - o, h - o); ctx.lineTo(w - o, h - o - c)
+    ctx.stroke()
     ctx.restore()
   }
 
-  // -- the system log, left rail --------------------------------------------
-  const logAlpha = 1 - ease(span(t, 0.55, 0.72))
-  if (logAlpha > 0.02) {
+  // -- header: what is starting, and a clock that is actually running -------
+  const head = ease(span(t, 0.02, 0.1)) * readouts
+  if (head > 0) {
     ctx.save()
-    ctx.globalAlpha = logAlpha * 0.7
+    ctx.globalAlpha = head
+    ctx.textBaseline = 'alphabetic'
+    ctx.font = `500 ${fs}px ${SANS}`
+    ctx.fillStyle = INK
+    ctx.letterSpacing = `${fs * 0.42}px`
+    ctx.fillText(NAME, inset, 44 + fs)
     ctx.fillStyle = DIM
-    const ls = Math.max(9, unit * 0.03)
-    ctx.font = `400 ${ls}px 'IBM Plex Mono', ui-monospace, monospace`
-    const shown = Math.floor(span(t, 0.03, 0.55) * LOG.length + 0.001)
-    for (let i = 0; i < Math.min(shown, LOG.length); i++) {
-      ctx.fillText(`\u203a  ${LOG[i]}`, unit * 0.06, unit * 0.12 + i * ls * 1.7)
+    ctx.font = `400 ${fs}px ${MONO}`
+    ctx.letterSpacing = `${fs * 0.12}px`
+    ctx.fillText('SYSTEMSTART', inset, 44 + fs + lh)
+    ctx.textAlign = 'right'
+    ctx.fillText(`T+${(ms / 1000).toFixed(3)}`, w - inset, 44 + fs)
+    ctx.fillStyle = FAINT
+    ctx.fillText('BUILD 1.0', w - inset, 44 + fs + lh)
+    ctx.letterSpacing = '0px'
+    ctx.restore()
+  }
+
+  // -- the log: real figures, resolving one line at a time -----------------
+  if (readouts > 0) {
+    ctx.save()
+    ctx.globalAlpha = readouts
+    ctx.font = `400 ${fs}px ${MONO}`
+    ctx.textBaseline = 'alphabetic'
+    const colW = Math.min(fs * 30, w * 0.34)
+    const top = h - inset - (facts.length - 1) * lh - 10
+    facts.forEach((f, i) => {
+      const at = 0.08 + i * 0.062
+      const seen = span(t, at, at + 0.012)
+      if (seen <= 0) return
+      const y = top + i * lh
+      ctx.globalAlpha = readouts * seen
+      ctx.fillStyle = FAINT
+      ctx.textAlign = 'left'
+      ctx.fillText(String(i + 1).padStart(2, '0'), inset, y)
+      ctx.fillStyle = DIM
+      ctx.fillText(f.key, inset + fs * 3, y)
+      // Dotted leader between key and value, like a real report.
+      const leaderFrom = inset + fs * 3 + ctx.measureText(f.key).width + fs * 0.8
+      const value = f.value()
+      const done = value !== null && t > at + 0.05
+      const shown = done ? value : '…'
+      ctx.textAlign = 'right'
+      const status = done ? 'OK' : ''
+      const statusW = fs * 2.6
+      ctx.fillStyle = done ? INK : DIM
+      ctx.fillText(shown, inset + colW - statusW, y)
+      const valueW = ctx.measureText(shown).width
+      ctx.fillStyle = FAINT
+      const leaderTo = inset + colW - statusW - valueW - fs * 0.8
+      for (let x = leaderFrom; x < leaderTo; x += fs * 0.6) ctx.fillRect(x, y - fs * 0.28, 1, 1)
+      if (status) {
+        ctx.fillStyle = ACCENT
+        ctx.fillText(status, inset + colW, y)
+      }
+    })
+    ctx.restore()
+  }
+
+  // -- the line: loads, then bends into the ring ---------------------------
+  const grow = ease(span(t, 0.04, 0.16))
+  const prog = load(span(t, 0.1, 0.62))
+  const morph = easeIO(span(t, 0.62, 0.8))
+  const L = unit * 0.2 * grow
+
+  if (grow > 0) {
+    const STEPS = 240
+    /**
+     * The line bends; it does not get tweened into a circle.
+     *
+     * Interpolating each point from its place on the line to its place on the
+     * ring — the obvious way — passes through a pinched teardrop with the two
+     * ends crossing over each other, because a short line and a long circle do
+     * not share a parameterisation. So the curve is an arc throughout: its
+     * curvature rises from nothing to 1/R while its length grows to the full
+     * circumference, and its midpoint slides down so that at the end the
+     * arc's own centre is the screen's. It closes, at the top, into the ring.
+     */
+    const k = morph / R
+    const s = 2 * L + (2 * Math.PI * R - 2 * L) * morph
+    const my = cy + R * morph
+    const point = (u: number): [number, number] => {
+      const d = (u - 0.5) * s
+      if (k < 1e-5) return [cx + d, cy]
+      const rho = 1 / k
+      const th = d / rho
+      return [cx + rho * Math.sin(th), my - rho + rho * Math.cos(th)]
     }
-    ctx.restore()
-  }
-
-  // -- the counter ----------------------------------------------------------
-  const bigSize = unit * (0.3 - toCentre * 0.16)
-  const ny = cy + (1 - toCentre) * -unit * 0.05
-  if (dissolve < 1) {
-    ctx.save()
-    ctx.globalAlpha = 1 - dissolve
-    ctx.fillStyle = HOT
-    ctx.shadowColor = CYAN
-    ctx.shadowBlur = 20
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.font = `700 ${bigSize}px 'Chakra Petch', system-ui, sans-serif`
-    const label = String(pct)
-    ctx.fillText(label, cx, ny)
-    // Hang the sign off the measured right edge rather than a fixed offset.
-    // A guessed offset can only be right for one number of digits, and the
-    // counter passes through one, two and three on its way up — at two it sat
-    // on top of the second digit for most of the sequence.
-    const half = ctx.measureText(label).width / 2
-    ctx.globalAlpha = (1 - dissolve) * 0.55
-    ctx.font = `600 ${bigSize * 0.28}px 'Chakra Petch', system-ui, sans-serif`
-    ctx.textAlign = 'left'
-    ctx.fillText('%', cx + half + bigSize * 0.06, ny + bigSize * 0.26)
-    ctx.restore()
-  }
-
-  // -- the mark, arriving where the digits just were ------------------------
-  if (markIn > 0) {
-    const ms = unit * 0.155
-    ctx.save()
-    ctx.globalAlpha = markIn
-    ctx.strokeStyle = HOT
-    ctx.fillStyle = HOT
-    ctx.shadowColor = CYAN
-    ctx.shadowBlur = 16
-    ctx.lineWidth = 1.5
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-
-    if (END_MARK === 'monogramm') {
-      mark(ctx, cx, cy, ms * (0.9 + markIn * 0.1) * 1.55)
-    } else {
-      // Two lines rather than one: thirteen letter-spaced characters do not fit
-      // across a circle, and stacked six-and-six sits in it as a lockup.
-      const ls = unit * 0.055
-      ctx.font = `600 ${ls}px 'Chakra Petch', system-ui, sans-serif`
-      // Chrome and Edge honour this; anywhere else it is ignored rather than
-      // failing, and the words simply set tighter.
-      ctx.letterSpacing = `${ls * 0.26}px`
-      ctx.fillText('SYSTEM', cx, cy - ls * 0.72)
-      ctx.fillText('ONLINE', cx, cy + ls * 0.72)
-      ctx.letterSpacing = '0px'
-
-      // A hairline between the two words, short of them on both sides.
-      ctx.globalAlpha = markIn * 0.5
-      ctx.lineWidth = 1
+    const path = (u0: number, u1: number) => {
       ctx.beginPath()
-      ctx.moveTo(cx - ls * 1.9, cy)
-      ctx.lineTo(cx + ls * 1.9, cy)
-      ctx.stroke()
+      for (let i = 0; i <= STEPS; i++) {
+        const u = u0 + ((u1 - u0) * i) / STEPS
+        const [x, y] = point(u)
+        if (i === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      }
+    }
+    ctx.save()
+    ctx.lineWidth = 1
+    // The unloaded track, then the loaded part over it. Once the line has
+    // closed into the ring it is all loaded, and the track has gone.
+    ctx.strokeStyle = FAINT
+    path(0, 1)
+    ctx.stroke()
+    ctx.strokeStyle = ACCENT
+    ctx.shadowColor = ACCENT
+    ctx.shadowBlur = 6
+    path(0, Math.max(prog, morph))
+    ctx.stroke()
+    ctx.restore()
+
+    // Percent and task, riding the two ends of the line until it bends.
+    const flat = 1 - span(morph, 0, 0.25)
+    if (flat > 0.02 && readouts > 0) {
+      ctx.save()
+      ctx.globalAlpha = flat * readouts
+      ctx.font = `400 ${fs}px ${MONO}`
+      ctx.textBaseline = 'alphabetic'
+      ctx.fillStyle = INK
+      ctx.textAlign = 'right'
+      ctx.fillText(String(Math.round(prog * 100)).padStart(3, '0'), cx + L, cy - fs)
+      ctx.fillStyle = DIM
+      ctx.textAlign = 'left'
+      const task = TASKS[Math.min(TASKS.length - 1, Math.floor(prog * TASKS.length))]
+      ctx.fillText(prog >= 1 ? 'BEREIT' : task, cx - L, cy + fs * 2)
+      ctx.restore()
+    }
+  }
+
+  // -- bezel ticks, revealed clockwise once the ring has closed -------------
+  // Only once the ring has closed: ticks round a circle that is not there yet
+  // hang in the air.
+  const bezel = ease(span(t, 0.79, 0.92))
+  if (bezel > 0) {
+    ctx.save()
+    ctx.strokeStyle = ACCENT_SOFT
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    const N = 120
+    for (let i = 0; i < N; i++) {
+      if (i / N > bezel) break
+      const a = -Math.PI / 2 + (i / N) * Math.PI * 2
+      const long = i % 10 === 0
+      const r0 = R + 9
+      const r1 = r0 + (long ? 7 : 3)
+      ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0)
+      ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1)
+    }
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  // -- a single bright arc travelling the closed ring ----------------------
+  if (!calm && morph > 0.98) {
+    const a0 = -Math.PI / 2 + ((now / 1000) * 1.6) % (Math.PI * 2)
+    ctx.save()
+    ctx.strokeStyle = INK
+    ctx.shadowColor = ACCENT
+    ctx.shadowBlur = 10
+    ctx.lineWidth = 1.2
+    ctx.globalAlpha = span(t, 0.8, 0.86)
+    ctx.beginPath()
+    ctx.arc(cx, cy, R, a0, a0 + 0.35)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  // -- the name, resolving in the ring -------------------------------------
+  const decode = span(t, 0.8, 0.94)
+  if (decode > 0) {
+    const size = clampN(unit * 0.026, 15, 24)
+    const track = size * 0.62
+    ctx.save()
+    ctx.font = `500 ${size}px ${SANS}`
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = INK
+    let text = NAME
+    if (calm) {
+      ctx.globalAlpha = ease(decode)
+    } else {
+      const fixed = Math.floor(decode * (NAME.length + 1))
+      const seed = Math.floor(now / 55)
+      text = NAME.split('')
+        .map((c, i) =>
+          i < fixed ? c : GLYPHS[(seed * 31 + i * 17 + c.charCodeAt(0)) % GLYPHS.length],
+        )
+        .join('')
+      ctx.globalAlpha = 0.35 + 0.65 * ease(decode)
+    }
+    tracked(ctx, text, cx, cy - size * 0.2, track)
+
+    // A short rule and the state beneath it.
+    const sub = ease(span(t, 0.88, 0.98))
+    if (sub > 0) {
+      ctx.globalAlpha = sub
+      ctx.fillStyle = ACCENT_SOFT
+      ctx.fillRect(cx - 12, cy + size * 0.72, 24, 1)
+      ctx.font = `400 ${fs * 0.95}px ${MONO}`
+      ctx.fillStyle = DIM
+      tracked(ctx, 'SYSTEM BEREIT', cx, cy + size * 1.5, fs * 0.3)
     }
     ctx.restore()
   }
 
-  // -- the hand-off glow ----------------------------------------------------
-  if (settle > 0) {
+  // -- the hand-off glow: the reactor's inner light, arriving early --------
+  const glow = ease(span(t, 0.86, 1))
+  if (glow > 0) {
     ctx.save()
-    ctx.globalAlpha = settle
+    ctx.globalAlpha = glow * 0.9
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R)
-    g.addColorStop(0, 'rgba(0,229,255,0.22)')
-    g.addColorStop(1, 'rgba(0,229,255,0)')
+    g.addColorStop(0, 'rgba(34, 208, 208, 0.10)')
+    g.addColorStop(0.7, 'rgba(34, 208, 208, 0.03)')
+    g.addColorStop(1, 'rgba(34, 208, 208, 0)')
     ctx.fillStyle = g
     ctx.beginPath()
     ctx.arc(cx, cy, R, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
   }
+}
+
+// Ask for the faces now, while the ignition screen is up, so the first frame
+// of the sequence is set in them rather than in a fallback that swaps a
+// second later.
+if (typeof document !== 'undefined' && document.fonts) {
+  void document.fonts.load(`500 16px Inter`).catch(() => {})
+  void document.fonts.load(`400 11px 'JetBrains Mono'`).catch(() => {})
 }
 
 export function Boot() {
@@ -361,13 +449,16 @@ export function Boot() {
      * back at four seconds and you see four seconds.
      */
     const start = Date.now()
+    const facts = readFacts()
     let raf = 0
     let stopped = false
 
     const frame = () => {
       if (stopped) return
 
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      // Full density, up to 3x. Capped at 2 it was soft on exactly the
+      // displays where hairlines and small type are the whole look.
+      const dpr = Math.min(window.devicePixelRatio || 1, 3)
       const w = cv.clientWidth
       const h = cv.clientHeight
       const pw = Math.max(1, Math.round(w * dpr))
@@ -381,12 +472,14 @@ export function Boot() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, w, h)
 
-      const t = clamp01((Date.now() - start) / BOOT_MS)
-      draw(ctx, w, h, t, Boolean(reduced))
+      const now = Date.now()
+      const ms = now - start
+      const t = clamp01(ms / BOOT_MS)
+      draw(ctx, w, h, t, ms, now, facts, Boolean(reduced))
 
-      // Hold the last frame rather than spinning: it is the hand-off, and the
-      // overlay is about to cross-fade out over it.
-      if (t < 1) raf = requestAnimationFrame(frame)
+      // Keeps running past t = 1: the clock readout and the travelling arc are
+      // still live while the overlay waits to hand over. Stopped by cleanup.
+      raf = requestAnimationFrame(frame)
     }
 
     frame()
@@ -414,7 +507,7 @@ export function Boot() {
           key="boot"
           className="boot"
           initial={{ opacity: 1 }}
-          exit={{ opacity: 0, filter: 'blur(10px)' }}
+          exit={{ opacity: 0, filter: 'blur(4px)' }}
           transition={{ duration: BOOT_EXIT_MS / 1000 }}
         >
           <canvas ref={canvas} className="boot-canvas" />

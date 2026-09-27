@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600&family=JetBrains+Mono:wght@300;400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap');
 
 :root {
   /* The interface cyan. `--accent` is re-declared per phase and per panel;
@@ -84,12 +84,16 @@ body::after {
   padding: 0 92px;
 }
 
+/* Set exactly as the start-up sequence and the ignition screen set it — same
+   face, size and tracking in the same place — so the name stays put while
+   everything else hands over around it. */
 .brand-mark {
   display: block;
-  font-size: 19px;
-  font-weight: 600;
+  font-family: Inter, 'Helvetica Neue', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
   letter-spacing: 0.42em;
-  text-shadow: 0 0 22px color-mix(in srgb, var(--accent) 70%, transparent);
+  color: rgba(220, 246, 248, 0.92);
 }
 
 .brand-sub {
@@ -802,45 +806,80 @@ kbd {
   z-index: 7;
   display: grid;
   place-items: center;
-  background: radial-gradient(ellipse at center, #04121c 0%, #01060c 70%);
+  /* Flat, and the boot's own ground: a gradient here jumped to flat black
+     the instant the sequence took over. */
+  background: var(--bg);
   border: 0;
   cursor: pointer;
-  font-family: inherit;
-  color: #4fd6ff;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  color: #22d0d0;
+}
+
+/* Everything is stacked in the one grid cell and offset from the centre, so
+   the ring and its word stay exactly centred whatever the text widths are. */
+.ignition > * { grid-area: 1 / 1; }
+
+.ignition-corner {
+  position: fixed;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(34, 208, 208, 0.35);
+}
+.ignition-tl { top: 26px; left: 26px; border-right: 0; border-bottom: 0; }
+.ignition-tr { top: 26px; right: 26px; border-left: 0; border-bottom: 0; }
+.ignition-bl { bottom: 26px; left: 26px; border-right: 0; border-top: 0; }
+.ignition-br { bottom: 26px; right: 26px; border-left: 0; border-top: 0; }
+
+.ignition-head {
+  position: fixed;
+  top: 44px;
+  left: 92px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 11px;
+}
+.ignition-name {
+  font-family: Inter, 'Helvetica Neue', system-ui, sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.42em;
+  color: rgba(220, 246, 248, 0.92);
+}
+.ignition-state {
+  letter-spacing: 0.12em;
+  color: rgba(150, 186, 192, 0.62);
 }
 
 .ignition-ring {
-  position: absolute;
-  width: 240px;
-  height: 240px;
-  border: 1px solid rgba(79, 214, 255, 0.28);
-  border-top-color: rgba(79, 214, 255, 0.9);
+  width: 200px;
+  height: 200px;
+  border: 1px solid rgba(34, 208, 208, 0.22);
+  border-top-color: rgba(34, 208, 208, 0.9);
   border-radius: 50%;
 }
 
-.ignition-label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
 .ignition-word {
-  font-size: 15px;
-  letter-spacing: 0.52em;
-  text-indent: 0.52em; /* balance the trailing letter-space */
-  text-shadow: 0 0 30px rgba(79, 214, 255, 0.7);
+  font-family: Inter, 'Helvetica Neue', system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.5em;
+  text-indent: 0.5em; /* balance the trailing letter-space */
+  color: rgba(220, 246, 248, 0.92);
+  transition: color 0.3s ease, text-shadow 0.3s ease;
 }
 
 .ignition-sub {
-  font-size: 9px;
-  letter-spacing: 0.28em;
-  opacity: 0.4;
+  transform: translateY(136px);
+  font-size: 10px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
+  color: rgba(150, 186, 192, 0.5);
 }
 
 .ignition:hover .ignition-word {
-  text-shadow: 0 0 44px rgba(79, 214, 255, 1);
+  color: #fff;
+  text-shadow: 0 0 18px rgba(34, 208, 208, 0.8);
 }
 
 /* ------------------------------------------------------------------- boot */

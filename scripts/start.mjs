@@ -113,7 +113,7 @@ if (port) {
 
 vendorWasm()
 
-console.log('\nJ.A.R.V.I.S. startet — das Gehirn und das Gesicht.\n')
+console.log('\nGEHIRN startet — Bridge und Oberfläche.\n')
 run('bridge', 'node', ['bridge/server.mjs'], '36', bridgeEnv)
 // npm is a shell script on most systems; call the vite binary directly so we do
 // not need shell:true (which would break the argument handling above).
@@ -121,5 +121,5 @@ run('face', process.execPath, ['node_modules/vite/bin/vite.js'], '35', {})
 
 console.log(
   '\nSobald unten eine Adresse steht, diese in Chrome öffnen,\n' +
-    'auf AKTIVIEREN klicken und „Hey Jarvis“ sagen. Strg-C beendet alles.\n',
+    'auf AKTIVIEREN klicken und „Hey Gehirn“ sagen. Strg-C beendet alles.\n',
 )

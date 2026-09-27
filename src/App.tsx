@@ -70,9 +70,11 @@ const newId = () =>
   globalThis.crypto?.randomUUID?.() ??
   `id${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
 
-/** The same mishearings voice.ts accepts for the wake word — otherwise a turn
- *  that woke him as "travis" gets that word sent on to the model as a question. */
-const NAME = '(?:jarvis|jarvys|jervis|travis|jarviss|java\'s|jarv)'
+/** The same names voice.ts accepts for the wake word — otherwise a turn that
+ *  woke him as "travis" gets that word sent on to the model as a question.
+ *  Gehirn is his name now; Jarvis and its mishearings stay, because habits
+ *  outlive renames and a name that suddenly stops answering feels broken. */
+const NAME = '(?:gehirn|jarvis|jarvys|jervis|travis|jarviss|java\'s|jarv)'
 /** A bare vocative — "Jarvis", "hey jarvis" — with nothing asked. */
 const BARE_NAME = new RegExp(`^(?:hey|hi|ok|okay|yo)?\\s*${NAME}[\\s,.!?]*$`, 'i')
 /** A leading vocative on a real command: "Jarvis, what's the weather". */

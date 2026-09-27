@@ -85,7 +85,7 @@ const WAKE_DEBOUNCE = 1500
  * and which is also a word people say to each other.
  */
 const WAKE =
-  /\b(?:hey|hi|hey,|he|ey|ok|okay|yo)?\s*(?:jarvis|jarvys|jervis|jarvis's|travis|jarviss|java's|jarv|jarwis|dscharvis|scharvis|charvis|jawis)\b(?!'s)/i
+  /\b(?:hey|hi|hey,|he|ey|ok|okay|yo)?\s*(?:gehirn|jarvis|jarvys|jervis|jarvis's|travis|jarviss|java's|jarv|jarwis|dscharvis|scharvis|charvis|jawis)\b(?!'s)/i
 
 /** Everything after the wake phrase, which is usually the actual command. */
 function afterWake(text: string): string {
@@ -278,7 +278,7 @@ const norm = (s: string) =>
  * would be the single most infuriating failure this file could have.
  */
 const OVERRIDE =
-  /\b(stop|stopp|halt|warte|wait|jarvis|cancel|abbrechen|enough|genug|quiet|ruhe|still|hold on|shut up|never ?mind|egal|forget it|vergiss es|no|nein)\b/i
+  /\b(stop|stopp|halt|warte|wait|gehirn|jarvis|cancel|abbrechen|enough|genug|quiet|ruhe|still|hold on|shut up|never ?mind|egal|forget it|vergiss es|no|nein)\b/i
 
 /**
  * Words too common to be evidence of anything.

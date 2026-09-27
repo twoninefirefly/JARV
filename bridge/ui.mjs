@@ -272,7 +272,7 @@ const chromeSchema = {
   transcript: looseBool('The running conversation log.'),
   tool_badge: looseBool('The active-tool readout under the reactor.'),
   suggestions: looseBool('The "try saying…" hint.'),
-  brand: looseBool('The J.A.R.V.I.S. wordmark and status line.'),
+  brand: looseBool('The GEHIRN wordmark and status line.'),
 }
 
 const CHROME_DESCRIPTION = `Show or hide the furniture around the display.

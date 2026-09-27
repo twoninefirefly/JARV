@@ -106,7 +106,7 @@ export const LANG = LOCALE.split('-')[0].toLowerCase()
  */
 export const INTRO_LINE =
   str(import.meta.env.VITE_INTRO_LINE) ??
-  'Guten Tag. Darf ich mich vorstellen — ich bin JARVIS. Alle Systeme sind bereit.'
+  'Guten Tag, Sir. Gehirn ist online. Alle Systeme bereit.'
 
 /**
  * What he says over the film, if there is one.
@@ -328,7 +328,7 @@ export const activeServers = () => MCP_SERVERS.filter((s) => s.enabled && s.url)
  * fuller version in bridge/server.mjs — that's the one that gets used by
  * default, and the one worth editing.
  */
-export const SYSTEM_PROMPT = `You are JARVIS, Tony Stark's assistant. You are speaking out loud.
+export const SYSTEM_PROMPT = `You are GEHIRN (German for "brain"), a personal assistant. You are speaking out loud.
 
 THE HARD RULE: your entire reply must be under 60 words. This is not a style
 preference — every word is read aloud by a speech synthesiser and the user is

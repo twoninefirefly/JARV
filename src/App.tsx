@@ -53,9 +53,11 @@ import { env } from './config'
 const AWAIT_SPEECH_MS = 14000
 
 /** After an answer, how long the mic stays open for a follow-up before he
- *  drops back to standby. Long enough that you don't have to say the name
- *  again to continue a thought. */
-const FOLLOW_UP_MS = 11000
+ *  drops back to standby. Long enough to add a thought without his name;
+ *  short enough that a quiet room is not an open invitation. It was eleven
+ *  seconds, and every one of them was a chance to hear the music, the room or
+ *  himself as a question — each answer to which reopened the window. */
+const FOLLOW_UP_MS = 7000
 
 /** How long the start-up may keep the interface behind the intro film before
  *  going live anyway. Sized to fit well inside any clip worth shipping, so in
@@ -123,6 +125,8 @@ export default function App() {
     clearIdle()
     const s = store.getState()
     s.setCaption('')
+    // Quiet bed while the mic is open — for the transcriber, not for taste.
+    music.duck(true)
     s.setPhase('listening')
     sfx.play('listen')
     idleTimer.current = setTimeout(goDormant, window)
@@ -241,11 +245,15 @@ export default function App() {
       if (!stale()) {
         speaker.current = null
         sfx.duck(false)
-        music.duck(false)
         store.getState().setActiveTool(null)
         music.working(false)
         // Stay open. Having to say his name again to add one more sentence is
         // the difference between a conversation and a vending machine.
+        //
+        // The score stays DOWN while he listens and comes back up only when he
+        // stands down (goDormant). Swelling it back the moment he stopped
+        // talking put music into the microphone for the whole follow-up —
+        // the worst possible moment to be feeding it noise.
         listen(FOLLOW_UP_MS)
       }
     }
@@ -323,8 +331,9 @@ export default function App() {
       store.getState().setActiveTool(null)
       music.working(false)
       sfx.duck(false)
-      music.duck(false)
     }
+    // Someone is talking to him: keep the score out of the microphone.
+    music.duck(true)
     store.getState().setPhase('listening')
   }
 

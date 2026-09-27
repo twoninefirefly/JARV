@@ -56,6 +56,26 @@ let recentUntil = 0
 const ECHO_TAIL_MS = 1800
 
 /**
+ * Everything he said recently, not just the last sentence.
+ *
+ * The tail above covers one sentence for under two seconds, and that was the
+ * hole he talked himself through. A captured segment can span several of his
+ * sentences; it then waits for the detector's silence gap, queues behind any
+ * other segment, and takes Scribe's own round trip — so the transcript of his
+ * own answer routinely arrived after the tail had expired, compared against
+ * nothing, passed as the user, and got answered. Which opened another follow-up
+ * window, which heard the next answer. That is "he keeps talking when nobody
+ * asked" in one sentence.
+ *
+ * So the whole of what he said in the last few seconds is kept, and the voice
+ * loop compares against it in word ORDER (see isEcho) — order, because a long
+ * answer contains every common word and a bag-of-words match against all of it
+ * would throw away the user's real follow-up.
+ */
+const ECHO_MEMORY_MS = 8000
+const memory: { text: string; until: number }[] = []
+
+/**
  * Why you cannot hear him.
  *
  * Published on `window.__tts`. Speech has exactly four ways to fail silently —
@@ -122,6 +142,7 @@ function setSpeaking(text: string) {
   if (speaking) {
     recent = speaking
     recentUntil = Date.now() + ECHO_TAIL_MS
+    memory.push({ text: speaking, until: Date.now() + ECHO_MEMORY_MS })
   }
   speaking = ''
 }
@@ -138,6 +159,17 @@ function setSpeaking(text: string) {
 export function speakingNow(): string {
   const tail = Date.now() < recentUntil ? recent : ''
   return `${speaking} ${tail}`.trim()
+}
+
+/**
+ * The current sentence plus everything he finished saying in the last few
+ * seconds, oldest first. Longer and less precise than speakingNow — meant for
+ * matching word order, not for matching loose words. See ECHO_MEMORY_MS.
+ */
+export function spokenRecently(): string {
+  const now = Date.now()
+  while (memory.length && memory[0].until <= now) memory.shift()
+  return [...memory.map((m) => m.text), speaking].join(' ').trim()
 }
 
 // ---------------------------------------------------------------------------

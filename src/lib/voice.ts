@@ -1,6 +1,6 @@
 import { BRIDGE_HTTP_URL, LOCALE } from '../config'
 import { getMic } from './audio'
-import { speakingNow, speakingSince } from './tts'
+import { speakingNow, speakingSince, spokenRecently } from './tts'
 import { startVad, type Vad } from './vad'
 import { caps } from './capabilities'
 
@@ -261,10 +261,14 @@ function makeAssembler(h: {
 // Hearing himself
 // ---------------------------------------------------------------------------
 
+// Letters in any script, not a-z. The ASCII class this used to be tore every
+// umlaut out of German — "für" became the two words "f" and "r" — so the echo
+// test compared shredded fragments, and a single-letter "word" matched in
+// almost anything he had said.
 const norm = (s: string) =>
   s
     .toLowerCase()
-    .replace(/[^a-z0-9' ]+/g, ' ')
+    .replace(/[^\p{L}\p{N}' ]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 
@@ -291,7 +295,16 @@ const STOP = new Set(
     'our their what which who how why when where do does did can could would ' +
     'should will shall not no yes if then than as about into over under out up ' +
     'down one two three first second third now here there just very really got ' +
-    'get have has had say said tell me okay ok well right').split(' '),
+    'get have has had say said tell me okay ok well right ' +
+    // The same job in German, which is what he actually speaks. Without these
+    // every "der", "und" and "ist" counted as distinctive evidence.
+    'der die das den dem des ein eine einen einem einer eines und oder aber ' +
+    'doch dass wenn weil als wie wo was wer wann warum ist sind war waren sein ' +
+    'bin bist hat haben hatte wird werden wurde kann können könnte soll sollte ' +
+    'muss will ich du er sie es wir ihr mich dich ihn uns euch mir dir ihm ' +
+    'mein dein sein unser nicht kein keine ja nein auch noch schon nur sehr so ' +
+    'hier da dort jetzt dann mit von zu zum zur bei für auf aus in im an am um ' +
+    'über unter nach vor bis durch gegen ohne man mal gut sir').split(' '),
 )
 
 /**
@@ -301,9 +314,62 @@ const STOP = new Set(
  * mangles its own playback badly enough that a substring match rarely holds,
  * but the *words* survive.
  */
+/** Consecutive word runs, joined, for comparing order rather than content. */
+function runs(words: string[], n: number): string[] {
+  const out: string[] = []
+  for (let i = 0; i + n <= words.length; i++) out.push(words.slice(i, i + n).join(' '))
+  return out
+}
+
+/**
+ * Does this reproduce, in order, something he said in the last few seconds?
+ *
+ * Checked against the long memory, and only by order, because order is what
+ * separates an echo from a follow-up. "Wie wird das Wetter morgen in Berlin"
+ * shares nearly every word with an answer about tomorrow's weather in Berlin,
+ * but almost none of its three-word runs — whereas his own sentence coming
+ * back through the microphone, however mangled, keeps most of them.
+ */
+function repeatsHim(heard: string): boolean {
+  const words = norm(heard).split(' ').filter(Boolean)
+  if (words.length < 3) return false
+  const past = norm(spokenRecently()).split(' ').filter(Boolean)
+  if (past.length < 3) return false
+  const n = words.length >= 4 ? 3 : 2
+  const known = new Set(runs(past, n))
+  const mine = runs(words, n)
+  const hits = mine.filter((r) => known.has(r)).length
+  return hits / mine.length >= (n === 3 ? 0.5 : 0.75)
+}
+
+/**
+ * What the transcriber produces from a room with nobody in it.
+ *
+ * Scribe tags non-speech — "(Musik)", "(Lachen)" — and like every model of its
+ * kind, it invents stock phrases from noise: the sign-offs and subtitle credits
+ * that saturate its training audio. With the ambient score playing and the mic
+ * open for a follow-up, each of these arrived as the user's next question and
+ * got an answer. None of them is ever a request, so only an EXACT match counts:
+ * "danke, und wie spät ist es" still goes through.
+ */
+const PHANTOM =
+  /^(vielen dank( fürs? (zuschauen|zusehen|zuhören))?|danke( schön| sehr)?|tschüss?|bis (zum nächsten mal|bald|dann)|untertitel.*|copyright.*|amara.*|thank you( for watching)?|thanks( for watching)?|bye|äh+m*|hm+|mhm|uh+|um+|musik|applaus|lachen|stille)$/
+
+/** Bracketed sound tags, then punctuation: what is left is the words. */
+function words(text: string): string {
+  return norm(text.replace(/[([{*][^)\]}*]*[)\]}*]/g, ' '))
+}
+
+/** True when the transcript contains nothing a person said to him. */
+function isPhantom(text: string): boolean {
+  const w = words(text)
+  return !w || PHANTOM.test(w)
+}
+
 function isEcho(heard: string, spoken: string): boolean {
-  if (!spoken) return false
   if (OVERRIDE.test(heard)) return false
+  if (repeatsHim(heard)) return true
+  if (!spoken) return false
 
   const all = norm(heard).split(' ').filter(Boolean)
   if (!all.length) return true
@@ -427,8 +493,21 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
    * Order is preserved because the drain is single-flight, which matters —
    * "London" arriving before "what's the weather in" is worse than either.
    */
-  const pendingAudio: Blob[] = []
+  const pendingAudio: { blob: Blob; trusted: boolean }[] = []
   let draining = false
+
+  /**
+   * Whether the segment being captured right now can be the user.
+   *
+   * Decided at its first sound, which is the only moment the answer is known:
+   * a segment that began while he was mid-sentence and did NOT cut him off is
+   * his own voice leaking past the canceller — the barge-in check already
+   * looked at it and said so. It used to be transcribed anyway, and because
+   * the transcript lands a second or two later, it arrived after he had
+   * finished, into the open follow-up window, as a question. He then answered
+   * himself.
+   */
+  let trusted = true
 
   /**
    * Transcripts become turns here rather than one-per-segment.
@@ -452,7 +531,7 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
    * transcript arriving — and the transcript belongs to the mode the user is in
    * now, not the one they interrupted.
    */
-  const transcribe = async (blob: Blob) => {
+  const transcribe = async ({ blob, trusted }: { blob: Blob; trusted: boolean }) => {
     const mode = h.mode()
     if (mode === 'deaf') return
     const t0 = performance.now()
@@ -473,8 +552,15 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
       const said = (text ?? '').trim()
       diag.lastError = ''
 
-      if (!said) {
-        drop('nothing intelligible in the segment')
+      if (!said || isPhantom(said)) {
+        drop(said ? `"${said.slice(0, 40)}" — noise, not speech` : 'nothing intelligible in the segment')
+        return
+      }
+
+      // Began under his voice and did not interrupt it: his voice. The one
+      // exception is a word that must always get through.
+      if (!trusted && !OVERRIDE.test(said)) {
+        drop('started while he was talking, and was not an interruption')
         return
       }
 
@@ -529,6 +615,7 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
       const mode = h.mode()
       diag.mode = mode
       diag.sessions++
+      trusted = true
       if (mode === 'deaf') return
       // Standing down mid-thought throws the thought away with it. Otherwise
       // held text would surface as the opening of the *next* conversation.
@@ -540,13 +627,14 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
         const since = speakingSince()
         if (since && Date.now() - since < SELF_GUARD_MS) {
           diag.selfGuarded++
+          trusted = false
           return
         }
         h.onSpeechStart()
       }
     },
     onEnd: (blob) => {
-      pendingAudio.push(blob)
+      pendingAudio.push({ blob, trusted })
       void drain()
     },
     onLevel: (v) => {
@@ -658,6 +746,10 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
     const mode = h.mode()
     reset()
     if (!text || mode === 'deaf') return
+    if (isPhantom(text)) {
+      drop(`"${text.slice(0, 40)}" — noise, not speech`)
+      return
+    }
     if (isEcho(text, speakingNow())) {
       drop('echo of his own voice')
       return

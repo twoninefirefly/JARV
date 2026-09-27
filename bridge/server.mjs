@@ -955,6 +955,10 @@ const handleRequest = async (req, res) => {
       const form = new FormData()
       form.append('model_id', 'scribe_v1')
       form.append('language_code', STT_LANGUAGE)
+      // Words only. Left on, Scribe annotates non-speech as "(Musik)",
+      // "(Lachen)" and so on — and with the ambient score playing during an
+      // open follow-up, those annotations arrived as the user's next question.
+      form.append('tag_audio_events', 'false')
       form.append(
         'file',
         new Blob([Buffer.concat(chunks)], { type }),

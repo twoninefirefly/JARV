@@ -92,6 +92,14 @@ export default function App() {
    */
   const turn = useRef(0)
   const booting = useRef(false)
+  /**
+   * Set for as long as the intro is on screen — the sequence and the film —
+   * and calling it jumps straight to the live interface. Null otherwise. The
+   * space bar reads this before anything else, because once the interface has
+   * gone live behind the film, space would otherwise mean "wake up" and a
+   * press meant to skip a picture would start a conversation.
+   */
+  const skipIntro = useRef<(() => void) | null>(null)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const voicePoll = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -382,6 +390,7 @@ export default function App() {
       // for the rest of the page, recoverable only by reloading. Reset it and
       // put the button back so the user can simply press it again.
       booting.current = false
+      skipIntro.current = null
       console.error('[jarvis] power-up failed:', err)
       store.getState().setPhase('offline')
       store
@@ -408,6 +417,20 @@ export default function App() {
     music.startAmbient()
 
     s.setPhase('boot')
+
+    // Space during the intro goes straight to the point. `skipped` is read at
+    // each step below; `skipping` lets the waits end early instead of running
+    // out their clocks.
+    let skipped = false
+    const skipping = new Promise<void>((resolve) => {
+      skipIntro.current = () => {
+        if (skipped) return
+        skipped = true
+        speaker.current?.cancel()
+        skipFilm()
+        resolve()
+      }
+    })
 
     watchServers((servers) => store.getState().setConnected(servers))
     watchPanels((panel) => store.getState().pushPanel(panel))
@@ -552,7 +575,7 @@ export default function App() {
     const narrator = createSpeaker()
     speaker.current = narrator
     music.duck(true)
-    narrator.say(INTRO_LINE)
+    if (!skipped) narrator.say(INTRO_LINE)
 
     // Decide now whether this start-up includes the film, because the length
     // of the whole thing depends on the answer and the sequence is about to
@@ -565,11 +588,11 @@ export default function App() {
     // exports it. Retiming the animation used to mean remembering to retime
     // this too, and forgetting left either dead air on a shortened sequence or
     // a truncated last beat on a lengthened one.
-    await new Promise((r) => setTimeout(r, BOOT_MS))
+    await Promise.race([new Promise((r) => setTimeout(r, BOOT_MS)), skipping])
 
     // The second line, only when there is a film to say it over: it describes
     // what the film shows, and without the film it describes nothing.
-    if (filmArmed()) narrator.say(FILM_LINE)
+    if (filmArmed() && !skipped) narrator.say(FILM_LINE)
     void narrator.end().finally(() => music.duck(false))
 
     // The rest of the start-up, started now and running UNDERNEATH the film
@@ -627,9 +650,12 @@ export default function App() {
         // picture. Overrun it and the interface simply comes up a moment
         // early — a voice loop that is still connecting is invisible; a boot
         // screen still standing when the film dissolves is not.
+        // A skip ends the wait at once: whoever pressed space wants the
+        // interface now, and a voice loop finishing a second later is invisible.
         await Promise.race([
           work,
           new Promise((r) => setTimeout(r, GO_LIVE_MAX_MS)),
+          skipping,
         ])
         store.getState().setPhase('dormant')
         // Not done until the boot overlay has finished leaving. The film waits
@@ -641,8 +667,10 @@ export default function App() {
     // Then the film, if there is one. Resolves immediately when there is not,
     // and early when someone presses a key or clicks — ten seconds is worth
     // watching once and worth skipping on the fiftieth start-up.
-    await playFilm(goLive)
+    if (!skipped) await playFilm(goLive)
+    skipIntro.current = null
     await goLive()
+    await work
   }
 
   // -- clap to start --------------------------------------------------------
@@ -782,11 +810,17 @@ export default function App() {
       if (e.code !== 'Space' || e.repeat) return
       e.preventDefault()
 
+      // During the intro, space means one thing: skip it.
+      if (skipIntro.current) {
+        skipIntro.current()
+        return
+      }
+
       const phase = store.getState().phase
       if (phase === 'offline') {
         void powerOn()
       } else if (phase === 'boot') {
-        /* ignore — the boot sequence owns the phase until it finishes */
+        /* between the intro ending and going live — a moment, nothing to do */
       } else if (
         phase === 'thinking' ||
         phase === 'tooling' ||

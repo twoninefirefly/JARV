@@ -20,6 +20,21 @@ import type { Drive } from './Scene'
  * ring — which is how the old build ended up with a lumpy sphere.
  */
 
+/**
+ * The voice history the waves are drawn from.
+ *
+ * A wave is only readable as "that was a syllable" if it keeps the strength it
+ * was born with all the way across the ring. A shader has no memory, so the
+ * memory lives here: the last couple of seconds of level, sampled on a fixed
+ * clock, and the shader maps radius to age. A ring at radius r was emitted
+ * (r - start) / speed seconds ago, and is exactly as bright as the voice was
+ * then — which is what makes a spoken sentence leave the core as a train of
+ * distinct rings rather than as a uniform throb.
+ */
+const HIST = 64
+/** Seconds between history samples. 64 x 30ms = just under two seconds. */
+const HIST_STEP = 0.03
+
 const vertex = /* glsl */ `
   varying vec2 vUv;
   void main() {
@@ -37,8 +52,21 @@ const fragment = /* glsl */ `
   uniform float uZoom;
   uniform float uIntensity;
   uniform float uStyle;
+  uniform float uListen;
+  uniform float uSpeak;
+  uniform float uTime;
+  uniform float uHist[${HIST}];
 
   varying vec2 vUv;
+
+  // The voice level \`age\` seconds ago, 0 outside the recorded window.
+  float voiceAt(float age) {
+    float i = age / ${HIST_STEP.toFixed(3)};
+    if (i < 0.0 || i > ${(HIST - 1).toFixed(1)}) return 0.0;
+    int i0 = int(floor(i));
+    int i1 = min(i0 + 1, ${HIST - 1});
+    return mix(uHist[i0], uHist[i1], fract(i));
+  }
 
   // -- value noise + fbm ----------------------------------------------------
   vec2 hash(vec2 p) {
@@ -95,7 +123,14 @@ const fragment = /* glsl */ `
     // the thing. The slow term drifts; the fine term shivers.
     float wob   = fbm(ring * 2.6 + vec2(uPhase * 0.22, 0.0)) * 0.055;
     float grain = fbm(ring * 9.0 - vec2(uPhase * 0.4, 0.0)) * 0.020;
-    float R = 0.74 + wob + grain + uLevel * 0.03;
+    // Listening: the ring draws in a touch — leaning toward you — and its fine
+    // edge shivers with your voice, the way a membrane does. Speaking: it
+    // swells with his own. Both are zero at rest, so standby is the authored
+    // ring exactly.
+    float shiver = fbm(ring * 22.0 + vec2(uTime * 3.1, 0.0)) * 0.018 * uListen * uLevel;
+    float R = 0.74 + wob + grain + uLevel * 0.03
+            - uListen * 0.028 + shiver
+            + uSpeak * uLevel * 0.045;
 
     // Erosion: the outer boundary is eaten away in patches, so the ring reads
     // as something luminous and unstable rather than as a drawn stroke.
@@ -145,7 +180,8 @@ const fragment = /* glsl */ `
     // a visible radial seam, which reads as a rendering fault rather than as a
     // sweep — it was the one artefact in the whole ring.
     float wake = smoothstep(-2.6, -0.15, dA) * (1.0 - smoothstep(0.0, 0.22, dA));
-    float radar = wake * band(r, R - 0.02, 0.075) * (0.55 + uLevel * 0.45);
+    float radar = wake * band(r, R - 0.02, 0.075) * (0.55 + uLevel * 0.45)
+                * (1.0 - uListen * 0.75) * (1.0 + uSpeak * 0.4);
 
     // -- concentric hairlines inside ---------------------------------------
     float lines =
@@ -163,7 +199,8 @@ const fragment = /* glsl */ `
              * (sin(r * 150.0 - uPhase) * 0.5 + 0.5);
     float mesh = mix(m1, m2, 0.5);
     float core = smoothstep(0.40, 0.36, r);
-    float coreTex = core * (0.04 * kWash + mesh * 0.12 * kMesh) * (0.55 + uLevel * 0.9);
+    float coreTex = core * (0.04 * kWash + mesh * 0.12 * kMesh) * (0.55 + uLevel * 0.9)
+                  * (1.0 + uSpeak * uLevel * 1.4);
     // The disc's own soft rim.
     float coreEdge = band(r, 0.385, 0.010) * (0.55 + uLevel * 0.5);
 
@@ -171,7 +208,34 @@ const fragment = /* glsl */ `
     float pulse = band(r, fract(uPhase * 0.08) * 0.40, 0.020) * core * 0.45;
 
     // -- inner glow ---------------------------------------------------------
-    float bloom = exp(-r * 3.4) * (0.16 + uLevel * 0.34);
+    float bloom = exp(-r * 3.4) * (0.16 + uLevel * 0.34) * (1.0 + uSpeak * uLevel * 1.2);
+
+    // -- the two ways of meeting a voice ---------------------------------------
+    // Fine concentric lines, carried at one speed, each as bright as the voice
+    // was when it passed the line's starting radius (see voiceAt). Frayed by
+    // the same turbulence as the rim so they read as part of the ring's
+    // material and not as a CGI ripple laid over it.
+    float V  = 0.34;   // field units per second
+    float SP = 0.048;  // spacing between lines
+    float fray = 0.5 + 0.5 * fbm(ring * 7.0 + vec2(r * 3.0, uTime * 0.3));
+
+    // Speaking: born at the core's rim, sent outward past the ring.
+    float lineOut = pow(0.5 + 0.5 * cos((r - V * uTime) * TAU / SP), 8.0);
+    float waveOut = lineOut * clamp(voiceAt((r - 0.39) / V) * 2.8, 0.0, 1.0)
+                  * smoothstep(0.39, 0.44, r) * (1.0 - smoothstep(0.92, 1.12, r));
+
+    // Listening: gathered from outside the ring and drawn in to the core.
+    float lineIn = pow(0.5 + 0.5 * cos((r + V * uTime) * TAU / SP), 10.0);
+    float waveIn = lineIn * clamp(voiceAt((1.08 - r) / V) * 2.2, 0.0, 1.0)
+                 * smoothstep(0.39, 0.46, r) * (1.0 - smoothstep(1.0, 1.1, r));
+
+    // Sending runs brighter than receiving: his voice is the loudest thing in
+    // the room, and the core it leaves from is lit by it.
+    float waves = (waveOut * uSpeak * 0.95 + waveIn * uListen * 0.7) * fray;
+
+    // Listening also gets a quiet halo on the ring's inner wall: attention,
+    // brightening a little with each word it hears.
+    float attend = band(r, R - 0.09, 0.05) * uListen * (0.08 + uLevel * 0.3);
 
     // The one term with no counterpart in the ring: a solid interior out to the
     // wandering rim, so the sphere is lit all the way across instead of being a
@@ -185,11 +249,12 @@ const fragment = /* glsl */ `
             + lines * kLines
             + coreTex + pulse
             + bloom * kGlow
-            + bodyFill;
+            + bodyFill
+            + waves + attend;
 
     // The moving highlights run hot; the body of the ring keeps its hue.
     vec3 col = mix(uColor, uHot,
-      clamp(edge * 1.3 + radar * 0.7 + pulse * 0.5 + dust * 0.4, 0.0, 1.0));
+      clamp(edge * 1.3 + radar * 0.7 + pulse * 0.5 + dust * 0.4 + waves * 1.2, 0.0, 1.0));
 
     // Radial reveal on power-up: the ring assembles from the centre outward.
     v *= smoothstep(0.0, 0.35, uOpen - r * 0.45);
@@ -236,9 +301,16 @@ export function Core({ drive }: { drive: Drive }) {
       // renders byte for byte as it did before they existed.
       uIntensity: { value: 1 },
       uStyle: { value: 0 },
+      uListen: { value: 0 },
+      uSpeak: { value: 0 },
+      uTime: { value: 0 },
+      uHist: { value: new Array<number>(HIST).fill(0) },
     }),
     [],
   )
+  // Newest first. Filled on a fixed clock, not per frame, so the waves travel
+  // at the same speed on a 60Hz laptop and a 120Hz display.
+  const clock = useRef(0)
 
   useFrame((_, dt) => {
     if (!mat.current || !mesh.current) return
@@ -259,7 +331,22 @@ export function Core({ drive }: { drive: Drive }) {
     // clock would rewrite all the turbulence that has already happened, and the
     // edge would boil harder the longer the tab had been open. The spin
     // multiplier rides on the same accumulator for the same reason.
-    u.uPhase.value += dt * (0.5 + u.uLevel.value * 0.7) * r.spin
+    // Listening slows the ring's own turning: it holds still to hear.
+    u.uPhase.value += dt * (0.5 + u.uLevel.value * 0.7) * r.spin * (1 - drive.listen * 0.45)
+    u.uListen.value = drive.listen
+    u.uSpeak.value = drive.speak
+    u.uTime.value += dt
+
+    const hist = u.uHist.value as number[]
+    clock.current += dt
+    // A long frame (a background tab coming back) would otherwise replay a
+    // burst of identical samples; two seconds of catch-up is the whole buffer.
+    clock.current = Math.min(clock.current, HIST * HIST_STEP)
+    while (clock.current >= HIST_STEP) {
+      clock.current -= HIST_STEP
+      hist.pop()
+      hist.unshift(drive.voice)
+    }
     u.uOpen.value += (drive.open - u.uOpen.value) * Math.min(1, dt * 1.6)
     u.uIntensity.value = r.intensity
     u.uStyle.value = r.style

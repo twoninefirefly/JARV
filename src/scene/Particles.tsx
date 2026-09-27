@@ -14,6 +14,8 @@ const vertex = /* glsl */ `
   uniform float uTime;
   uniform float uLevel;
   uniform float uSize;
+  uniform float uListen;
+  uniform float uSpeak;
 
   attribute float aSeed;
   attribute float aRadius;
@@ -28,7 +30,12 @@ const vertex = /* glsl */ `
     vec3 p = vec3(position.x * c - position.z * s, position.y, position.x * s + position.z * c);
 
     // Loudness pushes the shell out and adds a little jitter.
-    float push = 1.0 + uLevel * 0.35 + sin(uTime * 2.0 + aSeed * 12.0) * 0.02;
+    // Speaking pushes the cloud out with his voice; listening draws it in,
+    // harder the louder you are — the room gathering toward the one talking.
+    float push = 1.0 + uLevel * 0.35 * (1.0 - uListen)
+               - uListen * (0.04 + uLevel * 0.16)
+               + uSpeak * uLevel * 0.12
+               + sin(uTime * 2.0 + aSeed * 12.0) * 0.02;
     p *= push;
 
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -99,6 +106,8 @@ export function Particles({ drive }: { drive: Drive }) {
       uSize: { value: 3.4 },
       uColor: { value: new THREE.Color('#00e5ff') },
       uIntensity: { value: 1 },
+      uListen: { value: 0 },
+      uSpeak: { value: 0 },
     }),
     [],
   )
@@ -110,6 +119,8 @@ export function Particles({ drive }: { drive: Drive }) {
     u.uIntensity.value = drive.reactor.intensity
     u.uTime.value = state.clock.elapsedTime
     u.uLevel.value += (drive.level - u.uLevel.value) * Math.min(1, dt * 6)
+    u.uListen.value = drive.listen
+    u.uSpeak.value = drive.speak
     ;(u.uColor.value as THREE.Color).lerp(drive.color, Math.min(1, dt * 3))
   })
 

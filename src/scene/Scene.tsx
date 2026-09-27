@@ -68,6 +68,24 @@ export type Drive = {
   /** 0..1 power-up reveal — the ring assembles outwards from the centre. */
   open: number
   /**
+   * 0..1, eased: how much the reactor is LISTENING — taking sound in. Drawn
+   * as the ring leaning in and waves gathering toward the core.
+   */
+  listen: number
+  /**
+   * 0..1, eased: how much it is SPEAKING — sending sound out. Drawn as waves
+   * leaving the core, one per syllable, and the core lighting with the voice.
+   * The two are separate numbers rather than one signed one because the
+   * crossfade between them has to pass through neither, not through zero.
+   */
+  speak: number
+  /**
+   * The raw voice level, without the idle breath folded into `level`. The
+   * wave history is built from this: a breath is not a sound, and recording
+   * it would send waves out of a reactor that is not saying anything.
+   */
+  voice: number
+  /**
    * The reactor slice of the ui state, already resolved and smoothed.
    *
    * Everything here is a no-op at UI_DEFAULTS: colour follows the phase exactly
@@ -114,6 +132,9 @@ function Rig() {
       spin: spinFor.offline,
       amp: AMP_CALM,
       open: 0,
+      listen: 0,
+      speak: 0,
+      voice: 0,
       reactor: {
         color: new THREE.Color(phaseColor.offline),
         scale: 1,
@@ -168,6 +189,15 @@ function Rig() {
       (Math.sin(state.clock.elapsedTime * 0.9) * 0.5 + 0.5) * idle
     const want = Math.max(level, breathe)
     drive.level += (want - drive.level) * Math.min(1, dt * 9)
+    drive.voice = level
+
+    // Waking counts as listening: he has heard his name and is turning toward
+    // you, which is the start of the same gesture.
+    const listening = phase === 'listening' || phase === 'waking' ? 1 : 0
+    const speaking = phase === 'speaking' ? 1 : 0
+    // In quickly, out slowly — attention arrives at once and lingers a moment.
+    drive.listen += (listening - drive.listen) * Math.min(1, dt * (listening ? 5 : 2.5))
+    drive.speak += (speaking - drive.speak) * Math.min(1, dt * (speaking ? 5 : 2.5))
 
     // Slow drift on the camera keeps handheld-ish life in the shot.
     const t = state.clock.elapsedTime

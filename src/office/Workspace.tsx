@@ -25,9 +25,9 @@ import {
  */
 
 const useWide = () => {
-  const [wide, setWide] = useState(() => window.innerWidth >= 900)
+  const [wide, setWide] = useState(() => window.innerWidth >= 720)
   useEffect(() => {
-    const on = () => setWide(window.innerWidth >= 900)
+    const on = () => setWide(window.innerWidth >= 720)
     window.addEventListener('resize', on)
     return () => window.removeEventListener('resize', on)
   }, [])

@@ -662,7 +662,7 @@ function Ground() {
 // ---------------------------------------------------------------------------
 
 /** Is the sheet on the side (wide screens) or along the bottom (phones)? */
-const wide = () => window.innerWidth >= 900
+const wide = () => window.innerWidth >= 720
 
 function Rig() {
   const { camera, size } = useThree()
@@ -758,7 +758,7 @@ function Rig() {
 // ---------------------------------------------------------------------------
 
 /** Phones get a lighter renderer: less GPU memory, fewer lost contexts. */
-const phone = () => Math.min(window.innerWidth, window.innerHeight) < 600
+const phone = () => window.matchMedia('(pointer: coarse)').matches
 
 export default function Scene() {
   // A phone drops the GPU context when the app goes to the background or the

@@ -27,6 +27,7 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
 import { probeUrl, renderPage } from './page.mjs'
+import { handleBuero } from './buero.mjs'
 
 const PORT = Number(process.env.JARVIS_BRIDGE_PORT ?? 8787)
 
@@ -1064,7 +1065,7 @@ const wss = new WebSocketServer({
   // 403 would look like the bridge simply isn't running.
   verifyClient: ({ origin, req }, done) => {
     const path = (req.url ?? '/').split('?')[0]
-    if (path !== '/' && path !== '/ws') {
+    if (path !== '/' && path !== '/ws' && path !== '/buero') {
       console.warn(`[jarvis] rejected websocket on path ${path}`)
       return done(false, 403, 'Forbidden')
     }
@@ -1130,7 +1131,12 @@ const RESULT_FAILURES = {
   default: 'The turn ended without an answer.',
 }
 
-wss.on('connection', (socket) => {
+wss.on('connection', (socket, req) => {
+  // The agent office has its own socket and its own, much narrower agents.
+  if ((req.url ?? '/').split('?')[0] === '/buero') {
+    return handleBuero(socket, { model: MODEL, effort: EFFORT })
+  }
+
   console.log('[jarvis] client connected')
 
   // Answer the HUD straight away rather than making it wait for the agent's

@@ -205,6 +205,18 @@ chose.
 
 ---
 
+## The agent office
+
+`/buero.html` (http://localhost:5173/buero.html) is a second page: four agents
+work through a company network. The intake clerk and the network analyst run
+in the page. With the bridge running, the register checker researches the open
+questions with web search and page fetches only (no MCP servers, no shell, no
+files) and the report writer streams the case file. Each finding cites its
+sources. Without the bridge, the page simulates those two steps and badges
+itself **Simulation**. A live run takes about a minute and a half.
+
+---
+
 ## The boot sequence
 
 Power-up plays a four-beat Iron Man start-up (`src/ui/Boot.tsx`): an

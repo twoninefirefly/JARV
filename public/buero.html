@@ -7,8 +7,9 @@
 <link rel="icon" href="/favicon.svg" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" />
 <style>
-  /* Demo of the agent office: four agents work through one company network.
-     Self-contained on purpose — no bridge, no build step, no network beyond fonts. */
+  /* The agent office: four agents work through one company network. Intake and
+     analysis run here in the page. Research and report run on the bridge
+     (bridge/buero.mjs) when it is up; without it the page simulates them. */
   :root {
     --interface: #00e5ff;
     --bg: #01060c;
@@ -37,6 +38,7 @@
   }
   header h1 { margin: 0; font-size: 18px; font-weight: 600; color: var(--interface); }
   .badge { font-size: 10px; padding: 3px 8px; border: 1px solid var(--warn); color: var(--warn); }
+  .badge.live { border-color: var(--done); color: var(--done); }
   .source { font-family: Inter, sans-serif; text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--muted); flex: 1 1 260px; }
   .controls { display: flex; gap: 8px; flex-wrap: wrap; }
   button {
@@ -107,19 +109,31 @@
   #log b { font-weight: 400; color: var(--interface); }
   #log .ok { color: var(--done); }
   #log .q { color: var(--warn); }
+  #log .bad { color: #ff6b6b; }
+  #log .tool { color: var(--muted); }
   @keyframes in { from { opacity: 0; transform: translateY(4px); } }
 
   #report { grid-column: 1 / -1; display: none; }
   #report.show { display: block; }
-  #report pre { margin: 0; padding: 16px; white-space: pre-wrap; font: 13px/1.6 'JetBrains Mono', monospace; color: var(--text); overflow-x: auto; }
+  #reportBody { padding: 4px 20px 20px; font-size: 14px; line-height: 1.6; max-width: 1100px; overflow-x: auto; }
+  #reportBody h1 { font: 600 20px 'Chakra Petch', sans-serif; color: var(--interface); margin: 16px 0 4px; }
+  #reportBody h2 { font: 600 13px 'Chakra Petch', sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--interface); margin: 22px 0 6px; }
+  #reportBody h3 { font-size: 14px; margin: 14px 0 4px; }
+  #reportBody p, #reportBody ul, #reportBody ol { margin: 6px 0; }
+  #reportBody a { color: var(--interface); word-break: break-all; }
+  #reportBody table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+  #reportBody th, #reportBody td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; vertical-align: top; }
+  #reportBody th { color: var(--interface); font-weight: 500; }
+  #reportBody code { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .cost { color: var(--muted); font-size: 12px; padding: 0 20px 14px; }
   @media (max-width: 1100px) { #report { grid-column: 1 / -1; } }
 </style>
 </head>
 <body>
 <header>
   <h1>Agenten-Büro</h1>
-  <span class="badge">Demo</span>
-  <span class="source">Datenbasis: Netzwerk-Grafik (Screenshot) · 8 Knoten · unverifiziert, nicht mit dem Handelsregister abgeglichen</span>
+  <span class="badge" id="mode" title="Ohne Bridge werden Recherche und Bericht simuliert">Simulation</span>
+  <span class="source" id="sourceNote">Datenbasis: Netzwerk-Grafik (Screenshot) · 8 Knoten · Bridge nicht verbunden – Recherche wird simuliert</span>
   <div class="controls">
     <button id="run">Lauf starten</button>
     <button id="reset" disabled>Zurücksetzen</button>
@@ -148,7 +162,7 @@
     <div id="log"></div>
   </section>
 
-  <section id="report"><h2>Bericht</h2><pre id="reportText"></pre></section>
+  <section id="report"><h2>Bericht</h2><div id="reportBody"></div><div class="cost" id="cost"></div></section>
 </main>
 
 <script>
@@ -236,11 +250,12 @@ const A = analyse();
 const AGENTS = [
   { id: 'intake',  name: 'Erfasser',        role: 'liest die Quelle, legt Entitäten an' },
   { id: 'analyst', name: 'Netzwerk-Analyst', role: 'Zentralität, Beteiligungsketten' },
-  { id: 'check',   name: 'Register-Prüfer', role: 'markiert Unbelegtes, offene Fragen' },
+  { id: 'check',   name: 'Register-Prüfer', role: 'recherchiert offene Punkte in Registern' },
   { id: 'writer',  name: 'Berichtschreiber', role: 'fasst alles zur Akte zusammen' },
 ];
 const chainText = c => c.map(name).join(' → ');
-const STEPS = [
+// Intake and analysis are plain computation and always run in the page.
+const LOCAL_STEPS = [
   { agent: 'intake', task: 'Quelle laden', log: 'Netzwerk-Grafik geladen (1 Bild).' },
   ...NODES.map(n => ({ agent: 'intake', task: 'Entität: ' + n.label, nodes: [n.id], fast: true,
     log: `Entität angelegt: <b>${n.label}</b> (${n.type === 'person' ? 'Person' : 'Gesellschaft'}${n.status ? ', ' + n.status : ''})` })),
@@ -259,7 +274,10 @@ const STEPS = [
     log: A.viaChain.length
       ? `Nur über Beteiligung erreichbar: ${A.viaChain.map(name).join(', ')}. ${A.isolated.length ? 'Ohne Bezug: ' + A.isolated.map(name).join(', ') : 'Alle Gesellschaften liegen im Einflussbereich.'}`
       : 'Alle Gesellschaften sind direkt verbunden.', cls: 'ok', done: true },
-
+];
+// Without the bridge the last two agents are acted out: they list what would
+// need checking and write the report from the graph alone.
+const SIM_STEPS = [
   ...A.questions.map(q => ({ agent: 'check', task: 'Prüfpunkt', log: '? ' + q, cls: 'q', fast: true })),
   { agent: 'check', task: 'Status setzen', log: 'Alle Angaben als <b>unverifiziert</b> markiert – Abgleich mit Handelsregister ausstehend.', cls: 'ok', done: true },
 
@@ -341,14 +359,48 @@ const agentEls = Object.fromEntries(AGENTS.map(a => {
 // ------------------------------------------------------------------- run
 const logEl = document.getElementById('log');
 const runBtn = document.getElementById('run'), resetBtn = document.getElementById('reset'), dlBtn = document.getElementById('download');
+const modeEl = document.getElementById('mode'), noteEl = document.getElementById('sourceNote');
+const reportEl = document.getElementById('report'), reportBody = document.getElementById('reportBody'), costEl = document.getElementById('cost');
+const agentName = id => AGENTS.find(a => a.id === id).name;
 let timer = null, report = '';
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function clearHighlights() {
   edgeEls.forEach(l => l.classList.remove('hl'));
   Object.values(nodeEls).forEach(g => g.classList.remove('hl'));
 }
+// Light up every node a piece of text talks about, by the first two words of
+// its name — enough to tell "Hukic Holding" from "Hukic Immobilien".
+const NODE_KEYS = NODES.map(n => [n.id, n.label.split(' ').slice(0, 2).join(' ').toLowerCase()]);
+function highlightMentions(text) {
+  const t = String(text ?? '').toLowerCase();
+  const hits = NODE_KEYS.filter(([, k]) => t.includes(k)).map(([id]) => id);
+  if (!hits.length) return;
+  clearHighlights();
+  hits.forEach(id => nodeEls[id].classList.add('hl'));
+}
+function logLine(agent, html, cls) {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.innerHTML = `<b>[${agentName(agent)}]</b> ${html}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function setAgent(id, state, task, pct) {
+  const d = agentEls[id];
+  if (state === 'busy') AGENTS.forEach(a => agentEls[a.id].classList.remove('busy'));
+  d.classList.toggle('busy', state === 'busy');
+  d.classList.toggle('done', state === 'done');
+  if (state === 'done') d.querySelector('.agent-task').textContent = 'erledigt';
+  else if (task != null) d.querySelector('.agent-task').textContent = task;
+  if (pct != null) d.querySelector('.bar i').style.width = pct + '%';
+}
+
 function reset() {
   clearTimeout(timer); timer = null;
+  if (liveRun && bridge) bridge.send(JSON.stringify({ type: 'stop' }));
+  liveRun = false;
   clearHighlights();
   logEl.innerHTML = '';
   AGENTS.forEach(a => {
@@ -357,50 +409,153 @@ function reset() {
     d.querySelector('.agent-task').textContent = 'bereit';
     d.querySelector('.bar i').style.width = '0';
   });
-  document.getElementById('report').classList.remove('show');
+  report = '';
+  reportBody.innerHTML = ''; costEl.textContent = '';
+  reportEl.classList.remove('show');
   runBtn.disabled = false; resetBtn.disabled = true; dlBtn.disabled = true;
 }
-function run() {
-  reset();
-  runBtn.disabled = true; resetBtn.disabled = false;
-  const total = Object.fromEntries(AGENTS.map(a => [a.id, STEPS.filter(s => s.agent === a.id).length]));
-  const count = Object.fromEntries(AGENTS.map(a => [a.id, 0]));
+
+/** Plays a list of scripted steps, one per beat, then hands over. */
+function play(steps, then) {
+  const total = {}, count = {};
+  steps.forEach(s => { total[s.agent] = (total[s.agent] || 0) + 1; count[s.agent] = 0; });
   let i = 0;
   const tick = () => {
-    const s = STEPS[i++];
-    if (!s) { clearHighlights(); return; }
-    const d = agentEls[s.agent];
-    AGENTS.forEach(a => agentEls[a.id].classList.remove('busy'));
-    d.classList.add('busy');
-    d.querySelector('.agent-task').textContent = s.task;
+    const s = steps[i++];
+    if (!s) { timer = null; clearHighlights(); then && then(); return; }
     count[s.agent]++;
-    d.querySelector('.bar i').style.width = (100 * count[s.agent] / total[s.agent]) + '%';
+    setAgent(s.agent, s.done ? 'done' : 'busy', s.task, 100 * count[s.agent] / total[s.agent]);
     clearHighlights();
     (s.nodes || []).forEach(id => nodeEls[id].classList.add('hl'));
     (s.edges || []).forEach(k => edgeEls[k].classList.add('hl'));
-    const line = document.createElement('div');
-    if (s.cls) line.className = s.cls;
-    line.innerHTML = `<b>[${AGENTS.find(a => a.id === s.agent).name}]</b> ${s.log}`;
-    logEl.appendChild(line);
-    logEl.scrollTop = logEl.scrollHeight;
-    if (s.done) { d.classList.remove('busy'); d.classList.add('done'); d.querySelector('.agent-task').textContent = 'erledigt'; }
+    logLine(s.agent, s.log, s.cls);
     if (s.report) showReport();
     timer = setTimeout(tick, s.fast ? 260 : 900);
   };
   tick();
 }
 
+function run() {
+  reset();
+  runBtn.disabled = true; resetBtn.disabled = false;
+  play(LOCAL_STEPS, () => (live ? startLive() : play(SIM_STEPS, finish)));
+}
+function finish() { runBtn.disabled = false; }
+
+// ---------------------------------------------------------------- bridge
+// The research and the report come from bridge/buero.mjs when it is running.
+// ?bridge=ws://host:port/buero points the page somewhere else.
+const BRIDGE_URL = new URLSearchParams(location.search).get('bridge') || 'ws://localhost:8787/buero';
+let bridge = null, live = false, liveRun = false, toolCount = 0;
+
+function connect() {
+  let ws;
+  try { ws = new WebSocket(BRIDGE_URL); } catch { return; }
+  ws.onopen = () => { bridge = ws; setLive(true); };
+  ws.onmessage = ev => { let m; try { m = JSON.parse(ev.data); } catch { return; } onBridge(m); };
+  ws.onclose = () => {
+    const was = bridge === ws;
+    bridge = null; setLive(false);
+    if (liveRun) failLive('Verbindung zur Bridge verloren.');
+    setTimeout(connect, was ? 2000 : 6000);
+  };
+}
+function setLive(on) {
+  live = on;
+  modeEl.textContent = on ? 'Live' : 'Simulation';
+  modeEl.classList.toggle('live', on);
+  modeEl.title = on ? 'Register-Prüfer und Berichtschreiber laufen über die Bridge (Claude Code)' : 'Ohne Bridge werden Recherche und Bericht simuliert';
+  noteEl.textContent = 'Datenbasis: Netzwerk-Grafik (Screenshot) · 8 Knoten · ' +
+    (on ? 'Bridge verbunden – Recherche läuft live im Web' : 'Bridge nicht verbunden – Recherche wird simuliert');
+}
+
+function startLive() {
+  liveRun = true; toolCount = 0;
+  setAgent('check', 'busy', 'Prüfpunkte übergeben', 4);
+  logLine('check', `${A.questions.length} Prüfpunkte an die Bridge übergeben – Recherche startet.`);
+  bridge.send(JSON.stringify({
+    type: 'start',
+    case: {
+      title: 'Netzwerk Kenan Hukic',
+      nodes: NODES.map(n => ({ name: n.full || n.label, type: n.type, status: n.status })),
+      edges: EDGES.map(e => ({ from: name(e.a), to: name(e.b), kind: e.kind === 'own' ? 'hält Beteiligung an' : KIND_DE[e.kind] })),
+      questions: A.questions,
+    },
+  }));
+}
+
+const STATUS_CLS = { belegt: 'ok', teilweise: 'q', offen: 'bad' };
+function showFindings(data) {
+  (data?.findings || []).forEach(f => {
+    const src = (f.sources || []).length ? ` <span class="tool">(${f.sources.length} Quelle${f.sources.length > 1 ? 'n' : ''})</span>` : '';
+    logLine('check', `#${esc(f.question)} ${esc(f.status)}: ${esc(f.answer)}${src}`, STATUS_CLS[f.status]);
+  });
+  (data?.corrections || []).forEach(c => logLine('check', 'Abweichung zur Grafik: ' + esc(c), 'q'));
+}
+
+function onBridge(m) {
+  if (!liveRun) return;
+  switch (m.type) {
+    case 'phase':
+      if (m.agent === 'writer') {
+        setAgent('check', 'done', null, 100);
+        setAgent('writer', 'busy', 'schreibt die Akte', 5);
+        logLine('writer', 'Akte wird geschrieben …');
+        report = ''; reportEl.classList.add('show');
+      }
+      break;
+    case 'tool':
+      toolCount++;
+      setAgent(m.agent, 'busy', `${m.label}: ${m.detail}`, Math.min(92, 4 + toolCount * 5));
+      logLine(m.agent, `${esc(m.label)}: ${esc(m.detail)}`, 'tool');
+      highlightMentions(m.detail);
+      break;
+    case 'text':
+      if (m.agent !== 'writer') break;
+      report += m.delta;
+      agentEls.writer.querySelector('.bar i').style.width = Math.min(95, 5 + report.length / 40) + '%';
+      renderReport();
+      break;
+    case 'findings':
+      clearHighlights();
+      showFindings(m.data);
+      break;
+    case 'done':
+      liveRun = false;
+      if (m.report) report = m.report;
+      renderReport();
+      clearHighlights();
+      setAgent('writer', 'done', null, 100);
+      logLine('writer', 'Akte abgeschlossen. Bericht steht unten bereit.', 'ok');
+      if (m.costUsd) costEl.textContent = `Kosten dieses Laufs: ${m.costUsd.toFixed(2)} USD`;
+      dlBtn.disabled = false;
+      finish();
+      break;
+    case 'error':
+      failLive(m.message);
+      break;
+  }
+}
+// A failed live run still finishes the demo, on the simulated path, and says so.
+function failLive(message) {
+  liveRun = false;
+  logLine('check', `Bridge-Fehler: ${esc(message)} – weiter mit Simulation.`, 'bad');
+  AGENTS.filter(a => a.id === 'check' || a.id === 'writer').forEach(a => setAgent(a.id, 'idle', 'bereit', 0));
+  play(SIM_STEPS, finish);
+}
+
+// ---------------------------------------------------------------- report
 function buildReport() {
   const today = new Date().toLocaleDateString('de-DE');
   const L = [];
-  L.push('# Akte: Netzwerk Kenan Hukic', '', `Stand ${today} · Agenten-Büro (Demo) · Quelle: Netzwerk-Grafik (Screenshot)`,
+  L.push('# Akte: Netzwerk Kenan Hukic', '', `Stand ${today} · Agenten-Büro (Simulation) · Quelle: Netzwerk-Grafik (Screenshot)`,
     '**Status: unverifiziert** – kein Abgleich mit dem Handelsregister erfolgt.', '');
   L.push('## Überblick', `- ${A.people.length} Personen, ${A.companies.length} Gesellschaften, ${EDGES.length} Verbindungen`);
-  Object.entries(KIND_DE).forEach(([k, v]) => L.push(`  - ${EDGES.filter(e => e.kind === k).length}× ${v}`));
+  Object.entries(KIND_DE).forEach(([k, v]) => L.push(`- ${EDGES.filter(e => e.kind === k).length}× ${v}`));
   L.push('', '## Personen');
   A.people.forEach(p => L.push(`- ${p.label} (${p.status}) – verbunden mit: ${EDGES.filter(e => e.a === p.id || e.b === p.id).map(e => name(e.a === p.id ? e.b : e.a)).join(', ')}`));
-  L.push('', '## Gesellschaften (nach Zahl der aktuellen Verbindungen)');
-  A.ranking.filter(r => byId[r.id].type === 'company').forEach(r => L.push(`- ${byId[r.id].full || name(r.id)} – ${r.d}`));
+  L.push('', '## Gesellschaften', '| Gesellschaft | aktuelle Verbindungen |', '|---|---|');
+  A.ranking.filter(r => byId[r.id].type === 'company').forEach(r => L.push(`| ${byId[r.id].full || name(r.id)} | ${r.d} |`));
   L.push('', '## Beteiligungsketten (laut Pfeilen)');
   A.chains.forEach(c => L.push(`- ${chainText(c)}`));
   L.push('', '## Befunde',
@@ -415,9 +570,50 @@ function buildReport() {
 }
 function showReport() {
   report = buildReport();
-  document.getElementById('reportText').textContent = report;
-  document.getElementById('report').classList.add('show');
+  renderReport();
+  reportEl.classList.add('show');
   dlBtn.disabled = false;
+}
+
+// Just enough Markdown for a case file: headings, lists, tables, bold, links.
+// Everything is escaped first, and only http(s) links become anchors.
+function inline(t) {
+  return esc(t)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    // Register URLs carry parentheses ("…/Amtsgericht Charlottenburg (HRB 1 B)"), so one level is allowed.
+    .replace(/\[([^\]]+)\]\((https?:\/\/(?:[^\s()]|\([^\s()]*\))+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+}
+const IS_TABLE = /^\s*\|/, IS_UL = /^\s*[-*]\s+/, IS_OL = /^\s*\d+[.)]\s+/, IS_H = /^(#{1,3})\s+(.*)/;
+function md(src) {
+  const lines = src.split('\n'), out = [];
+  let i = 0;
+  const take = test => { const r = []; while (i < lines.length && test.test(lines[i])) r.push(lines[i++]); return r; };
+  while (i < lines.length) {
+    const l = lines[i];
+    let m;
+    if (!l.trim()) { i++; continue; }
+    if ((m = l.match(IS_H))) { out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`); i++; continue; }
+    if (IS_TABLE.test(l)) {
+      const rows = take(IS_TABLE).filter(r => !/^\s*\|[\s:|-]+\|?\s*$/.test(r))
+        .map(r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => inline(c.trim())));
+      out.push('<table>' + rows.map((r, k) => '<tr>' + r.map(c => k ? `<td>${c}</td>` : `<th>${c}</th>`).join('') + '</tr>').join('') + '</table>');
+      continue;
+    }
+    if (IS_UL.test(l)) { out.push('<ul>' + take(IS_UL).map(x => `<li>${inline(x.replace(IS_UL, ''))}</li>`).join('') + '</ul>'); continue; }
+    if (IS_OL.test(l)) { out.push('<ol>' + take(IS_OL).map(x => `<li>${inline(x.replace(IS_OL, ''))}</li>`).join('') + '</ol>'); continue; }
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !IS_H.test(lines[i]) && !IS_TABLE.test(lines[i]) && !IS_UL.test(lines[i]) && !IS_OL.test(lines[i])) para.push(lines[i++]);
+    out.push(`<p>${para.map(inline).join('<br>')}</p>`);
+  }
+  return out.join('');
+}
+let renderQueued = false;
+function renderReport() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; reportBody.innerHTML = md(report); });
 }
 
 runBtn.addEventListener('click', run);
@@ -429,6 +625,7 @@ dlBtn.addEventListener('click', () => {
   a.click();
   URL.revokeObjectURL(a.href);
 });
+connect();
 </script>
 </body>
 </html>

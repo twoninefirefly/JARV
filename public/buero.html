@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agenten-Büro</title>
+<link rel="icon" href="/favicon.svg" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" />
+<style>
+  /* Demo of the agent office: four agents work through one company network.
+     Self-contained on purpose — no bridge, no build step, no network beyond fonts. */
+  :root {
+    --interface: #00e5ff;
+    --bg: #01060c;
+    --panel: rgba(0, 229, 255, 0.04);
+    --line: rgba(0, 229, 255, 0.22);
+    --text: #cfeff5;
+    --muted: #6f9aa3;
+    --company: #c97a6d;
+    --former: #8a8f94;
+    --done: #5cf2a5;
+    --warn: #ffc857;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; font-size: 14px; }
+  body::after {
+    content: ''; position: fixed; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.5) 100%),
+      repeating-linear-gradient(0deg, rgba(0,229,255,.025) 0 1px, transparent 1px 3px);
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+    padding: 16px 24px; border-bottom: 1px solid var(--line);
+    font-family: 'Chakra Petch', sans-serif; text-transform: uppercase; letter-spacing: .16em;
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; color: var(--interface); }
+  .badge { font-size: 10px; padding: 3px 8px; border: 1px solid var(--warn); color: var(--warn); }
+  .source { font-family: Inter, sans-serif; text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--muted); flex: 1 1 260px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: 600 11px 'Chakra Petch', sans-serif; letter-spacing: .14em; text-transform: uppercase;
+    background: transparent; color: var(--interface); border: 1px solid var(--interface);
+    padding: 8px 14px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: rgba(0,229,255,.12); }
+  button:disabled { opacity: .35; cursor: default; }
+
+  main {
+    display: grid; gap: 16px; padding: 16px 24px 24px;
+    grid-template-columns: 280px minmax(0, 1fr) 340px;
+    grid-template-areas: "agents graph side";
+  }
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 1fr 1fr; grid-template-areas: "graph graph" "agents side"; }
+  }
+  @media (max-width: 700px) {
+    main { grid-template-columns: 1fr; grid-template-areas: "graph" "agents" "side"; padding: 12px 16px; }
+    header { padding: 12px 16px; }
+  }
+  section { background: var(--panel); border: 1px solid var(--line); min-width: 0; }
+  section > h2 {
+    margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line);
+    font: 600 11px 'Chakra Petch', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--interface);
+  }
+  #agents { grid-area: agents; }
+  #graph { grid-area: graph; align-self: start; }
+  #side { grid-area: side; display: flex; flex-direction: column; }
+
+  .agent { padding: 12px 14px; border-bottom: 1px solid var(--line); transition: background .3s; }
+  .agent:last-child { border-bottom: 0; }
+  .agent.busy { background: rgba(0,229,255,.08); }
+  .agent-head { display: flex; align-items: center; gap: 10px; }
+  .lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .busy .lamp { background: var(--interface); box-shadow: 0 0 10px var(--interface); animation: pulse 1s infinite; }
+  .done .lamp { background: var(--done); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .agent-name { font: 600 13px 'Chakra Petch', sans-serif; letter-spacing: .08em; text-transform: uppercase; }
+  .agent-role { font-size: 12px; color: var(--muted); margin: 2px 0 6px 19px; }
+  .agent-task { font: 12px 'JetBrains Mono', monospace; color: var(--text); margin-left: 19px; min-height: 1.4em; }
+  .bar { height: 2px; background: rgba(0,229,255,.12); margin: 8px 0 0 19px; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--interface); transition: width .4s; }
+  .done .bar > i { background: var(--done); }
+
+  svg { display: block; width: 100%; height: auto; }
+  .edge { stroke-width: 3; fill: none; transition: stroke .3s, opacity .3s; }
+  .edge.indirect { stroke-dasharray: 4 6; stroke-width: 3.5; }
+  .edge.hl { stroke: var(--interface) !important; }
+  .node { cursor: pointer; }
+  .node circle { stroke: transparent; stroke-width: 3; transition: stroke .3s; }
+  .node.hl circle, .node.sel circle { stroke: var(--interface); }
+  .node.sel circle { stroke-width: 5; }
+  .node:focus { outline: none; }
+  .node:focus-visible circle { stroke: var(--interface); }
+  .node text { font: 500 19px Inter, sans-serif; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend svg { width: 26px; height: 10px; }
+
+  #detail { padding: 12px 14px; font-size: 13px; line-height: 1.5; border-bottom: 1px solid var(--line); min-height: 120px; }
+  #detail h3 { margin: 0 0 4px; font: 600 14px 'Chakra Petch', sans-serif; letter-spacing: .04em; color: var(--interface); }
+  #detail ul { margin: 6px 0 0; padding-left: 18px; }
+  .hint { color: var(--muted); }
+  #log { flex: 1; min-height: 200px; max-height: 360px; overflow-y: auto; padding: 10px 14px; font: 12px/1.55 'JetBrains Mono', monospace; }
+  #log div { margin-bottom: 4px; animation: in .3s; }
+  #log b { font-weight: 400; color: var(--interface); }
+  #log .ok { color: var(--done); }
+  #log .q { color: var(--warn); }
+  @keyframes in { from { opacity: 0; transform: translateY(4px); } }
+
+  #report { grid-column: 1 / -1; display: none; }
+  #report.show { display: block; }
+  #report pre { margin: 0; padding: 16px; white-space: pre-wrap; font: 13px/1.6 'JetBrains Mono', monospace; color: var(--text); overflow-x: auto; }
+  @media (max-width: 1100px) { #report { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agenten-Büro</h1>
+  <span class="badge">Demo</span>
+  <span class="source">Datenbasis: Netzwerk-Grafik (Screenshot) · 8 Knoten · unverifiziert, nicht mit dem Handelsregister abgeglichen</span>
+  <div class="controls">
+    <button id="run">Lauf starten</button>
+    <button id="reset" disabled>Zurücksetzen</button>
+    <button id="download" disabled>Bericht (.md)</button>
+  </div>
+</header>
+
+<main>
+  <section id="agents"><h2>Team</h2><div id="agentList"></div></section>
+
+  <section id="graph">
+    <h2>Netzwerk · Kenan Hukic</h2>
+    <svg id="svg" viewBox="20 190 1190 570" role="img" aria-label="Netzwerkgraph"></svg>
+    <div class="legend">
+      <span><svg viewBox="0 0 26 10"><line x1="0" y1="5" x2="26" y2="5" stroke="var(--company)" stroke-width="3"/></svg>aktuell</span>
+      <span><svg viewBox="0 0 26 10"><line x1="0" y1="5" x2="26" y2="5" stroke="var(--company)" stroke-width="3" stroke-dasharray="3 3"/></svg>indirekt</span>
+      <span><svg viewBox="0 0 26 10"><line x1="0" y1="5" x2="18" y2="5" stroke="var(--company)" stroke-width="3"/><path d="M17,0 L26,5 L17,10 z" fill="var(--company)"/></svg>Beteiligung</span>
+      <span><svg viewBox="0 0 26 10"><line x1="0" y1="5" x2="26" y2="5" stroke="var(--former)" stroke-width="3"/></svg>vormals</span>
+    </div>
+  </section>
+
+  <section id="side">
+    <h2>Akte</h2>
+    <div id="detail"><span class="hint">Knoten anklicken für Details – oder „Lauf starten“, damit das Team die Daten bearbeitet.</span></div>
+    <h2>Protokoll</h2>
+    <div id="log"></div>
+  </section>
+
+  <section id="report"><h2>Bericht</h2><pre id="reportText"></pre></section>
+</main>
+
+<script>
+// ---------------------------------------------------------------- the data
+// Transcribed from the network screenshot. Line types are read off the
+// picture; what each type means legally (Geschäftsführer, Gesellschafter …)
+// is not stated there, so the agents treat it as an open question.
+const NODES = [
+  { id: 'kenan',   label: 'Kenan Hukic',            type: 'person',  status: 'aktuell', x: 711,  y: 490 },
+  { id: 'rasim',   label: 'Rasim Hukic',            type: 'person',  status: 'vormals', x: 122,  y: 348 },
+  { id: 'huck',    label: 'Huck Service GmbH',      type: 'company', x: 466,  y: 415 },
+  { id: 'mh11',    label: 'MH 11 GmbH',             type: 'company', x: 775,  y: 243 },
+  { id: 'hre',     label: 'HUKIC Real Estate GmbH & C…', full: 'HUKIC Real Estate GmbH & C… (Name im Screenshot abgeschnitten)', type: 'company', x: 1083, y: 315 },
+  { id: 'muki',    label: 'Muki Immobilien GmbH',   type: 'company', x: 909,  y: 448 },
+  { id: 'himmo',   label: 'Hukic Immobilien UG',    type: 'company', x: 970,  y: 612 },
+  { id: 'holding', label: 'Hukic Holding GmbH',     type: 'company', x: 699,  y: 690 },
+];
+// kind: direct = durchgezogen, own = Pfeil (Beteiligung a → b), indirect = gepunktet, former = grau
+const EDGES = [
+  { a: 'kenan', b: 'huck',    kind: 'direct' },
+  { a: 'kenan', b: 'mh11',    kind: 'direct' },
+  { a: 'kenan', b: 'muki',    kind: 'direct' },
+  { a: 'kenan', b: 'himmo',   kind: 'direct' },
+  { a: 'kenan', b: 'holding', kind: 'direct' },
+  { a: 'rasim', b: 'huck',    kind: 'former' },
+  { a: 'mh11',    b: 'hre',   kind: 'own' },
+  { a: 'holding', b: 'huck',  kind: 'own' },
+  { a: 'holding', b: 'muki',  kind: 'own' },
+  { a: 'muki',    b: 'himmo', kind: 'own' },
+  { a: 'huck',    b: 'mh11',  kind: 'indirect' },
+  { a: 'mh11',    b: 'muki',  kind: 'indirect' },
+  { a: 'muki',    b: 'hre',   kind: 'indirect' },
+  { a: 'hre',     b: 'himmo', kind: 'indirect' },
+  { a: 'holding', b: 'himmo', kind: 'indirect' },
+];
+const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
+const name = id => byId[id].label;
+const KIND_DE = { direct: 'direkte Verbindung', own: 'Beteiligung', indirect: 'indirekte Verbindung', former: 'vormalige Verbindung' };
+
+// -------------------------------------------------------------- analysis
+// Everything the agents "find" is computed here from the data above, so the
+// demo never states anything the picture does not contain.
+function analyse() {
+  const companies = NODES.filter(n => n.type === 'company');
+  const people = NODES.filter(n => n.type === 'person');
+  const current = EDGES.filter(e => e.kind !== 'former');
+  const degree = Object.fromEntries(NODES.map(n => [n.id, 0]));
+  current.forEach(e => { degree[e.a]++; degree[e.b]++; });
+  const ranking = NODES.map(n => ({ id: n.id, d: degree[n.id] })).sort((p, q) => q.d - p.d);
+  const leaders = ranking.filter(r => r.d === ranking[0].d).map(r => r.id);
+
+  const own = EDGES.filter(e => e.kind === 'own');
+  const children = id => own.filter(e => e.a === id).map(e => e.b);
+  const hasParent = id => own.some(e => e.b === id);
+  const tops = companies.filter(c => !hasParent(c.id) && children(c.id).length).map(c => c.id);
+  const chains = [];
+  const walk = (id, path) => {
+    const next = children(id);
+    if (!next.length) { chains.push(path); return; }
+    next.forEach(n => walk(n, [...path, n]));
+  };
+  tops.forEach(t => walk(t, [t]));
+
+  const kenanDirect = EDGES.filter(e => e.kind === 'direct' && (e.a === 'kenan' || e.b === 'kenan'))
+    .map(e => e.a === 'kenan' ? e.b : e.a);
+  const reach = new Set(kenanDirect);
+  let grew = true;
+  while (grew) { grew = false; own.forEach(e => { if (reach.has(e.a) && !reach.has(e.b)) { reach.add(e.b); grew = true; } }); }
+  const viaChain = [...reach].filter(id => !kenanDirect.includes(id));
+  const isolated = companies.filter(c => !reach.has(c.id)).map(c => c.id);
+
+  const questions = [
+    'Welche Funktion hat Kenan Hukic jeweils (Geschäftsführer, Gesellschafter, Prokurist)? Die Grafik zeigt nur „Verbindung“.',
+    'Was bedeuten die gepunkteten Linien (gleiche Anschrift, gemeinsame Person, Telefon …)?',
+    'Vollständiger Name und Rechtsform von „HUKIC Real Estate GmbH & C…“ (vermutlich GmbH & Co. KG – prüfen).',
+    'Höhe der Beteiligungen entlang der Pfeile (Holding → Huck Service, Holding → Muki, Muki → Hukic Immobilien UG, MH 11 → HUKIC Real Estate).',
+    'Rolle und Ausscheidensdatum von Rasim Hukic bei der Huck Service GmbH.',
+    `Registergerichte, HRB-Nummern und Sitz aller ${companies.length} Gesellschaften.`,
+  ];
+  return { companies, people, current, degree, ranking, leaders, tops, chains, kenanDirect, viaChain, isolated, questions };
+}
+const A = analyse();
+
+// ---------------------------------------------------------------- agents
+const AGENTS = [
+  { id: 'intake',  name: 'Erfasser',        role: 'liest die Quelle, legt Entitäten an' },
+  { id: 'analyst', name: 'Netzwerk-Analyst', role: 'Zentralität, Beteiligungsketten' },
+  { id: 'check',   name: 'Register-Prüfer', role: 'markiert Unbelegtes, offene Fragen' },
+  { id: 'writer',  name: 'Berichtschreiber', role: 'fasst alles zur Akte zusammen' },
+];
+const chainText = c => c.map(name).join(' → ');
+const STEPS = [
+  { agent: 'intake', task: 'Quelle laden', log: 'Netzwerk-Grafik geladen (1 Bild).' },
+  ...NODES.map(n => ({ agent: 'intake', task: 'Entität: ' + n.label, nodes: [n.id], fast: true,
+    log: `Entität angelegt: <b>${n.label}</b> (${n.type === 'person' ? 'Person' : 'Gesellschaft'}${n.status ? ', ' + n.status : ''})` })),
+  { agent: 'intake', task: 'Verbindungen erfassen', edges: EDGES.map((_, i) => i),
+    log: `${EDGES.length} Verbindungen erfasst: ` + Object.entries(KIND_DE).map(([k, v]) => `${EDGES.filter(e => e.kind === k).length}× ${v}`).join(', '), cls: 'ok', done: true },
+
+  { agent: 'analyst', task: 'Zentralität berechnen', nodes: A.leaders,
+    log: `Am stärksten vernetzt (je ${A.ranking[0].d} aktuelle Verbindungen): <b>${A.leaders.map(name).join(', ')}</b>.` },
+  { agent: 'analyst', task: 'Direkte Bezüge', nodes: ['kenan', ...A.kenanDirect],
+    edges: EDGES.map((e, i) => e.kind === 'direct' ? i : -1).filter(i => i >= 0),
+    log: `Kenan Hukic ist direkt mit ${A.kenanDirect.length} von ${A.companies.length} Gesellschaften verbunden.` },
+  ...A.chains.map(c => ({ agent: 'analyst', task: 'Kette verfolgen', nodes: c,
+    edges: EDGES.map((e, i) => e.kind === 'own' && c.includes(e.a) && c.includes(e.b) && c.indexOf(e.b) === c.indexOf(e.a) + 1 ? i : -1).filter(i => i >= 0),
+    log: `Beteiligungskette: <b>${chainText(c)}</b>` })),
+  { agent: 'analyst', task: 'Reichweite', nodes: A.viaChain,
+    log: A.viaChain.length
+      ? `Nur über Beteiligung erreichbar: ${A.viaChain.map(name).join(', ')}. ${A.isolated.length ? 'Ohne Bezug: ' + A.isolated.map(name).join(', ') : 'Alle Gesellschaften liegen im Einflussbereich.'}`
+      : 'Alle Gesellschaften sind direkt verbunden.', cls: 'ok', done: true },
+
+  ...A.questions.map(q => ({ agent: 'check', task: 'Prüfpunkt', log: '? ' + q, cls: 'q', fast: true })),
+  { agent: 'check', task: 'Status setzen', log: 'Alle Angaben als <b>unverifiziert</b> markiert – Abgleich mit Handelsregister ausstehend.', cls: 'ok', done: true },
+
+  { agent: 'writer', task: 'Bericht entwerfen', log: 'Bericht wird zusammengestellt …' },
+  { agent: 'writer', task: 'Bericht fertig', log: 'Akte abgeschlossen. Bericht steht unten bereit.', cls: 'ok', done: true, report: true },
+];
+
+// ------------------------------------------------------------------ view
+const svg = document.getElementById('svg');
+const NS = 'http://www.w3.org/2000/svg';
+const R = 38;
+const el = (tag, attrs, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  parent && parent.appendChild(e);
+  return e;
+};
+const defs = el('defs', {}, svg);
+const marker = el('marker', { id: 'arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 5, markerHeight: 5, orient: 'auto-start-reverse' }, defs);
+el('path', { d: 'M0,0 L10,5 L0,10 z', fill: 'var(--company)' }, marker);
+
+const edgeEls = EDGES.map(e => {
+  const p = byId[e.a], q = byId[e.b];
+  const dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy);
+  const ux = dx / len, uy = dy / len;
+  const line = el('line', {
+    x1: p.x + ux * R, y1: p.y + uy * R, x2: q.x - ux * (R + 2), y2: q.y - uy * (R + 2),
+    class: 'edge' + (e.kind === 'indirect' ? ' indirect' : ''),
+    stroke: e.kind === 'former' ? 'var(--former)' : 'var(--company)',
+  }, svg);
+  if (e.kind === 'own') line.setAttribute('marker-end', 'url(#arrow)');
+  return line;
+});
+
+const PERSON = 'M0,-14 a7,7 0 1,1 0.01,0 z M-13,14 a13,10 0 0,1 26,0 z';
+const nodeEls = Object.fromEntries(NODES.map(n => {
+  const g = el('g', { class: 'node', transform: `translate(${n.x},${n.y})`, tabindex: 0 }, svg);
+  const fill = n.type === 'company' ? 'var(--company)' : n.status === 'vormals' ? 'var(--former)' : '#2f7a8c';
+  el('circle', { r: R, fill }, g);
+  if (n.type === 'person') el('path', { d: PERSON, fill: '#fff', transform: 'translate(0,-2)' }, g);
+  else {
+    el('rect', { x: -11, y: -16, width: 22, height: 30, fill: '#fff' }, g);
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++)
+      el('rect', { x: -6 + c * 8, y: -12 + r * 6, width: 4, height: 3, fill }, g);
+  }
+  const t = el('text', { y: R + 26, fill: n.type === 'company' ? 'var(--company)' : n.status === 'vormals' ? 'var(--former)' : 'var(--interface)' }, g);
+  t.textContent = n.label;
+  if (n.id === 'hre') t.setAttribute('text-anchor', 'end'), t.setAttribute('x', R + 8);
+  g.addEventListener('click', () => select(n.id));
+  g.addEventListener('keydown', ev => { if (ev.key === 'Enter') select(n.id); });
+  return [n.id, g];
+}));
+
+function select(id) {
+  Object.values(nodeEls).forEach(g => g.classList.remove('sel'));
+  nodeEls[id].classList.add('sel');
+  const n = byId[id];
+  const links = EDGES.filter(e => e.a === id || e.b === id).map(e => {
+    const other = e.a === id ? e.b : e.a;
+    const dir = e.kind === 'own' ? (e.a === id ? ' (hält Beteiligung an)' : ' (Beteiligung von)') : '';
+    return `<li>${KIND_DE[e.kind]}${dir}: ${name(other)}</li>`;
+  }).join('');
+  document.getElementById('detail').innerHTML =
+    `<h3>${n.full || n.label}</h3>` +
+    `<div class="hint">${n.type === 'person' ? 'Person' : 'Gesellschaft'}${n.status ? ' · ' + n.status : ''} · ${A.degree[id]} aktuelle Verbindungen · unverifiziert</div>` +
+    `<ul>${links}</ul>`;
+}
+
+const list = document.getElementById('agentList');
+const agentEls = Object.fromEntries(AGENTS.map(a => {
+  const d = document.createElement('div');
+  d.className = 'agent';
+  d.innerHTML = `<div class="agent-head"><span class="lamp"></span><span class="agent-name">${a.name}</span></div>
+    <div class="agent-role">${a.role}</div><div class="agent-task">bereit</div><div class="bar"><i></i></div>`;
+  list.appendChild(d);
+  return [a.id, d];
+}));
+
+// ------------------------------------------------------------------- run
+const logEl = document.getElementById('log');
+const runBtn = document.getElementById('run'), resetBtn = document.getElementById('reset'), dlBtn = document.getElementById('download');
+let timer = null, report = '';
+
+function clearHighlights() {
+  edgeEls.forEach(l => l.classList.remove('hl'));
+  Object.values(nodeEls).forEach(g => g.classList.remove('hl'));
+}
+function reset() {
+  clearTimeout(timer); timer = null;
+  clearHighlights();
+  logEl.innerHTML = '';
+  AGENTS.forEach(a => {
+    const d = agentEls[a.id];
+    d.className = 'agent';
+    d.querySelector('.agent-task').textContent = 'bereit';
+    d.querySelector('.bar i').style.width = '0';
+  });
+  document.getElementById('report').classList.remove('show');
+  runBtn.disabled = false; resetBtn.disabled = true; dlBtn.disabled = true;
+}
+function run() {
+  reset();
+  runBtn.disabled = true; resetBtn.disabled = false;
+  const total = Object.fromEntries(AGENTS.map(a => [a.id, STEPS.filter(s => s.agent === a.id).length]));
+  const count = Object.fromEntries(AGENTS.map(a => [a.id, 0]));
+  let i = 0;
+  const tick = () => {
+    const s = STEPS[i++];
+    if (!s) { clearHighlights(); return; }
+    const d = agentEls[s.agent];
+    AGENTS.forEach(a => agentEls[a.id].classList.remove('busy'));
+    d.classList.add('busy');
+    d.querySelector('.agent-task').textContent = s.task;
+    count[s.agent]++;
+    d.querySelector('.bar i').style.width = (100 * count[s.agent] / total[s.agent]) + '%';
+    clearHighlights();
+    (s.nodes || []).forEach(id => nodeEls[id].classList.add('hl'));
+    (s.edges || []).forEach(k => edgeEls[k].classList.add('hl'));
+    const line = document.createElement('div');
+    if (s.cls) line.className = s.cls;
+    line.innerHTML = `<b>[${AGENTS.find(a => a.id === s.agent).name}]</b> ${s.log}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+    if (s.done) { d.classList.remove('busy'); d.classList.add('done'); d.querySelector('.agent-task').textContent = 'erledigt'; }
+    if (s.report) showReport();
+    timer = setTimeout(tick, s.fast ? 260 : 900);
+  };
+  tick();
+}
+
+function buildReport() {
+  const today = new Date().toLocaleDateString('de-DE');
+  const L = [];
+  L.push('# Akte: Netzwerk Kenan Hukic', '', `Stand ${today} · Agenten-Büro (Demo) · Quelle: Netzwerk-Grafik (Screenshot)`,
+    '**Status: unverifiziert** – kein Abgleich mit dem Handelsregister erfolgt.', '');
+  L.push('## Überblick', `- ${A.people.length} Personen, ${A.companies.length} Gesellschaften, ${EDGES.length} Verbindungen`);
+  Object.entries(KIND_DE).forEach(([k, v]) => L.push(`  - ${EDGES.filter(e => e.kind === k).length}× ${v}`));
+  L.push('', '## Personen');
+  A.people.forEach(p => L.push(`- ${p.label} (${p.status}) – verbunden mit: ${EDGES.filter(e => e.a === p.id || e.b === p.id).map(e => name(e.a === p.id ? e.b : e.a)).join(', ')}`));
+  L.push('', '## Gesellschaften (nach Zahl der aktuellen Verbindungen)');
+  A.ranking.filter(r => byId[r.id].type === 'company').forEach(r => L.push(`- ${byId[r.id].full || name(r.id)} – ${r.d}`));
+  L.push('', '## Beteiligungsketten (laut Pfeilen)');
+  A.chains.forEach(c => L.push(`- ${chainText(c)}`));
+  L.push('', '## Befunde',
+    `- Am stärksten vernetzt (je ${A.ranking[0].d} aktuelle Verbindungen): ${A.leaders.map(name).join(', ')}.`,
+    `- Kenan Hukic ist direkt mit ${A.kenanDirect.length} von ${A.companies.length} Gesellschaften verbunden.`,
+    A.viaChain.length ? `- Nur über eine Beteiligung erreichbar: ${A.viaChain.map(name).join(', ')}.` : '- Alle Gesellschaften sind direkt verbunden.',
+    `- Obergesellschaften ohne eingehende Beteiligung: ${A.tops.map(name).join(', ')}.`,
+    '- Rasim Hukic war vormals mit der Huck Service GmbH verbunden; aktuell keine Verbindung in der Grafik.', '');
+  L.push('## Offene Prüfpunkte');
+  A.questions.forEach((q, k) => L.push(`${k + 1}. ${q}`));
+  return L.join('\n');
+}
+function showReport() {
+  report = buildReport();
+  document.getElementById('reportText').textContent = report;
+  document.getElementById('report').classList.add('show');
+  dlBtn.disabled = false;
+}
+
+runBtn.addEventListener('click', run);
+resetBtn.addEventListener('click', reset);
+dlBtn.addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([report], { type: 'text/markdown' }));
+  a.download = 'akte-netzwerk-hukic.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+</body>
+</html>

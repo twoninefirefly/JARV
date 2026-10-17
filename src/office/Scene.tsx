@@ -756,26 +756,40 @@ function useTheme(): Theme {
   return themeOf(id)
 }
 
-function padTexture(t: Theme) {
+/**
+ * The pad is drawn twice: a base with the gradient, rings and ticks in the
+ * theme's colour, and the bare mark in white on black. The mark then glows in
+ * the customer's own colour through the emissive map and stands proud through
+ * the bump map, so it reads as inlaid rather than printed on.
+ */
+function padTexture(t: Theme, anisotropy: number) {
   const ringColor = rgba(t.hi, 0.9)
   const dashColor = rgba(t.accent, 0.6)
-  const S = 1024
-  const cv = document.createElement('canvas')
-  cv.width = cv.height = S
-  const g = cv.getContext('2d')!
+  // Sharp enough for the brain view, where the camera is close above the pad.
+  const S = phone() ? 1024 : 2048
+  const u = S / 1024
+  const canvas = () => {
+    const cv = document.createElement('canvas')
+    cv.width = cv.height = S
+    return cv
+  }
+  const baseCv = canvas()
+  const g = baseCv.getContext('2d')!
   const c = S / 2
   const ring = (r: number, w: number, color: string, dash?: number[]) => {
     g.beginPath()
-    g.setLineDash(dash ?? [])
-    g.lineWidth = w
+    g.setLineDash((dash ?? []).map((d) => d * u))
+    g.lineWidth = w * u
     g.strokeStyle = color
     g.arc(c, c, r * c, 0, Math.PI * 2)
     g.stroke()
   }
+  // Graphite under the cool and metal looks, warm dark brown under the others.
+  const stops = t.cool ? ['#1a1c20', '#111316', '#0a0b0d'] : ['#221a15', '#15110f', '#0d0b0a']
   const bg = g.createRadialGradient(c, c, 0, c, c, c)
-  bg.addColorStop(0, '#221a15')
-  bg.addColorStop(0.7, '#15110f')
-  bg.addColorStop(1, '#0d0b0a')
+  bg.addColorStop(0, stops[0])
+  bg.addColorStop(0.7, stops[1])
+  bg.addColorStop(1, stops[2])
   g.fillStyle = bg
   g.fillRect(0, 0, S, S)
   ring(0.955, 6, ringColor)
@@ -787,60 +801,95 @@ function padTexture(t: Theme) {
     const r0 = k % 4 === 0 ? 0.69 : 0.715
     g.beginPath()
     g.setLineDash([])
-    g.lineWidth = k % 4 === 0 ? 4 : 2
+    g.lineWidth = (k % 4 === 0 ? 4 : 2) * u
     g.strokeStyle = rgba(t.hi, 0.4)
     g.moveTo(c + Math.cos(a) * r0 * c, c + Math.sin(a) * r0 * c)
     g.lineTo(c + Math.cos(a) * 0.75 * c, c + Math.sin(a) * 0.75 * c)
     g.stroke()
   }
-  const tex = new THREE.CanvasTexture(cv)
-  tex.colorSpace = THREE.SRGBColorSpace
-  tex.anisotropy = 8
-  const mark = COMPANY.logoMark
+  const markCv = canvas()
+  const m = markCv.getContext('2d')!
+  m.fillStyle = '#000'
+  m.fillRect(0, 0, S, S)
+  const texture = (cv: HTMLCanvasElement, srgb: boolean) => {
+    const tex = new THREE.CanvasTexture(cv)
+    if (srgb) tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = anisotropy
+    return tex
+  }
+  const base = texture(baseCv, true)
+  // The mark is a mask (emissive strength and height), not a colour, so it stays linear.
+  const mark = texture(markCv, false)
+  const crop = COMPANY.logoMark
   if (COMPANY.logo) {
     const img = new Image()
     img.onload = () => {
-      const [sx, sy, sw, sh] = mark ?? [0, 0, img.width, img.height]
-      // The mark, tinted a light copper so it reads on the dark pad.
+      const [sx, sy, sw, sh] = crop ?? [0, 0, img.width, img.height]
+      // The mark alone, in white: its colour comes from the material.
       const tint = document.createElement('canvas')
       tint.width = sw
       tint.height = sh
       const tc = tint.getContext('2d')!
       tc.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
       tc.globalCompositeOperation = 'source-in'
-      tc.fillStyle = t.hi
+      tc.fillStyle = '#fff'
       tc.fillRect(0, 0, sw, sh)
       const h = S * 0.5
       const w = (sw / sh) * h
-      g.drawImage(tint, c - w / 2, c - h / 2, w, h)
-      tex.needsUpdate = true
+      m.imageSmoothingEnabled = true
+      m.imageSmoothingQuality = 'high'
+      m.drawImage(tint, c - w / 2, c - h / 2, w, h)
+      mark.needsUpdate = true
     }
     img.src = COMPANY.logo
   }
-  return tex
+  return { base, mark }
 }
 
 function Pad() {
   const chosen = useTheme()
+  const gl = useThree((s) => s.gl)
   // Kim Bormann's pad keeps its pink ring in the standard Centurion look.
   const kim = useOffice((s) => s.user?.id === 'leitung2')
   const theme = kim && chosen.id === 'centurion' ? themeOf('pink') : chosen
-  const tex = useMemo(() => padTexture(theme), [theme])
-  // A new colour draws a new texture; the old one has to leave the GPU, or every pick leaks one.
-  useEffect(() => () => tex.dispose(), [tex])
+  const tex = useMemo(() => padTexture(theme, gl.capabilities.getMaxAnisotropy()), [theme, gl])
+  // A new colour draws new textures; the old ones have to leave the GPU, or every pick leaks two.
+  useEffect(
+    () => () => {
+      tex.base.dispose()
+      tex.mark.dispose()
+    },
+    [tex],
+  )
   const ring = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(2.4), [theme])
   const halo = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(0.9), [theme])
+  // The mark in the customer's colour (a touch lighter and richer, so it reads on graphite),
+  // or in the theme's light tone where the office has no brand colour.
+  const glow = useMemo(() => {
+    const brand = (COMPANY as unknown as { brand?: string }).brand
+    return brand ? new THREE.Color(brand).offsetHSL(0, 0.08, 0.15) : new THREE.Color(theme.hi)
+  }, [theme])
   return (
     <group>
+      {/* Open-ended: a cap a millimetre under the glossy top fought it for depth and striped it dark. */}
       <mesh position={[0, 0.06, 0]} receiveShadow>
-        <cylinderGeometry args={[2.1, 2.16, 0.12, 96]} />
+        <cylinderGeometry args={[2.1, 2.16, 0.12, 96, 1, true]} />
         {/* The metal looks get a polished rim that catches the studio light. */}
         <meshStandardMaterial color="#141110" roughness={theme.metal ? 0.3 : 0.55} metalness={theme.metal ? 0.85 : 0.3} />
       </mesh>
       {/* the marked top faces the camera's default angle, so the mark reads upright */}
       <mesh position={[0, 0.121, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 4]} receiveShadow>
         <circleGeometry args={[2.1, 96]} />
-        <meshStandardMaterial map={tex} emissiveMap={tex} emissive="#ffffff" emissiveIntensity={0.35} roughness={0.5} metalness={0.2} />
+        <meshStandardMaterial
+          map={tex.base}
+          roughness={0.3}
+          metalness={0.55}
+          emissiveMap={tex.mark}
+          emissive={glow}
+          emissiveIntensity={2.2}
+          bumpMap={tex.mark}
+          bumpScale={3}
+        />
       </mesh>
       <mesh position={[0, 0.125, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[2.1, 0.012, 8, 160]} />

@@ -70,7 +70,8 @@ export type WsKind =
 
 export type Layout = 'list' | 'board' | 'table' | 'calendar' | 'overview'
 
-export type Tone = 'ok' | 'warn' | 'info' | 'muted' | 'bad'
+/** `sign` marks what waits for management's signature: wanted, not wrong, so it is not the error red. */
+export type Tone = 'ok' | 'warn' | 'info' | 'muted' | 'bad' | 'sign'
 
 export type WsItem = {
   id: string
@@ -382,6 +383,12 @@ function clock(minutesAgo: number, now = new Date()) {
 }
 function later(minutes: number, now = new Date()) {
   return clock(-minutes, now)
+}
+const DAY = new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' })
+/** A day `days` from today without a time, „Do., 29.10.“: deadlines fall on a day, not on the current minute. */
+function due(days: number, now = new Date()) {
+  // Counted in calendar days, so a clock change at night never shifts the date by one.
+  return DAY.format(new Date(now.getFullYear(), now.getMonth(), now.getDate() + Math.round(days)))
 }
 
 type Maker = (r: () => number, pick: <T>(xs: T[]) => T) => WsItem[]
@@ -746,7 +753,7 @@ const BASE_MAKERS: Partial<Record<WsKind, Maker>> = {
 }
 
 const MAKERS: Partial<Record<WsKind, Maker>> = HV
-  ? { ...BASE_MAKERS, ...hvMakers({ n, eur, clock: (m) => clock(m), later: (m) => later(m), company: COMPANY.name, L }) }
+  ? { ...BASE_MAKERS, ...hvMakers({ n, eur, clock: (m) => clock(m), later: (m) => later(m), due: (d) => due(d), company: COMPANY.name, L }) }
   : BASE_MAKERS
 
 function seedOf(s: string) {
@@ -843,7 +850,7 @@ export function itemsFor(t: WsTarget, approved: string[], decisions: Decision[] 
             badge: done
               ? { text: done.signed ? 'Unterschrieben' : done.result, tone: (done.result === 'Freigegeben' ? 'ok' : 'muted') as Tone }
               : needsLeitung(w)
-                ? { text: 'Unterschrift Leitung', tone: 'bad' as Tone }
+                ? { text: 'Unterschrift Leitung', tone: 'sign' as Tone }
                 : { text: 'Wartet auf Freigabe', tone: 'warn' as Tone },
             preparedBy: owner.name,
             decision: done,
@@ -880,7 +887,7 @@ export function itemsFor(t: WsTarget, approved: string[], decisions: Decision[] 
         badge: done
           ? { text: done.result, tone: (done.result === 'Freigegeben' ? 'ok' : 'muted') as Tone }
           : needsLeitung(w)
-            ? { text: 'Unterschrift Leitung', tone: 'bad' as Tone }
+            ? { text: 'Unterschrift Leitung', tone: 'sign' as Tone }
             : { text: 'Wartet auf Freigabe', tone: 'warn' as Tone },
         body: L.approvalLetter(w)
           ? 'Das Schreiben ist fertig. Nach Ihrer Freigabe geht es genau so raus, wie Sie es hier sehen.'

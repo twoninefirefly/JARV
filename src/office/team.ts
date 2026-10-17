@@ -1,6 +1,6 @@
 import { BRANCHE } from './branche'
 import { COMPANY, DEPARTMENTS } from './data'
-import { GRUPPE, GRUPPE_FREIGABE } from './gruppe'
+import { GRUPPE, GRUPPE_FREIGABE, monat } from './gruppe'
 
 /**
  * Who works in the office, and who may decide what.
@@ -99,8 +99,9 @@ export const HISTORY: Decision[] = HV
       { text: 'Handwerkertermin Sanitär Kaya, Lindenstr. 12', dept: 'schaden', by: 'jweber', name: 'Jonas Weber', at: '08:47', result: 'Freigegeben' },
       { text: 'Besichtigung Hafenstr. 8 – 6 Einladungen', dept: 'vermietung', by: 'skrueger', name: 'Sabine Krüger', at: '09:05', result: 'Freigegeben' },
       { text: 'Antwort Lärmbeschwerde Gartenstr. 40', dept: 'mieter', by: 'lschroeder', name: 'Lea Schröder', at: '09:31', result: 'Freigegeben' },
+      // Last month's charge for the group: this month's is still open in Intercompany (gruppe.ts).
       GRUPPE
-        ? { text: `Verrechnung ${GRUPPE.service ?? 'Hausmeister'} September`, dept: 'holding', by: 'thoffmann', name: 'Tim Hoffmann', at: '09:58', result: 'Freigegeben' }
+        ? { text: `Verrechnung ${GRUPPE.service ?? 'Hausmeister'} ${monat(-1)}`, dept: 'holding', by: 'thoffmann', name: 'Tim Hoffmann', at: '09:58', result: 'Freigegeben' }
         : { text: 'Sonderumlage Dach – Anschreiben', dept: 'weg', by: 'thoffmann', name: 'Tim Hoffmann', at: '09:58', result: 'Abgelehnt' },
       { text: 'Auftrag Heizungswartung Birkenweg 3 (2.380 €)', dept: 'schaden', by: 'leitung', name: COMPANY.chef ?? 'Maria Schneider', at: '10:20', result: 'Freigegeben' },
       ...(COMPANY.chef2
@@ -120,11 +121,14 @@ export const SENSITIVE: Array<{ value: string; label: string; note: string }> = 
   ? [
       { value: '412.380 €', label: 'Mieteingang September', note: '98 % der Sollmiete' },
       { value: '8.940 €', label: 'Mietrückstände gesamt', note: '7 Mieter, 1 mit 2 Monaten' },
-      { value: '1,84 Mio. €', label: 'Objekt- und Treuhandkonten', note: 'alle gedeckt, Am Markt 5 knapp' },
+      // A group holds its own portfolio: no trust accounts and no management fees, which belong to a third-party manager.
+      { value: '1,84 Mio. €', label: GRUPPE ? 'Objektkonten der Gruppe' : 'Objekt- und Treuhandkonten', note: 'alle gedeckt, Am Markt 5 knapp' },
       GRUPPE
         ? { value: `${GRUPPE.gesellschaften.length}`, label: 'Gesellschaften der Gruppe', note: GRUPPE.gesellschaften.some((g) => !g.belegt) ? 'Registerangaben teils noch zu bestätigen' : 'Register abgeglichen' }
         : { value: '2,31 Mio. €', label: 'Erhaltungsrücklagen (14 WEGs)', note: '1 WEG unter Zielwert' },
-      { value: '38.600 €', label: 'Verwalterhonorare im Monat', note: '+4 % zum Vorjahr' },
+      GRUPPE
+        ? { value: '2', label: 'Intercompany offen', note: 'Hausmeisterleistungen zur Abstimmung' }
+        : { value: '38.600 €', label: 'Verwalterhonorare im Monat', note: '+4 % zum Vorjahr' },
       { value: '2', label: 'Offene Rechtsfälle', note: 'Räumungsklage, Mietminderung' },
     ]
   : [

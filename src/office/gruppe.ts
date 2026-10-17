@@ -30,8 +30,21 @@ const kurz = (i: number) => G[i % Math.max(1, G.length)]?.kurz ?? 'Gesellschaft'
 const service = GRUPPE?.service ?? 'Hausmeisterservice'
 const unconfirmed = G.filter((g) => !g.belegt).length
 
-/** The waiting item, named once so the management-only list can refer to it. */
-export const GRUPPE_FREIGABE = `Offenlegung Jahresabschluss 2025 ${holding} freigeben`
+/**
+ * The financial year being closed: always last year's, so the filing
+ * deadlines roll forward on their own on New Year's Day.
+ */
+export const J = new Date().getFullYear() - 1
+
+/** The month `offset` months from now, written out: „Oktober“. */
+export const monat = (offset = 0, now = new Date()) => new Date(now.getFullYear(), now.getMonth() + offset, 1).toLocaleDateString('de-DE', { month: 'long' })
+
+/**
+ * The waiting item, named once so the management-only list can refer to it.
+ * Decisions are stored by this text, so it must read the same as before for
+ * the current year.
+ */
+export const GRUPPE_FREIGABE = `Offenlegung Jahresabschluss ${J} ${holding} freigeben`
 
 export function gruppeDepartment(day: (seed: number, scale: number) => number[], team: Team, angle: number): Department {
   return {
@@ -82,9 +95,11 @@ export const GRUPPE_KPI_OWNER: Record<string, [string, string]> = { holding: ['G
 
 // [from dept, from agent, to dept, to agent, message, what the brain did]
 export const GRUPPE_ROUTES: Array<[string, string, string, string, string, string]> = [
-  ['holding', 'Registerwache', 'holding', 'Gesellschaften', `Neue Bekanntmachung zur ${kurz(4)}`, 'Stammdaten abgeglichen'],
+  // Nothing here may announce a register event for a real company; the open
+  // MH 11 number is the one true thing the watch has to report.
+  ['holding', 'Registerwache', 'holding', 'Gesellschaften', `${kurz(4)}: Registernummer weiter offen – Auszug angefordert`, 'Prüfauftrag angelegt'],
   ['schaden', 'Rechnungsprüfung', 'holding', 'Intercompany', `${service} rechnet den Hausmeistereinsatz {object} ab`, 'Verrechnung vorgemerkt'],
-  ['miete', 'Objektkonten', 'holding', 'Finanzierung', 'Mieteingang {object} deckt die Rate im Oktober', 'Liquiditätsplan aktualisiert'],
+  ['miete', 'Objektkonten', 'holding', 'Finanzierung', `Mieteingang {object} deckt die Rate im ${monat(0)}`, 'Liquiditätsplan aktualisiert'],
   ['holding', 'Fristen & Offenlegung', 'miete', 'Belege', `Jahresabschluss ${kurz(1)}: Belege bis 30.11.`, 'Belegliste angefordert'],
   ['holding', 'Gruppen-Reporting', 'vermietung', 'Leerstand', 'Leerstand je Gesellschaft für den Gruppenbericht?', 'Zahlen übernommen'],
 ]
@@ -111,54 +126,81 @@ export const GRUPPE_LAYOUT: Record<GruppeKind, { layout: Layout; columns?: strin
 
 type Maker = (r: () => number, pick: <T>(xs: T[]) => T) => WsItem[]
 
-export function gruppeMakers({ n, eur, clock, later }: Helpers): Record<GruppeKind, Maker> {
+export function gruppeMakers({ n, eur, clock, due }: Helpers): Record<GruppeKind, Maker> {
   const source = GRUPPE?.quelle ?? ''
+  // „Registerrecherche Agenten-Büro, 16.10.2026“ → its name and its date.
+  const [study, studied] = source.split(', ')
+  const confirmed = G.length - unconfirmed
   return {
     entities: () =>
-      G.map((g, i) => ({
-        id: `ges${i}`,
-        title: g.name,
+      G.map((g, i) => {
         // The court is the same for the whole group, so the table shows only the number.
-        cells: [g.name.replace(' (haftungsbeschränkt)', ''), g.register.split(', ').pop() ?? g.register, g.aufgabe, g.belegt ? 'belegt' : 'zu prüfen'],
-        badge: g.belegt ? { text: 'belegt', tone: 'ok' } : { text: 'zu prüfen', tone: 'warn' },
-        fields: [
-          ['Registergericht', g.register.split(', ')[0]],
-          ['Gesellschafterin laut Netzwerk', g.mutter ?? '—'],
-          ['Quelle', g.belegt ? source : `${source} (nur Suchergebnis)`],
-        ],
-        actions: ['Gesellschaftsakte'],
-      })),
-    registerwatch: () =>
-      G.map((g, i) => ({
+        const number = g.register.split(', ').pop() ?? g.register
+        return {
+          id: `ges${i}`,
+          title: g.name,
+          // The full name, suffix included: a UG has to carry „(haftungsbeschränkt)“ (§ 5a GmbHG).
+          cells: [g.name, g.belegt ? number : `${number}?`, g.aufgabe, g.belegt ? 'belegt' : 'zu prüfen'],
+          badge: g.belegt ? { text: 'belegt', tone: 'ok' } : { text: 'zu prüfen', tone: 'warn' },
+          fields: [
+            ['Registergericht', g.register.split(', ')[0]],
+            ['Gesellschafterin', g.mutter ? `${g.mutter} (${g.mutterQuelle === 'register' ? 'laut Treffer der Recherche' : 'nur laut Netzwerk-Grafik'})` : '—'],
+            ['Quelle', g.belegt ? source : `${source} (nur Suchergebnis)`],
+            ...(g.hinweis ? [['Hinweis', g.hinweis] as [string, string]] : []),
+          ],
+          actions: ['Gesellschaftsakte'],
+        }
+      }),
+    registerwatch: () => [
+      // The research itself comes first: it is the only dated event the office really has.
+      {
+        id: 'hr-recherche',
+        title: `${studied ?? ''} · ${study}`,
+        sub: `${G.length} Gesellschaften abgefragt`,
+        badge: { text: 'Demo-Lauf', tone: 'info' },
+        body: `${confirmed} von ${G.length} Registernummern bestätigt${unconfirmed ? `, ${G.filter((g) => !g.belegt).map((g) => g.kurz).join(', ')} offen` : ''}.`,
+        actions: ['Recherche ansehen'],
+      },
+      ...G.map((g, i) => ({
         id: `hr${i}`,
         title: g.name,
         sub: g.register,
         meta: clock(30 + i * 7),
-        badge: g.belegt ? { text: 'keine Änderung', tone: 'ok' } : { text: 'Nummer bestätigen', tone: 'warn' },
+        badge: g.belegt ? { text: 'keine Änderung', tone: 'ok' as const } : { text: 'Nummer bestätigen', tone: 'warn' as const },
+        // Only what was checked: nobody looked up capital or management here, so the row claims neither.
         body: g.belegt
-          ? 'Bekanntmachungen von heute abgeglichen. Geschäftsführung, Sitz und Kapital unverändert.'
+          ? 'Keine neue Bekanntmachung seit dem letzten Abgleich (Demo-Lauf).'
           : 'Registernummer stammt nur aus einem Suchergebnis. Ein aktueller Registerauszug bestätigt sie.',
         actions: ['Registerauszug'],
       })),
+    ],
     deadlines: () =>
-      [
-        [`Offenlegung Jahresabschluss 2025 · ${kurz(0)}`, 'Unternehmensregister, Frist 31.12.', 24 * 60 * 12],
-        [`Gesellschafterversammlung · ${kurz(1)}`, 'Feststellung Jahresabschluss, Gewinnverwendung', 24 * 60 * 19],
-        ['Transparenzregister · alle Gesellschaften', 'wirtschaftlich Berechtigte prüfen', 24 * 60 * 26],
-        [`Steuererklärungen 2025 · ${kurz(5)}`, 'Unterlagen an den Steuerberater', 24 * 60 * 40],
-      ].map(([t, s, m], i) => ({
+      (
+        [
+          [`Offenlegung Jahresabschluss ${J} · ${kurz(0)}`, `Unternehmensregister · gesetzliche Frist 31.12.${J + 1} (§ 325 HGB)`, 12],
+          [`Gesellschafterversammlung · ${kurz(1)}`, `Feststellung Jahresabschluss ${J}, Ergebnisverwendung`, 19],
+          ['Transparenzregister · alle Gesellschaften', 'Angaben zu wirtschaftlich Berechtigten prüfen (§ 20 GwG)', 26],
+          [`Feststellungserklärung und Steuererklärungen ${J} · ${kurz(5)}`, 'gesonderte und einheitliche Feststellung (§ 180 AO) · über den Steuerberater', 40],
+        ] as Array<[string, string, number]>
+      ).map(([title, sub, days], i) => ({
         id: `fr${i}`,
-        title: String(t),
-        sub: String(s),
-        meta: later(Number(m)),
+        title,
+        sub,
+        // A deadline is a day, not a time: the date alone, „Do., 29.10.“.
+        meta: due(days),
         badge: i === 0 ? { text: 'Entwurf liegt vor', tone: 'info' } : { text: 'Geplant', tone: 'ok' },
-        body: 'Unterlagen gesammelt, Entwurf liegt bei. Erinnerung vier Wochen und eine Woche vorher.',
+        body: i === 0 ? 'Unterlagen gesammelt, der Entwurf liegt bei.' : 'Im Fristenkalender. Die Unterlagen werden eingesammelt.',
+        fields: [
+          ['Erledigen bis', due(days)],
+          ['Erinnerung', 'vier Wochen und eine Woche vorher'],
+        ],
         actions: ['Unterlagen'],
       })),
     intercompany: (r) =>
+      // The open rows are this month's: last month's charge is already approved in the Leitung history (team.ts).
       [
-        [service, kurz(1), 'Hausmeister September'],
-        [service, kurz(2), 'Hausmeister September'],
+        [service, kurz(1), `Hausmeister ${monat(0)}`],
+        [service, kurz(2), `Hausmeister ${monat(0)}`],
         [kurz(0), kurz(3), 'Geschäftsbesorgung Q3'],
         [service, kurz(5), 'Kleinreparaturen'],
         [kurz(0), kurz(1), 'Geschäftsbesorgung Q3'],

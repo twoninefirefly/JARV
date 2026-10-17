@@ -63,6 +63,10 @@ export const COMPANY = {
   /** The person in the management login. */
   chef: KUNDE?.chef,
   chef2: KUNDE?.chef2,
+  /** The customer's brand colour, for the accents that carry their identity; the theme's own without one. */
+  brand: KUNDE?.farbe,
+  /** Where letters are dated; LetterPaper falls back to „Musterstadt“. */
+  ort: KUNDE?.ort,
   /** Minutes without a touch before the office locks itself. */
   autoLockMinutes: 5,
 }

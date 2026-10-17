@@ -78,7 +78,7 @@ export function Paper({ letter, signed, plain }: { letter: Letter; signed?: Sign
               ))}
             </address>
             <div className="paper__date">
-              Musterstadt, <Filled plain={plain} text={`[[${day()}]]`} />
+              {COMPANY.ort ?? 'Musterstadt'}, <Filled plain={plain} text={`[[${day()}]]`} />
             </div>
             <p className="paper__subject">
               <Filled plain={plain} text={letter.subject} />
@@ -104,7 +104,7 @@ export function Paper({ letter, signed, plain }: { letter: Letter; signed?: Sign
               <br />
             </>
           )}
-          {COMPANY.name}
+          {letter.issuer ?? COMPANY.name}
           <br />
           <span className="paper__dept">{letter.from}</span>
         </p>

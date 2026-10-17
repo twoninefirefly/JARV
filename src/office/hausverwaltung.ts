@@ -253,7 +253,10 @@ export const HV_BRAIN = {
   about:
     'Hier sprechen die Agenten miteinander. Jede Nachricht läuft durchs Gehirn: Es legt sie beim richtigen Objekt und Mieter ab und stellt sie dem Kollegen zu, der sie braucht. Mails und Portal kommen alle 30 Minuten dazu, Kontoumsätze jeden Morgen.',
   jarvis:
-    'Ein Gedächtnis für alle Objekte. Wer nach der Lindenstraße fragt, bekommt Mieter, offene Schäden, Zahlungen und den letzten Beschluss der WEG — aus einer Hand.',
+    // A group owns its buildings; there is no owners' association to quote.
+    GRUPPE
+      ? 'Ein Gedächtnis für alle Objekte. Wer nach der Lindenstraße fragt, bekommt Mieter, offene Schäden, Zahlungen und die Gesellschaft, zu der das Objekt gehört — aus einer Hand.'
+      : 'Ein Gedächtnis für alle Objekte. Wer nach der Lindenstraße fragt, bekommt Mieter, offene Schäden, Zahlungen und den letzten Beschluss der WEG — aus einer Hand.',
   stats: [
     { value: 1840, label: 'Kontakte' },
     { value: 410, label: 'Protokolle' },
@@ -433,6 +436,8 @@ export type Helpers = {
   eur: (n: number) => string
   clock: (minutesAgo: number) => string
   later: (minutes: number) => string
+  /** A day `days` from today, without a time: „Do., 29.10.“ — for deadlines and meetings. */
+  due: (days: number) => string
   company: string
   /** Letter templates, passed in so this file stays out of import cycles. */
   L: typeof Letters
@@ -441,7 +446,7 @@ export type Helpers = {
 type Maker = (r: () => number, pick: <T>(xs: T[]) => T) => WsItem[]
 
 export function hvMakers(helpers: Helpers): Partial<Record<string, Maker>> {
-  const { n, eur, clock, later, L } = helpers
+  const { n, eur, clock, later, due, L } = helpers
   const O = HV_OBJECTS
   const P = HV_PEOPLE
   const C = HV_CRAFTS
@@ -456,19 +461,25 @@ export function hvMakers(helpers: Helpers): Partial<Record<string, Maker>> {
         ['Kündigung meiner Wohnung', 'Hiermit kündige ich fristgerecht zum 31.12. Bitte bestätigen Sie den Eingang.', 'Vermietung'],
         ['Heizung kalt – ganzes Haus', 'Bei uns im Haus sind seit heute Morgen alle Heizkörper kalt.', 'Notfall'],
         ['Miete diesen Monat später', 'Wegen einer Gehaltsumstellung kommt die Miete diesmal zum 10. Ist das in Ordnung?', 'Buchhaltung'],
-        ['Anfrage Eigentümer: Sonderumlage', 'Wie hoch fällt mein Anteil an der Sonderumlage für das Dach aus?', 'WEG'],
+        GRUPPE
+          ? ['Anfrage Bank: Unterlagen zur Anschlussfinanzierung', 'Für die Anschlussfinanzierung benötigen wir noch die aktuelle Mieterliste und die Objektdaten.', 'Holding']
+          : ['Anfrage Eigentümer: Sonderumlage', 'Wie hoch fällt mein Anteil an der Sonderumlage für das Dach aus?', 'WEG'],
         ['Lärmbeschwerde Nachbarn', 'Die Nachbarn im 2. OG sind jede Nacht bis 2 Uhr laut.', 'Mieter'],
         ['Rechnung Winterdienst', 'Anbei unsere Rechnung für den Winterdienst Dezember bis März.', 'Belege'],
-      ].map(([title, body, tag], i) => ({
+      ].map(([title, body, tag], i) => {
+        // Drawn in the same order for every mail, so the bank's sender line leaves the others' figures as they were.
+        const [person, object, u] = [pick(P), pick(O), unit(r)]
+        return {
         id: `m${i}`,
         title,
-        sub: `${pick(P)} · ${pick(O)}, ${unit(r)}`,
+        sub: tag === 'Holding' ? `Hausbank · ${object}` : `${person} · ${object}, ${u}`,
         meta: clock(8 + i * 31 + Math.floor(r() * 20)),
         badge: { text: tag, tone: tag === 'Notfall' ? 'bad' : tag === 'Schaden' ? 'warn' : 'info' },
         body,
         fields: [['Vorschlag des Agenten', tag === 'Notfall' ? 'Notdienst Heizung alarmiert, Aushang an alle Mieter vorbereitet.' : `An ${tag} weitergeleitet, Antwortentwurf liegt bereit.`]],
         actions: ['Antworten', 'Weiterleiten', 'Erledigt'],
-      })),
+        }
+      }),
     chat: (r, pick) =>
       n(7, (i) => ({
         id: `c${i}`,
@@ -484,7 +495,7 @@ export function hvMakers(helpers: Helpers): Partial<Record<string, Maker>> {
       n(6, (i) => ({
         id: `t${i}`,
         title: `${pick(P)} · ${pick(O)}`,
-        sub: pick(['Heizung fällt aus', 'Frage zur Mieterhöhung', 'Schlüssel verloren', 'Rückruf Handwerkertermin', 'Kündigung', 'Eigentümer: Hausgeld']),
+        sub: pick(['Heizung fällt aus', 'Frage zur Mieterhöhung', 'Schlüssel verloren', 'Rückruf Handwerkertermin', 'Kündigung', GRUPPE ? 'Bank: Rückfrage Darlehen' : 'Eigentümer: Hausgeld']),
         meta: clock(15 + i * 47 + Math.floor(r() * 20)),
         badge: i === 1 ? { text: 'Rückruf offen', tone: 'warn' } : { text: `${2 + Math.floor(r() * 9)} Min.`, tone: 'muted' },
         body: 'Zusammenfassung: Mieter meldet, dass die Heizung im Wohnzimmer nur lauwarm wird. Termin mit Heizungsbauer gewünscht, vormittags.',
@@ -494,7 +505,7 @@ export function hvMakers(helpers: Helpers): Partial<Record<string, Maker>> {
     calendar: (r, pick) =>
       n(7, (i) => ({
         id: `k${i}`,
-        title: pick(['Handwerkertermin', 'Wohnungsbesichtigung', 'Wohnungsübergabe', 'Begehung Objekt', 'Zählerablesung', 'Beiratssitzung']),
+        title: pick(['Handwerkertermin', 'Wohnungsbesichtigung', 'Wohnungsübergabe', 'Begehung Objekt', 'Zählerablesung', GRUPPE ? 'Gesellschafterversammlung' : 'Beiratssitzung']),
         sub: `${pick(P)} · ${pick(O)}`,
         meta: later(-120 + i * 75 + Math.floor(r() * 20)),
         badge: i < 2 ? { text: 'Vorbei', tone: 'muted' } : i === 3 ? { text: 'Unbestätigt', tone: 'warn' } : { text: 'Bestätigt', tone: 'ok' },
@@ -527,7 +538,10 @@ export function hvMakers(helpers: Helpers): Partial<Record<string, Maker>> {
         reply: L.craftAssigned({ person: 'Hausgemeinschaft', object: 'Parkallee 21', craft: 'Heizung & Solar Meyer', topic: 'Heizungsausfall', urgent: true }),
         actions: ['Mieter antworten', 'Erledigt'],
       },
-      { id: 'e1', title: 'Frist: Einladung ETV Parkallee 21', sub: 'WEG · Versand bis Freitag', badge: { text: 'Mittel', tone: 'warn' }, body: 'Einladung liegt zur Freigabe vor, Frist nach WEG-Gesetz 3 Wochen.', actions: ['Zur Freigabe'] },
+      // Each escalation points at a floor that exists: the group has a holding, not a WEG floor.
+      GRUPPE
+        ? { id: 'e1', title: 'Frist: Offenlegung Jahresabschluss Holding', sub: 'Holding · Freigabe durch die Leitung', badge: { text: 'Mittel', tone: 'warn' }, body: 'Die Offenlegung liegt vorbereitet bei Fristen & Offenlegung und wartet auf die Unterschrift der Leitung.', actions: ['Zur Freigabe'] }
+        : { id: 'e1', title: 'Frist: Einladung ETV Parkallee 21', sub: 'WEG · Versand bis Freitag', badge: { text: 'Mittel', tone: 'warn' }, body: 'Einladung liegt zur Freigabe vor, Frist nach WEG-Gesetz 3 Wochen.', actions: ['Zur Freigabe'] },
       {
         id: 'e2',
         title: 'Wasserschaden seit 3 Tagen ohne Termin',
@@ -821,7 +835,8 @@ export function hvMakers(helpers: Helpers): Partial<Record<string, Maker>> {
         id: `etv${i}`,
         title: String(t),
         sub: String(s),
-        meta: later(Number(m)),
+        // Owners meet in the evening; the invitation says 18:00, so the list does too.
+        meta: `${due(Number(m) / 1440)} 18:00`,
         badge: i === 0 ? { text: 'Einladung Freigabe', tone: 'warn' } : { text: 'Geplant', tone: 'ok' },
         body: 'Tagesordnung, Beschlussvorlagen und Vollmachten vorbereitet. Online-Teilnahme möglich.',
         letter: L.etvInvite({ object: String(t).replace(/^(ETV|Beiratssitzung) /, ''), date: L.day(Number(m) / 1440), agenda: String(s).split(', ').concat(['Verschiedenes']) }),
@@ -883,7 +898,7 @@ export function hvMakers(helpers: Helpers): Partial<Record<string, Maker>> {
     library: (r, pick) =>
       n(10, (i) => ({
         id: `lib${i}`,
-        title: `${pick(['Mietvertrag', 'Übergabeprotokoll', 'Teilungserklärung', 'ETV-Protokoll', 'Energieausweis', 'Grundriss', 'Wartungsvertrag'])} · ${pick(O)}`,
+        title: `${pick(['Mietvertrag', 'Übergabeprotokoll', ...(GRUPPE ? ['Gesellschaftsvertrag', 'Gesellschafterbeschluss'] : ['Teilungserklärung', 'ETV-Protokoll']), 'Energieausweis', 'Grundriss', 'Wartungsvertrag'])} · ${pick(O)}`,
         sub: pick(['PDF', 'Scan', 'Word']),
         meta: clock(60 + i * 400 + Math.floor(r() * 60)),
         body: 'Eingelesen, durchsuchbar und mit Objekt, Einheit und Mieter verknüpft.',
@@ -899,7 +914,7 @@ export function hvMakers(helpers: Helpers): Partial<Record<string, Maker>> {
     protocols: (r, pick) =>
       n(8, (i) => ({
         id: `pr${i}`,
-        title: `${pick(['Begehung', 'Mietergespräch', 'Beiratssitzung', 'Handwerker-Abstimmung', 'Wohnungsübergabe'])} · ${pick(O)}`,
+        title: `${pick(['Begehung', 'Mietergespräch', GRUPPE ? 'Gesellschafterversammlung' : 'Beiratssitzung', 'Handwerker-Abstimmung', 'Wohnungsübergabe'])} · ${pick(O)}`,
         sub: `${pick(['vor Ort', 'Telefon', 'Teams'])} · ${10 + Math.floor(r() * 40)} Min.`,
         meta: clock(90 + i * 300),
         body: 'Zusammenfassung, Entscheidungen und Aufgaben — automatisch aus dem Gespräch gezogen und beim Objekt abgelegt.',

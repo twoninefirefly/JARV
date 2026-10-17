@@ -1,4 +1,5 @@
 import { COMPANY } from './data'
+import { GRUPPE, GRUPPE_FREIGABE, J } from './gruppe'
 
 /**
  * The letters and mails an agent prepares for approval, as they would go out.
@@ -20,6 +21,11 @@ export type Letter = {
   body: string[]
   /** Who signs: the department. */
   from: string
+  /**
+   * The company it goes out from, when that is not the office's own name: in a
+   * group, a filing is made by the company itself, not by the group.
+   */
+  issuer?: string
   attachments?: string[]
   /** Legal basis the template relies on, shown under the letter. */
   basis?: string
@@ -241,6 +247,30 @@ export function tenantReply(t: Tenant & { topic: string; from?: string }): Lette
   }
 }
 
+/**
+ * The annual accounts filing, as it goes to the Unternehmensregister. It is
+ * submitted through the portal in the company's own name; the register line
+ * comes from the customer record, the rest is for the tax adviser to fill in.
+ */
+export function disclosure(g: { name: string; register: string }): Letter {
+  return {
+    channel: 'Portal',
+    template: 'Offenlegung Jahresabschluss',
+    to: ['Unternehmensregister', 'über das Publikations-Portal'],
+    subject: `Offenlegung Jahresabschluss ${f(J)} – ${f(g.name)}`,
+    salutation: 'Sehr geehrte Damen und Herren,',
+    body: [
+      `Gesellschaft ${f(g.name)} · Register ${f(g.register)} · Geschäftsjahr ${f(`1.1. bis 31.12.${J}`)}`,
+      `Unterlagen: ${f('Bilanz und Anhang – Umfang nach Größenklasse (§ 326 HGB) laut Steuerberater')}`,
+      `Aufgestellt und geprüft durch ${f('Steuerberater')}, festgestellt am ${f('Datum')}`,
+    ],
+    from: 'Fristen & Offenlegung',
+    issuer: g.name,
+    attachments: [`Bilanz ${J}`, `Anhang ${J}`],
+    basis: '§ 325 Abs. 1, 1a HGB: Offenlegung spätestens zwölf Monate nach dem Abschlussstichtag; bei Versäumnis Ordnungsgeldverfahren des Bundesamts für Justiz (§ 335 HGB)',
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Standard office
 // ---------------------------------------------------------------------------
@@ -301,7 +331,10 @@ export function customerReply(o: { person: string; topic: string }): Letter {
 
 /** The letter behind each decision waiting in the office, by its text. */
 export function approvalLetter(text: string): Letter | undefined {
+  const holding = GRUPPE?.gesellschaften[0]
   const map: Record<string, () => Letter> = {
+    // Holding
+    ...(holding ? { [GRUPPE_FREIGABE]: () => disclosure(holding) } : {}),
     // Hausverwaltung
     'Antwort an Fam. Yilmaz zur Mieterhöhung freigeben': () => rentIncreaseReply({ person: 'Fam. Yilmaz', object: 'Lindenstr. 12', unit: 'WE 03' }),
     'Auftrag Dachrinne Birkenweg 3 (1.840 €) freigeben': () => craftOrder({ craft: 'Dachdecker Brandt', object: 'Birkenweg 3', job: 'Dachrinne straßenseitig erneuern', amount: 1840, no: 'A-2026-311' }),
@@ -352,4 +385,4 @@ export function approvalBatch(text: string): Letter[] | undefined {
 }
 
 /** Who signs, for the footer of a letter. */
-export const signature = (l: Letter) => `${COMPANY.name} · ${l.from}`
+export const signature = (l: Letter) => `${l.issuer ?? COMPANY.name} · ${l.from}`

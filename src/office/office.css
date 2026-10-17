@@ -2356,16 +2356,6 @@ button {
   font: 600 13.5px var(--sans);
   cursor: pointer;
 }
-/* Transitional, until the lockup markup lands: a logo still sitting in the toolbar stays small there and off the phone. */
-.topbar__actions > .topbar__logo {
-  height: 30px;
-  width: auto;
-  margin: 0 6px;
-  filter: brightness(1.45) saturate(1.1);
-}
-.office--m .topbar__actions > .topbar__logo {
-  display: none;
-}
 @media (max-width: 560px) {
   .topbar__setup {
     width: 36px;

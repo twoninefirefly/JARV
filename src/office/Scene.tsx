@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { Html, Line, OrbitControls, RoundedBox } from '@react-three/drei'
+import { Environment, Html, Lightformer, Line, OrbitControls, RoundedBox } from '@react-three/drei'
 import { Bloom, EffectComposer, SMAA, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { SMAAPreset, ToneMappingMode } from 'postprocessing'
 import * as THREE from 'three'
@@ -93,8 +93,9 @@ function onTap(fn: () => void) {
 // ---------------------------------------------------------------------------
 
 const mat = {
-  desk: new THREE.MeshStandardMaterial({ color: '#ece8e1', roughness: 0.6 }),
-  screen: new THREE.MeshStandardMaterial({ color: '#1b1d22', roughness: 0.4 }),
+  desk: new THREE.MeshStandardMaterial({ color: '#ece8e1', roughness: 0.42 }),
+  // Glass over the panel: glossy enough to catch the studio light.
+  screen: new THREE.MeshStandardMaterial({ color: '#1b1d22', roughness: 0.12, metalness: 0.3 }),
   chair: new THREE.MeshStandardMaterial({ color: '#2a2724', roughness: 0.7 }),
   chairMetal: new THREE.MeshStandardMaterial({ color: '#8a8580', roughness: 0.35, metalness: 0.6 }),
   suit: new THREE.MeshStandardMaterial({ color: '#1c1a19', roughness: 0.85 }),
@@ -469,7 +470,7 @@ function Floor({ dept }: { dept: Department }) {
   const dim = (view.kind === 'dept' && !active) || inside
 
   const top = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: dept.color, roughness: 0.85 }),
+    () => new THREE.MeshStandardMaterial({ color: dept.color, roughness: 0.7 }),
     [dept.color],
   )
   const lip = useMemo(
@@ -833,7 +834,8 @@ function Pad() {
     <group>
       <mesh position={[0, 0.06, 0]} receiveShadow>
         <cylinderGeometry args={[2.1, 2.16, 0.12, 96]} />
-        <meshStandardMaterial color="#141110" roughness={0.55} metalness={0.3} />
+        {/* The metal looks get a polished rim that catches the studio light. */}
+        <meshStandardMaterial color="#141110" roughness={theme.metal ? 0.3 : 0.55} metalness={theme.metal ? 0.85 : 0.3} />
       </mesh>
       {/* the marked top faces the camera's default angle, so the mark reads upright */}
       <mesh position={[0, 0.121, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 4]} receiveShadow>
@@ -1431,6 +1433,24 @@ function makeStars(n: number) {
   g.setAttribute('aSize', new THREE.BufferAttribute(size, 1))
   g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1))
   return g
+}
+
+/**
+ * Studio light for everything glossy: a soft box overhead, a warm strip from the
+ * left, a cool one from behind and a ring in the theme colour from below. The
+ * shapes are rendered once into a cube map, so nothing is downloaded — drei's
+ * presets would fetch HDR files, which the artifact sandbox blocks.
+ */
+function Studio() {
+  const t = useTheme()
+  return (
+    <Environment key={t.id} resolution={256} frames={1} environmentIntensity={0.35}>
+      <Lightformer form="rect" intensity={3} color="#fff4e8" position={[0, 12, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[16, 16, 1]} />
+      <Lightformer form="rect" intensity={1.6} color="#ffd9b8" position={[-10, 4, 6]} rotation={[0, Math.PI / 2.5, 0]} scale={[12, 2, 1]} />
+      <Lightformer form="rect" intensity={1.2} color="#b9ccff" position={[9, 3, -10]} rotation={[0, -Math.PI / 4, 0]} scale={[12, 1.5, 1]} />
+      <Lightformer form="ring" intensity={0.8} color={t.accent} position={[0, -6, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={6} />
+    </Environment>
+  )
 }
 
 function Cosmos() {
@@ -2199,11 +2219,12 @@ export default function Scene() {
     >
       <color attach="background" args={[BG]} />
       <fog attach="fog" args={[BG, 26, 70]} />
-      <ambientLight intensity={0.65} color="#ffe8d6" />
-      <hemisphereLight args={['#ffe2c4', '#1a120c', 0.5]} />
+      {/* Most of the fill now comes from the studio environment; the flat lights only lift the shadows. */}
+      <ambientLight intensity={0.08} color="#ffe8d6" />
+      <hemisphereLight args={['#ffe2c4', '#1a120c', 0.14]} />
       <directionalLight
         position={[6, 14, 4]}
-        intensity={1.6}
+        intensity={2.3}
         color="#fff1e0"
         castShadow
         shadow-mapSize={phone() ? [1024, 1024] : [2048, 2048]}
@@ -2215,6 +2236,9 @@ export default function Scene() {
         shadow-normalBias={0.015}
         shadow-radius={4}
       />
+      {/* A cool rim from behind, so the far edges stand out against the black sky. */}
+      <directionalLight position={[-12, 7, -10]} intensity={0.8} color="#b4c8ff" />
+      <Studio />
       <Cosmos />
       <Ground />
       <Garden free={free} phone={phone()} />

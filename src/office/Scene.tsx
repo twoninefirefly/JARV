@@ -1,18 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { Environment, Html, Lightformer, Line, OrbitControls, RoundedBox } from '@react-three/drei'
+import { Environment, Html, Lightformer, Line, OrbitControls } from '@react-three/drei'
 import { Bloom, EffectComposer, SMAA, ToneMapping, Vignette } from '@react-three/postprocessing'
 import { SMAAPreset, ToneMappingMode } from 'postprocessing'
 import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { COMPANY, DEPARTMENTS, fmt, BRAIN, type Agent, type Department } from './data'
 import { useOffice, type View } from './state'
 import { Icon, Spark } from './Icon'
-import { agentTarget } from './workspaces'
+import { agentTarget, waitingOwner } from './workspaces'
 import Garden from './Garden'
 import Bonsai from './Bonsai'
 import { MOBILE } from './mobile'
 import { themeOf, type Theme } from './themes'
+import { mayDecide, needsLeitung } from './team'
+import './styles/scene.css'
 
 /**
  * The isometric office: six department floors around a particle brain.
@@ -186,6 +189,72 @@ const G = {
   bridge: new THREE.CylinderGeometry(0.0025, 0.0025, 0.014, 6).rotateZ(Math.PI / 2),
 }
 
+// Shared furniture: one set of shapes for all 40 desks. Each drei RoundedBox and
+// each inline geometry used to build its own copy, several hundred in all.
+const FURN = {
+  desk: new RoundedBoxGeometry(0.52, 0.035, 0.3, 2, 0.01),
+  seat: new RoundedBoxGeometry(0.2, 0.035, 0.19, 2, 0.014),
+  back: new RoundedBoxGeometry(0.19, 0.2, 0.028, 2, 0.012),
+  leg: new THREE.BoxGeometry(0.014, 0.012, 0.1),
+  lift: new THREE.CylinderGeometry(0.009, 0.012, 0.12, 8),
+  side: new THREE.BoxGeometry(0.03, 0.25, 0.28),
+  monitor: new THREE.BoxGeometry(0.26, 0.16, 0.02),
+  glow: new THREE.PlaneGeometry(0.23, 0.13),
+  stand: new THREE.BoxGeometry(0.03, 0.05, 0.03),
+  pot: new THREE.CylinderGeometry(0.06, 0.05, 0.12, 12),
+  leaf: new THREE.SphereGeometry(0.1, 12, 10),
+  // The beacon over a desk that waits for a decision.
+  column: new THREE.CylinderGeometry(0.006, 0.006, 0.55, 6),
+  gem: new THREE.OctahedronGeometry(0.05, 0),
+  ripple: new THREE.RingGeometry(0.18, 0.2, 40).rotateX(-Math.PI / 2),
+}
+
+/**
+ * What the screens show: rows of grey interface, drawn once. Working agents'
+ * screens scroll through it; a waiting agent's screen stands still in amber.
+ */
+const screenTex = (() => {
+  const cv = document.createElement('canvas')
+  cv.width = 256
+  cv.height = 160
+  const g = cv.getContext('2d')!
+  g.fillStyle = '#000'
+  g.fillRect(0, 0, 256, 160)
+  // A fixed sequence, so every load draws the same screen.
+  let n = 3
+  const r = () => ((n = (n * 16807) % 2147483647) / 2147483647)
+  for (let y = 8; y < 160; y += 12) {
+    let x = 10 + Math.floor(r() * 3) * 14
+    while (x < 236) {
+      const w = 12 + r() * 60
+      g.fillStyle = `rgba(200,206,216,${0.35 + r() * 0.5})`
+      g.beginPath()
+      g.roundRect(x, y, Math.min(w, 246 - x), 5, 2.5)
+      g.fill()
+      x += w + 6
+      if (r() < 0.25) break
+    }
+  }
+  const tex = new THREE.CanvasTexture(cv)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(1, 0.6)
+  return tex
+})()
+const screenStill = screenTex.clone()
+screenStill.needsUpdate = true
+
+/** One material per status instead of one per desk. */
+const SCREEN = {
+  arbeitet: new THREE.MeshStandardMaterial({ color: '#0d0f12', emissive: '#8fb4ff', emissiveMap: screenTex, emissiveIntensity: 1.4 }),
+  wartet: new THREE.MeshStandardMaterial({ color: '#0d0f12', emissive: '#ffb347', emissiveMap: screenStill, emissiveIntensity: 1.6 }),
+  bereit: new THREE.MeshStandardMaterial({ color: '#0d0f12', emissive: '#8fb4ff', emissiveIntensity: 0.35 }),
+}
+const AMBER = new THREE.Color('#ffb347').multiplyScalar(2.5)
+const BEACON = new THREE.MeshBasicMaterial({ color: AMBER, toneMapped: false, depthWrite: false, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending })
+const GEM = new THREE.MeshBasicMaterial({ color: AMBER, toneMapped: false })
+const noHit = () => null
+
 /** A capsule from a to b: limbs are placed by their joints, not by hand-tuned angles. */
 function Limb({ a, b, geometry, material }: { a: [number, number, number]; b: [number, number, number]; geometry: THREE.BufferGeometry; material: THREE.Material }) {
   const { position, quaternion } = useMemo(() => {
@@ -201,7 +270,7 @@ function Limb({ a, b, geometry, material }: { a: [number, number, number]; b: [n
 /** Head height, used by the hair and the idle look-around. */
 const HEAD_Y = 0.478
 
-function Person({ look }: { look: Look }) {
+const Person = memo(function Person({ look }: { look: Look }) {
   const { skin, hair, top, pants, female } = look
   const w = female ? 0.078 : 0.086 // shoulder half-width
   return (
@@ -241,7 +310,7 @@ function Person({ look }: { look: Look }) {
       </group>
     </group>
   )
-}
+})
 
 /** Eyes (they blink), brows in the hair colour, nose, mouth and ears; the person faces -z. */
 function Face({ look }: { look: Look }) {
@@ -322,34 +391,33 @@ function Hairdo({ look, material }: { look: Look; material: THREE.Material }) {
 }
 
 /** A proper office chair: star base, gas lift, rounded seat and back. */
-function Chair() {
+const Chair = memo(function Chair() {
   return (
     <group position={[0, 0, 0.3]}>
       {[0, 1, 2, 3, 4].map((k) => (
-        <mesh key={k} material={mat.chair} position={[Math.sin((k / 5) * Math.PI * 2) * 0.05, 0.018, Math.cos((k / 5) * Math.PI * 2) * 0.05]} rotation={[0, (k / 5) * Math.PI * 2, 0]}>
-          <boxGeometry args={[0.014, 0.012, 0.1]} />
-        </mesh>
+        <mesh key={k} geometry={FURN.leg} material={mat.chair} position={[Math.sin((k / 5) * Math.PI * 2) * 0.05, 0.018, Math.cos((k / 5) * Math.PI * 2) * 0.05]} rotation={[0, (k / 5) * Math.PI * 2, 0]} />
       ))}
-      <mesh material={mat.chairMetal} position={[0, 0.08, 0]}>
-        <cylinderGeometry args={[0.009, 0.012, 0.12, 8]} />
-      </mesh>
-      <RoundedBox args={[0.2, 0.035, 0.19]} radius={0.014} smoothness={3} material={mat.chair} position={[0, 0.155, -0.01]} castShadow />
-      <RoundedBox args={[0.19, 0.2, 0.028]} radius={0.012} smoothness={3} material={mat.chair} position={[0, 0.3, 0.09]} rotation={[-0.12, 0, 0]} castShadow />
+      <mesh geometry={FURN.lift} material={mat.chairMetal} position={[0, 0.08, 0]} />
+      <mesh geometry={FURN.seat} material={mat.chair} position={[0, 0.155, -0.01]} castShadow />
+      <mesh geometry={FURN.back} material={mat.chair} position={[0, 0.3, 0.09]} rotation={[-0.12, 0, 0]} castShadow />
     </group>
   )
-}
+})
 
-function Workstation({ agent, seed, look }: { agent: Agent; seed: number; look: Look }) {
+type Status = Agent['status']
+
+/**
+ * A desk with its person. `status` is what the desk shows, which may differ
+ * from the data: an agent whose decisions have all been made is back at work.
+ * `beacon` raises the amber pin over a desk with a decision still open.
+ */
+const Workstation = memo(function Workstation({ status, beacon, seed, look }: { status: Status; beacon: boolean; seed: number; look: Look }) {
   const body = useRef<THREE.Group>(null)
-  const glow = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#0d0f12',
-        emissive: agent.status === 'wartet' ? '#ffb347' : '#8fb4ff',
-        emissiveIntensity: agent.status === 'bereit' ? 0.25 : 0.7,
-      }),
-    [agent.status],
-  )
+  const gem = useRef<THREE.Mesh>(null)
+  const ripple = useRef<THREE.Mesh>(null)
+  // Each beacon fades its own ring, so it needs its own material; only waiting desks have one.
+  const rippleMat = useMemo(() => (beacon ? BEACON.clone() : null), [beacon])
+  useEffect(() => () => rippleMat?.dispose(), [rippleMat])
 
   // Parts that move on their own: found once, not searched every frame.
   const parts = useRef<{ head?: THREE.Object3D; eyes?: THREE.Object3D; hands: THREE.Object3D[] }>({ hands: [] })
@@ -369,56 +437,65 @@ function Workstation({ agent, seed, look }: { agent: Agent; seed: number; look: 
     const { head, eyes, hands } = parts.current
     // Seated and still: the body only breathes and leans; the hands do the typing.
     body.current.position.y = 0
-    body.current.rotation.x = agent.status === 'wartet' ? -0.08 + Math.sin(t * 0.8 + seed) * 0.03 : 0.03 + Math.sin(t * 1.1 + seed) * 0.006
-    const typing = agent.status === 'arbeitet'
+    body.current.rotation.x = status === 'wartet' ? -0.08 + Math.sin(t * 0.8 + seed) * 0.03 : 0.03 + Math.sin(t * 1.1 + seed) * 0.006
+    const typing = status === 'arbeitet'
     hands.forEach((h, i) => (h.position.y = 0.29 + (typing ? Math.max(0, Math.sin(t * 11 + seed + i * 1.9)) * 0.007 : 0)))
     // Now and then a glance to the side, as people at desks do.
     if (head) head.rotation.y = Math.sin(t * 0.35 + seed * 2) > 0.85 ? Math.sin(t * 0.9 + seed) * 0.5 : Math.sin(t * 0.5 + seed) * 0.08
     // A blink every few seconds.
     if (eyes) eyes.scale.y = (t * 0.31 + seed * 0.7) % 1 < 0.035 ? 0.1 : 1
+    // The beacon: the gem turns, and a ring spreads out on the floor and fades, every 1.6 s.
+    if (gem.current) gem.current.rotation.y = t * 1.6
+    if (ripple.current && rippleMat) {
+      const k = (t / 1.6) % 1
+      ripple.current.scale.setScalar(1 + 1.2 * k)
+      rippleMat.opacity = 0.6 * (1 - k)
+    }
   })
 
   return (
     <group>
       {/* desk */}
-      <RoundedBox args={[0.52, 0.035, 0.3]} radius={0.01} smoothness={2} material={mat.desk} position={[0, 0.25, 0]} castShadow receiveShadow />
-      <mesh material={mat.desk} position={[-0.24, 0.125, 0]} castShadow>
-        <boxGeometry args={[0.03, 0.25, 0.28]} />
-      </mesh>
-      <mesh material={mat.desk} position={[0.24, 0.125, 0]} castShadow>
-        <boxGeometry args={[0.03, 0.25, 0.28]} />
-      </mesh>
+      <mesh geometry={FURN.desk} material={mat.desk} position={[0, 0.25, 0]} castShadow receiveShadow />
+      <mesh geometry={FURN.side} material={mat.desk} position={[-0.24, 0.125, 0]} castShadow />
+      <mesh geometry={FURN.side} material={mat.desk} position={[0.24, 0.125, 0]} castShadow />
       {/* monitor */}
-      <mesh material={mat.screen} position={[0, 0.37, -0.09]} castShadow>
-        <boxGeometry args={[0.26, 0.16, 0.02]} />
-      </mesh>
-      <mesh material={glow} position={[0, 0.37, -0.078]}>
-        <planeGeometry args={[0.23, 0.13]} />
-      </mesh>
-      <mesh material={mat.screen} position={[0, 0.29, -0.09]}>
-        <boxGeometry args={[0.03, 0.05, 0.03]} />
-      </mesh>
+      <mesh geometry={FURN.monitor} material={mat.screen} position={[0, 0.37, -0.09]} castShadow />
+      <mesh geometry={FURN.glow} material={SCREEN[status]} position={[0, 0.37, -0.078]} />
+      <mesh geometry={FURN.stand} material={mat.screen} position={[0, 0.29, -0.09]} />
       <Chair />
       {/* person, seated: the group moves (typing, leaning back), the head looks around */}
       <group ref={body} position={[0, 0, 0.3]}>
         <Person look={look} />
       </group>
+      {/* Bright enough to read from the overview; clicks go through to the desk. */}
+      {beacon && (
+        <group>
+          <mesh geometry={FURN.column} material={BEACON} position={[0, 0.85, 0]} raycast={noHit} />
+          <mesh ref={gem} geometry={FURN.gem} material={GEM} position={[0, 1.15, 0]} raycast={noHit} />
+          <mesh ref={ripple} geometry={FURN.ripple} material={rippleMat!} position={[0, 0.006, 0]} raycast={noHit} />
+        </group>
+      )}
     </group>
   )
+})
+
+/** Scrolls the working screens, once for all of them. */
+function Screens() {
+  useFrame((_, dt) => {
+    screenTex.offset.y -= dt * 0.04
+  })
+  return null
 }
 
-function Plant() {
+const Plant = memo(function Plant() {
   return (
     <group>
-      <mesh material={mat.pot} position={[0, 0.06, 0]} castShadow>
-        <cylinderGeometry args={[0.06, 0.05, 0.12, 12]} />
-      </mesh>
-      <mesh material={mat.leaf} position={[0, 0.2, 0]} castShadow>
-        <sphereGeometry args={[0.1, 12, 10]} />
-      </mesh>
+      <mesh geometry={FURN.pot} material={mat.pot} position={[0, 0.06, 0]} castShadow />
+      <mesh geometry={FURN.leaf} material={mat.leaf} position={[0, 0.2, 0]} castShadow />
     </group>
   )
-}
+})
 
 // ---------------------------------------------------------------------------
 // A department floor
@@ -497,6 +574,25 @@ function Floor({ dept }: { dept: Department }) {
   }
   const lead = SPOTS[0]
   const looks = useMemo(() => dept.agents.map((_, i) => lookFor(DEPARTMENTS.indexOf(dept) * 7 + i)), [dept])
+  // What each desk shows. An agent waits only while one of its own decisions is open:
+  // once all of them are made, it is back at work, as the work window and the panel say too.
+  const approved = useOffice((s) => s.approved)
+  const desks = useMemo(
+    () =>
+      dept.agents.map((a) => {
+        const owned = dept.waiting.filter((_, i) => waitingOwner(dept, i).id === a.id)
+        const status: Status = a.status === 'wartet' && owned.length > 0 && owned.every((w) => approved.includes(w)) ? 'arbeitet' : a.status
+        return { status, beacon: status === 'wartet' && owned.some((w) => !approved.includes(w)) }
+      }),
+    [dept, approved],
+  )
+  // The badge counts what waits here for the person signed in, and shows a pen
+  // when management's own signature is among it.
+  const user = useOffice((s) => s.user)
+  const waits = useMemo(() => {
+    const open = dept.waiting.filter((w) => !approved.includes(w) && mayDecide(user, dept.id, w).ok)
+    return { count: open.length, sign: user?.role === 'leitung' && open.some(needsLeitung) }
+  }, [dept, approved, user])
 
   // Build-up after unlock: each floor rises into place, one after the other.
   const rise = useRef<THREE.Group>(null)
@@ -571,7 +667,7 @@ function Floor({ dept }: { dept: Department }) {
                     : undefined
                 }
               >
-                <Workstation agent={a} seed={i * 1.7 + dept.angle * 3} look={looks[i]} />
+                <Workstation status={desks[i].status} beacon={desks[i].beacon} seed={i * 1.7 + dept.angle * 3} look={looks[i]} />
               </group>
             )
           })}
@@ -589,7 +685,8 @@ function Floor({ dept }: { dept: Department }) {
           {/* Grows, glows and shows what the department does — from the badge or from its floor.
               Resting on the badge fills it like an hourglass, and when full the department opens. */}
           <button
-            className={`floor-badge${tagHover ? ' is-hover' : ''}${dwell ? ' is-dwell' : ''}`}
+            className={`floor-badge${tagHover ? ' is-hover' : ''}${dwell ? ' is-dwell' : ''}${waits.sign ? ' has-sign' : ''}`}
+            data-dept={dept.id}
             style={{ ['--c' as string]: dept.color }}
             {...press(pick)}
             onMouseEnter={enterTag}
@@ -610,6 +707,12 @@ function Floor({ dept }: { dept: Department }) {
                 </span>
               </span>
             </span>
+            {waits.count > 0 && (
+              <span className="floor-badge__count" aria-label={`${waits.count} warten${waits.sign ? ', Unterschrift' : ''}`}>
+                {waits.sign ? '✎ ' : ''}
+                {waits.count}
+              </span>
+            )}
           </button>
         </Html>
       )}
@@ -639,15 +742,15 @@ function Floor({ dept }: { dept: Department }) {
                   <span className="agent-tag__more" aria-hidden={!on}>
                     <span>
                       <span className="agent-tag__role">
-                        <i className={`status status--${a.status}`} />
-                        {a.role} · {a.status}
+                        <i className={`status status--${desks[i].status}`} />
+                        {a.role} · {desks[i].status}
                       </span>
                       <span className="agent-tag__doing">{a.doing[0].toUpperCase() + a.doing.slice(1)}</span>
                       <span className="agent-tag__go">Arbeitsbereich öffnen →</span>
                     </span>
                   </span>
                   <span className="agent-tag__name">
-                    {a.status === 'wartet' && <span className="agent-tag__warn">⚠</span>}
+                    {desks[i].status === 'wartet' && <span className="agent-tag__warn">⚠</span>}
                     {a.lead && <Spark size={10} />}
                     {a.name}
                   </span>
@@ -1199,7 +1302,7 @@ function BrainBadge() {
   // Same size and style as the departments' badges; in the garden it names the bonsai.
   return (
     <Html portal={overlay} position={[0, garden ? 3.5 : 2.85, 0]} center zIndexRange={[20, 0]}>
-      <button className="floor-badge floor-badge--brain" {...press(() => show({ kind: 'brain' }))}>
+      <button className="floor-badge floor-badge--brain" data-dept="brain" {...press(() => show({ kind: 'brain' }))}>
         <span className="floor-badge__icon">
           <Icon name="brain" size={16} />
         </span>
@@ -2292,6 +2395,7 @@ export default function Scene() {
       <Ground />
       <Garden free={free} phone={phone()} />
       <Links />
+      <Screens />
       <Brain />
       {DEPARTMENTS.map((d) => (
         <Floor key={d.id} dept={d} />

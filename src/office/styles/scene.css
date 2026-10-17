@@ -1,0 +1,48 @@
+/*
+ * Styles that belong to the 3D scene's labels. This file loads with the lazy
+ * scene chunk, so it only adds new class names; everything shared stays in office.css.
+ */
+
+/* What waits on a floor for the person signed in: a small amber count at the badge's end. */
+.floor-badge__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  margin-left: -3px;
+  font: 600 11px/1 var(--mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--warn, #e8c170);
+  background: rgba(10, 10, 12, 0.72);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn, #e8c170) 55%, transparent);
+}
+
+/* A signature only management can give: the pen, in the theme's light tone, with a red ring. */
+.floor-badge.has-sign .floor-badge__count {
+  color: var(--accent-hi);
+  box-shadow:
+    inset 0 0 0 1px var(--bad, #f09a86),
+    0 0 0 0 color-mix(in srgb, var(--bad, #f09a86) 60%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .floor-badge.has-sign .floor-badge__count {
+    animation: badge-sign 1.8s ease-out infinite;
+  }
+  @keyframes badge-sign {
+    0% {
+      box-shadow:
+        inset 0 0 0 1px var(--bad, #f09a86),
+        0 0 0 0 color-mix(in srgb, var(--bad, #f09a86) 60%, transparent);
+    }
+    70%,
+    100% {
+      box-shadow:
+        inset 0 0 0 1px var(--bad, #f09a86),
+        0 0 0 6px color-mix(in srgb, var(--bad, #f09a86) 0%, transparent);
+    }
+  }
+}

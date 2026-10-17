@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import './styles/brain.css'
 import {
   AGENT_COUNT,
   BRAIN,
@@ -9,13 +10,16 @@ import {
   deptProtocol,
   fmt,
   split,
+  type Agent,
   type Department,
 } from './data'
 import { useOffice, type View } from './state'
 import { Icon, Spark } from './Icon'
-import { answer, liveMode, type Who } from './chat'
+import { answer, brainMode, type Turn, type Who } from './chat'
 import { mayDecide, needsLeitung } from './team'
 import { deptOf } from './comms'
+import { GRUPPE } from './gruppe'
+import GroupGraph from './GroupGraph'
 import { agentTarget, approvalsTarget, brainTarget, kpiOwner, logTarget, waitingOwner } from './workspaces'
 
 /** Re-render on the minute, so charts and logs follow the clock. */
@@ -32,16 +36,57 @@ function useNow() {
 // Pieces
 // ---------------------------------------------------------------------------
 
-function Stat({ value, label, tone, onClick }: { value: number | string; label: string; tone?: string; onClick?: () => void }) {
+/** A number that rolls in from above when it changes, so 6 → 5 is seen and not just swapped. */
+function Roll({ n }: { n: number | string }) {
   return (
-    <button className="stat stat--link" onClick={onClick}>
-      <div className="stat__value" style={tone ? { color: tone } : undefined}>
-        {typeof value === 'number' ? fmt(value) : value}
-      </div>
-      <div className="stat__label">
-        {label} <span className="stat__go">→</span>
-      </div>
+    <motion.span key={n} className="roll" initial={{ y: -8, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
+      {n}
+    </motion.span>
+  )
+}
+
+function Stat({
+  value,
+  label,
+  tone,
+  roll,
+  onClick,
+}: {
+  value: number | string
+  label: string
+  tone?: 'ok' | 'info' | 'warn'
+  roll?: boolean
+  onClick?: () => void
+}) {
+  const shown = typeof value === 'number' ? fmt(value) : value
+  return (
+    <button className="stat stat--link" data-tone={tone} onClick={onClick}>
+      <span className="stat__value">{roll ? <Roll n={shown} /> : shown}</span>
+      <span className="stat__label">{label}</span>
+      <span className="stat__go" aria-hidden>
+        →
+      </span>
     </button>
+  )
+}
+
+/**
+ * The status an agent shows. Someone set to 'wartet' only waits while one of
+ * their own items is still open; once it is approved or signed they are back
+ * at work. The same rule drives the desks and tags in the 3D office.
+ */
+function statusOf(dept: Department, a: Agent, approved: string[]) {
+  const owned = dept.waiting.filter((_, i) => waitingOwner(dept, i).id === a.id)
+  return a.status === 'wartet' && owned.length > 0 && owned.every((w) => approved.includes(w)) ? 'arbeitet' : a.status
+}
+
+/** The 12px lock from the top bar, for items this person may only look at. */
+function LockIcon() {
+  return (
+    <svg className="waiting__lock" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" role="img" aria-label="nur ansehen">
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
   )
 }
 
@@ -185,53 +230,115 @@ function Section({ title, aside, children }: { title: string; aside?: string; ch
 // Chat
 // ---------------------------------------------------------------------------
 
-type Msg = { from: 'me' | 'them'; text: string }
+/** `note` marks a line the page wrote itself, which is not sent back as history. */
+type Msg = { from: 'me' | 'them'; text: string; note?: boolean }
+
+/**
+ * Threads per floor, kept for the whole visit: leaving the Holding and coming
+ * back finds the conversation where it was. Module-level, because the sheet
+ * that shows a thread unmounts whenever the floor changes.
+ */
+const threads = new Map<string, Msg[]>()
+const NONE: Msg[] = []
 
 function useChat(who: Who | null) {
-  const [msgs, setMsgs] = useState<Msg[]>([])
-  const [busy, setBusy] = useState(false)
   const key = who ? (who.kind === 'brain' ? 'brain' : who.dept.id) : ''
-  useEffect(() => setMsgs([]), [key])
+  const [, redraw] = useReducer((n: number) => n + 1, 0)
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+  const ctl = useRef<AbortController | null>(null)
+  // An answer still running when the panel goes away for good is stopped.
+  useEffect(() => () => ctl.current?.abort(), [])
+
+  const write = (k: string, change: (m: Msg[]) => Msg[]) => {
+    threads.set(k, change(threads.get(k) ?? NONE))
+    redraw()
+  }
+  // Answers are written into the thread they were asked in, even after the floor changed.
+  const setLast = (k: string, change: (text: string) => string) =>
+    write(k, (m) => {
+      const copy = m.slice()
+      const last = copy[copy.length - 1]
+      if (last?.from === 'them') copy[copy.length - 1] = { ...last, text: change(last.text) }
+      return copy
+    })
 
   const send = async (text: string) => {
     const q = text.trim()
-    if (!q || !who || busy) return
-    setBusy(true)
-    setMsgs((m) => [...m, { from: 'me', text: q }, { from: 'them', text: '' }])
+    if (!q || !who || busyKey === key) return
+    // One answer at a time: asking on another floor stops the one still running there, and its text stays.
+    ctl.current?.abort()
+    const mine = new AbortController()
+    ctl.current = mine
+    const k = key
+    const history: Turn[] = (threads.get(k) ?? NONE)
+      .filter((m) => !m.note)
+      .slice(-8)
+      .map((m) => ({ role: m.from === 'me' ? 'user' : 'assistant', content: m.text }))
+    write(k, (m) => [...m, { from: 'me', text: q }, { from: 'them', text: '' }])
+    setBusyKey(k)
     try {
-      await answer(q, who, (delta) =>
-        setMsgs((m) => {
-          const copy = m.slice()
-          const last = copy[copy.length - 1]
-          copy[copy.length - 1] = { ...last, text: last.text + delta }
-          return copy
-        }),
-      )
+      await answer(q, who, history, {
+        signal: mine.signal,
+        onText: (delta) => setLast(k, (t) => t + delta),
+        onSet: (all) => setLast(k, () => all),
+      })
     } finally {
-      setBusy(false)
+      // Stopped before the first word: say so instead of leaving an empty bubble.
+      write(k, (m) => {
+        const last = m[m.length - 1]
+        return last?.from === 'them' && !last.text ? [...m.slice(0, -1), { ...last, text: 'Gestoppt.', note: true }] : m
+      })
+      if (ctl.current === mine) {
+        ctl.current = null
+        setBusyKey(null)
+      }
     }
   }
-  return { msgs, busy, send }
+  const stop = () => ctl.current?.abort()
+  return { msgs: threads.get(key) ?? NONE, busy: busyKey === key, send, stop }
 }
 
+const MODE_LABEL = {
+  bridge: 'Live · Jarvis-Bridge',
+  claude: 'Live · Claude über Ihr Konto',
+  demo: 'Demo-Antworten aus den Büro-Daten',
+}
+
+/**
+ * The conversation, right under the questions that start it. The log is always
+ * in the page so a screen reader knows it before the first answer; aria-busy
+ * makes it read the finished answer once instead of every streamed piece.
+ */
 function Thread({ msgs, busy }: { msgs: Msg[]; busy: boolean }) {
   const end = useRef<HTMLDivElement>(null)
-  useEffect(() => end.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), [msgs])
-  if (!msgs.length) return null
+  const mounted = useRef(false)
+  useEffect(() => {
+    // Coming back to a floor keeps the sheet at the top; only new text scrolls.
+    if (!mounted.current) {
+      mounted.current = true
+      return
+    }
+    end.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [msgs])
+  const mode = brainMode()
   return (
-    <div className="thread">
-      {msgs.map((m, i) => (
-        <div key={i} className={`bubble bubble--${m.from}`}>
-          {m.text || (busy && i === msgs.length - 1 ? <span className="typing">···</span> : '')}
-        </div>
-      ))}
-      <div className="thread__mode">{liveMode() ? 'Live über Jarvis' : 'Demo-Antworten aus den Büro-Daten'}</div>
-      <div ref={end} />
+    <div className="thread" role="log" aria-live="polite" aria-busy={busy} aria-label="Unterhaltung">
+      {msgs.length > 0 && (
+        <>
+          {msgs.map((m, i) => (
+            <div key={i} className={`bubble bubble--${m.from}`}>
+              {m.text || (busy && i === msgs.length - 1 ? <span className="thread__thinking">Denkt nach …</span> : '')}
+            </div>
+          ))}
+          <div className={`thread__mode${mode === 'demo' ? '' : ' is-live'}`}>{MODE_LABEL[mode]}</div>
+          <div ref={end} />
+        </>
+      )}
     </div>
   )
 }
 
-function Composer({ placeholder, busy, onSend }: { placeholder: string; busy: boolean; onSend: (q: string) => void }) {
+function Composer({ placeholder, busy, onSend, onStop }: { placeholder: string; busy: boolean; onSend: (q: string) => void; onStop: () => void }) {
   const [text, setText] = useState('')
   const field = useRef<HTMLTextAreaElement>(null)
   // The field grows with the text, up to a few lines.
@@ -271,11 +378,18 @@ function Composer({ placeholder, busy, onSend }: { placeholder: string; busy: bo
           aria-label={placeholder}
           enterKeyHint="send"
         />
-        <button type="submit" disabled={busy || !text.trim()} aria-label="Senden">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-            <path d="M12 19V5M5 12l7-7 7 7" />
-          </svg>
-        </button>
+        {busy ? (
+          // While an answer is written, the send button stops it; what was written stays.
+          <button type="button" className="composer__stop" onClick={onStop} aria-label="Antwort stoppen">
+            ■
+          </button>
+        ) : (
+          <button type="submit" disabled={!text.trim()} aria-label="Senden">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M12 19V5M5 12l7-7 7 7" />
+            </svg>
+          </button>
+        )}
       </div>
       <small className="composer__hint">Enter senden · Shift+Enter neue Zeile</small>
     </form>
@@ -287,13 +401,23 @@ function Composer({ placeholder, busy, onSend }: { placeholder: string; busy: bo
 // ---------------------------------------------------------------------------
 
 function Header({ icon, title, sub, color, onClose }: { icon: Parameters<typeof Icon>[0]['name']; title: string; sub: string; color: string; onClose: () => void }) {
+  const heading = useRef<HTMLHeadingElement>(null)
+  // The floor badge that opened this sheet unmounts as the camera flies in, and
+  // focus would fall back to the page. Catch it on the heading instead, so the
+  // next Tab continues in the sheet; focus that is still somewhere is left alone.
+  useEffect(() => {
+    const now = document.activeElement
+    if (!now || now === document.body) heading.current?.focus({ preventScroll: true })
+  }, [title])
   return (
     <header className="sheet__head" style={{ ['--c' as string]: color }}>
       <span className="sheet__icon">
         <Icon name={icon} size={22} />
       </span>
       <div>
-        <h2>{title}</h2>
+        <h2 id="sheet-title" className="sheet__title" ref={heading} tabIndex={-1}>
+          {title}
+        </h2>
         <div className="eyebrow">{sub}</div>
       </div>
       <button className="icon-btn" onClick={onClose} aria-label="Schließen">
@@ -303,7 +427,7 @@ function Header({ icon, title, sub, color, onClose }: { icon: Parameters<typeof 
   )
 }
 
-function BrainSheet({ now, send }: { now: Date; send: (q: string) => void }) {
+function BrainSheet({ now, send, thread }: { now: Date; send: (q: string) => void; thread: ReactNode }) {
   const show = useOffice((s) => s.show)
   const inside = useOffice((s) => s.view.kind === 'neural')
   const open = useOffice((s) => s.open)
@@ -318,15 +442,20 @@ function BrainSheet({ now, send }: { now: Date; send: (q: string) => void }) {
           <Stat key={s.label} {...s} onClick={() => open(brainTarget(s.label))} />
         ))}
       </div>
-      <Runs runs={BRAIN.runs} color="#d98a62" title="Was heute hereinkam" now={now} onClick={() => open(logTarget(null))} />
+      <Runs runs={BRAIN.runs} color="var(--accent)" title="Was heute hereinkam" now={now} onClick={() => open(logTarget(null))} />
       <AgentCard
         name={COMPANY.assistant}
         sub={`Verbunden mit ${DEPARTMENTS.length} Abteilungen · ${AGENT_COUNT} Agenten`}
         about={BRAIN.jarvis}
-        chips={['Was kam heute herein?', 'Wie viel weißt du?', 'Wartet etwas auf mich?']}
+        chips={
+          GRUPPE
+            ? ['Wie ist die Gruppe aufgebaut?', 'Was muss ich heute unterschreiben?', 'Was kam heute herein?']
+            : ['Was kam heute herein?', 'Wie viel weißt du?', 'Wartet etwas auf mich?']
+        }
         onChip={send}
         onOpen={() => open(brainTarget('Dokumente'))}
       />
+      {thread}
       <button className="open-ws open-ws--brain" onClick={() => show(inside ? { kind: 'brain' } : { kind: 'neural' })}>
         {inside ? '← Zurück zum ganzen Gehirn' : 'Ins Gehirn hineinzoomen →'}
       </button>
@@ -358,7 +487,7 @@ function BrainSheet({ now, send }: { now: Date; send: (q: string) => void }) {
   )
 }
 
-function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: string; now: Date; send: (q: string) => void }) {
+function DeptSheet({ dept, agentId, now, send, thread }: { dept: Department; agentId?: string; now: Date; send: (q: string) => void; thread: ReactNode }) {
   const show = useOffice((s) => s.show)
   const open = useOffice((s) => s.open)
   const approved = useOffice((s) => s.approved)
@@ -367,7 +496,11 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
   const agent = dept.agents.find((a) => a.id === agentId)
   const lead = dept.agents.find((a) => a.lead) ?? dept.agents[0]
   const waiting = dept.waiting.map((w, i) => ({ w, i })).filter(({ w }) => !approved.includes(w))
-  const chips = ['Was lief heute?', 'Was kommt als Nächstes?', 'Wartet etwas auf mich?']
+  const group = GRUPPE && dept.id === 'holding' ? GRUPPE : null
+  const chips = group
+    ? ['Wie ist die Gruppe aufgebaut?', 'Welche Fristen kommen?', 'Wartet etwas auf mich?']
+    : ['Was lief heute?', 'Was kommt als Nächstes?', 'Wartet etwas auf mich?']
+  const companies = dept.agents.find((a) => a.name === 'Gesellschaften')
   const pickAgent = (id: string) => {
     show({ kind: 'dept', id: dept.id, agent: id })
     open(agentTarget(dept, dept.agents.find((a) => a.id === id)!))
@@ -380,20 +513,26 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
         ))}
       </div>
       <div className="stats stats--3">
-        <Stat value={s.done} label="Heute erledigt" tone="#b7cf85" onClick={() => open(logTarget(dept, 'done'))} />
-        <Stat value={dept.runs[(s.hour + 1) % 24]} label="Nächste Stunde" tone="#9db8d6" onClick={() => open(logTarget(dept, 'planned'))} />
+        <Stat value={s.done} label="Heute erledigt" tone="ok" onClick={() => open(logTarget(dept, 'done'))} />
+        <Stat value={dept.runs[(s.hour + 1) % 24]} label="Nächste Stunde" tone="info" onClick={() => open(logTarget(dept, 'planned'))} />
         <Stat
           value={waiting.length ? waiting.filter(({ w }) => mayDecide(user, dept.id, w).ok).length : '✓'}
           label={waiting.length ? 'Wartet auf Sie' : 'Alles erledigt'}
-          tone={waiting.length ? '#e8c170' : '#b7cf85'}
+          tone={waiting.length ? 'warn' : 'ok'}
+          roll
           onClick={() => open(approvalsTarget(dept))}
         />
       </div>
+      {group && companies && group.gesellschaften.length > 0 && (
+        <Section title="Struktur der Gruppe" aside={`${group.gesellschaften.length} Gesellschaften`}>
+          <GroupGraph gesellschaften={group.gesellschaften} color={dept.color} onPick={(g) => open(agentTarget(dept, companies, g.name))} />
+        </Section>
+      )}
       <Runs runs={dept.runs} color={dept.color} title="Läufe heute" now={now} onClick={() => open(logTarget(dept))} />
       {agent && !agent.lead ? (
         <AgentCard
           name={agent.name}
-          sub={`${agent.role} · ${agent.status}`}
+          sub={`${agent.role} · ${statusOf(dept, agent, approved)}`}
           about={`${agent.doing[0].toUpperCase()}${agent.doing.slice(1)}. Berichtet an den ${dept.lead.title}.`}
           chips={[`Was macht ${agent.name}?`, ...chips.slice(0, 2)]}
           onChip={send}
@@ -409,6 +548,7 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
           onOpen={() => open(agentTarget(dept, lead))}
         />
       )}
+      {thread}
       <Section title="Funk mit anderen Abteilungen" aside="live">
         <Feed dept={dept.id} limit={3} />
       </Section>
@@ -418,9 +558,9 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
             {waiting.map(({ w, i }) => (
               <li key={w}>
                 <button onClick={() => open(agentTarget(dept, waitingOwner(dept, i), w))}>
-                  <span>{mayDecide(user, dept.id, w).ok ? '⚠' : '🔒'}</span>
+                  {mayDecide(user, dept.id, w).ok ? <span className="status status--wartet waiting__mark" role="img" aria-label="wartet auf Sie" /> : <LockIcon />}
                   {w}
-                  {needsLeitung(w) && <span className="badge badge--bad">Leitung</span>}
+                  {needsLeitung(w) && <span className="badge badge--sign">Leitung</span>}
                   <span className="waiting__go">→</span>
                 </button>
               </li>
@@ -430,18 +570,22 @@ function DeptSheet({ dept, agentId, now, send }: { dept: Department; agentId?: s
       )}
       <Section title="Team" aside={`${dept.agents.length} Agenten`}>
         <div className="team">
-          {dept.agents.map((a) => (
-            <button key={a.id} className={`team__row${a.id === agentId ? ' is-chosen' : ''}`} onClick={() => pickAgent(a.id)}>
-              <span className={`status status--${a.status}`} />
-              <span>
-                <b>
-                  {a.lead && <Spark size={10} />} {a.name}
-                </b>
-                <small>{a.doing}</small>
-              </span>
-              <span className="eyebrow">Öffnen →</span>
-            </button>
-          ))}
+          {dept.agents.map((a) => {
+            const status = statusOf(dept, a, approved)
+            return (
+              <button key={a.id} className={`team__row${a.id === agentId ? ' is-chosen' : ''}`} onClick={() => pickAgent(a.id)}>
+                <span className={`status status--${status}`} role="img" aria-label={`Status: ${status}`} />
+                <span>
+                  <b>
+                    {a.lead && <Spark size={10} />} {a.name}
+                  </b>
+                  {/* Their item was signed or approved, so the old "waiting" line would be stale. */}
+                  <small>{status === a.status ? a.doing : 'Freigabe erhalten, wird ausgeführt'}</small>
+                </span>
+                <span className="eyebrow">Öffnen →</span>
+              </button>
+            )
+          })}
         </div>
       </Section>
       <Section title="Protokoll heute">
@@ -459,7 +603,7 @@ function OverviewSheet({ now }: { now: Date }) {
   const waiting = DEPARTMENTS.flatMap((d) => d.waiting.map((w, i) => ({ d, w, i }))).filter(({ w }) => !approved.includes(w))
   const done = DEPARTMENTS.reduce((n, d) => n + split(d.runs, now).done, 0)
   return (
-    <div className="overview">
+    <div className="overview" role="region" aria-label="Aufgaben">
       <button className="overview__tasks" onClick={() => setExpanded(!expanded)} aria-expanded={expanded}>
         <span>
           <b>Aufgaben</b>
@@ -467,7 +611,7 @@ function OverviewSheet({ now }: { now: Date }) {
         </span>
         {waiting.length ? (
           <span className="pill">
-            <i /> {waiting.length} warten {expanded ? '▾' : '▸'}
+            <i /> <Roll n={waiting.length} /> warten {expanded ? '▾' : '▸'}
           </span>
         ) : (
           <span className="pill pill--done">✓ Alles erledigt {expanded ? '▾' : '▸'}</span>
@@ -519,7 +663,7 @@ export default function Panel() {
   const show = useOffice((s) => s.show)
   const now = useNow()
   const who = whoFor(view)
-  const { msgs, busy, send } = useChat(who)
+  const { msgs, busy, send, stop } = useChat(who)
   const scroller = useRef<HTMLDivElement>(null)
 
   // New subject, back to the top of the sheet.
@@ -546,13 +690,14 @@ export default function Panel() {
         <motion.aside
           key={who.kind === 'brain' ? 'brain' : who.dept.id}
           className="sheet"
+          aria-labelledby="sheet-title"
           initial={{ y: 60, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 60, opacity: 0 }}
           transition={{ type: 'spring', damping: 26, stiffness: 260 }}
         >
           {who.kind === 'brain' ? (
-            <Header icon="brain" title="Das Gehirn" sub="Zentrale · Agenten-Funk" color="#d98a62" onClose={close} />
+            <Header icon="brain" title="Das Gehirn" sub="Zentrale · Agenten-Funk" color="var(--accent)" onClose={close} />
           ) : (
             <Header
               icon={who.dept.icon}
@@ -564,15 +709,21 @@ export default function Panel() {
           )}
           <div className="sheet__body" ref={scroller}>
             {who.kind === 'brain' ? (
-              <BrainSheet now={now} send={send} />
+              <BrainSheet now={now} send={send} thread={<Thread msgs={msgs} busy={busy} />} />
             ) : (
-              <DeptSheet dept={who.dept} agentId={view.kind === 'dept' ? view.agent : undefined} now={now} send={send} />
+              <DeptSheet
+                dept={who.dept}
+                agentId={view.kind === 'dept' ? view.agent : undefined}
+                now={now}
+                send={send}
+                thread={<Thread msgs={msgs} busy={busy} />}
+              />
             )}
-            <Thread msgs={msgs} busy={busy} />
           </div>
           <Composer
             busy={busy}
             onSend={send}
+            onStop={stop}
             placeholder={
               who.kind === 'brain'
                 ? `Frage an ${COMPANY.assistant} …`

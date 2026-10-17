@@ -28,11 +28,42 @@ const save = (key: string, value: unknown) => {
   }
 }
 const today = new Date().toDateString()
+
+// '?reset' starts the pitch clean: no decisions, records or signature left
+// over from the rehearsal. The parameter is dropped again at once, so a
+// reload during the pitch keeps what was shown since.
+if (new URLSearchParams(location.search).has('reset')) {
+  for (const key of [KEY_DECISIONS, KEY_HANDLED, KEY_SIGNATURE]) save(key, null)
+  try {
+    const url = new URL(location.href)
+    url.searchParams.delete('reset')
+    history.replaceState(history.state, '', url.pathname + url.search + url.hash)
+  } catch {
+    // A sandboxed frame may refuse; the data is reset either way.
+  }
+}
+
+// 'Ruhige Ansicht' (no auto-rotation) is a per-device choice, set before the scene first draws.
+const KEY_STILL = 'office.still'
+if (load<boolean>(KEY_STILL, false)) document.documentElement.dataset.still = '1'
+/** Turns the calm view on or off on this device; the scene reads the attribute. */
+export function setStill(on: boolean) {
+  if (on) document.documentElement.dataset.still = '1'
+  else delete document.documentElement.dataset.still
+  save(KEY_STILL, on ? true : null)
+}
 /** The colour someone chose last time on this computer, or their default. */
 const themeFor = (userId: string | undefined): ThemeId => (userId ? load<ThemeId | null>(`office.theme.${userId}`, null) : null) ?? defaultTheme(userId)
 const stored = load<{ day: string; list: Decision[] }>(KEY_DECISIONS, { day: today, list: [] })
 const initialDecisions = stored.day === today ? stored.list : []
 const storedHandled = load<{ day: string; map: Record<string, Handled> }>(KEY_HANDLED, { day: today, map: {} })
+
+/**
+ * The packets a decision set off go out one after another once the window
+ * is closed, so each runs floor → brain → floor in view and the brain
+ * flares as it passes.
+ */
+const flush = (queued: Message[]) => queued.forEach((m, k) => setTimeout(() => useOffice.getState().post(m, true), 300 + k * 400))
 
 /** What the sheet shows and where the camera flies. */
 export type View =
@@ -51,6 +82,12 @@ type OfficeState = {
   ws: WsTarget | null
   open: (target: WsTarget) => void
   close: () => void
+  /**
+   * What a decision sets off, held back while the window is open: the
+   * packets run through the office once it closes, so they are seen.
+   */
+  pendingPackets: Message[]
+  queuePacket: (msg: Message) => void
   /** Decisions made today; they drop out of every waiting list. */
   approved: string[]
   /** Who decided what, and when — for management's overview. */
@@ -103,15 +140,23 @@ type OfficeState = {
   /** Bumped to send the children and the dog running through the office. */
   romp: number
   startRomp: () => void
+  /** Back to a clean demo: no decisions, records, prints or signatures in this browser. */
+  resetDemo: () => void
 }
 
-export const useOffice = create<OfficeState>((set) => ({
+export const useOffice = create<OfficeState>((set, get) => ({
   view: { kind: 'overview' },
   flight: 0,
   show: (view) => set((s) => ({ view, flight: s.flight + 1 })),
   ws: null,
   open: (ws) => set({ ws }),
-  close: () => set({ ws: null }),
+  close: () => {
+    const queued = get().pendingPackets
+    set({ ws: null, pendingPackets: [] })
+    flush(queued)
+  },
+  pendingPackets: [],
+  queuePacket: (msg) => set((s) => ({ pendingPackets: [...s.pendingPackets, msg] })),
   approved: initialDecisions.map((d) => d.text),
   decisions: initialDecisions,
   approve: (item, dept, result = 'Freigegeben', signed = false) =>
@@ -138,7 +183,7 @@ export const useOffice = create<OfficeState>((set) => ({
   },
   signOut: () => {
     save(KEY_USER, null)
-    set({ user: null, remembered: null, locked: true, ws: null, setup: false, cockpit: false, garden: false, view: { kind: 'overview' } })
+    set({ user: null, remembered: null, locked: true, ws: null, pendingPackets: [], setup: false, cockpit: false, garden: false, view: { kind: 'overview' } })
   },
   theme: themeFor(load<string | null>(KEY_USER, null) ?? undefined),
   setTheme: (theme) =>
@@ -158,7 +203,7 @@ export const useOffice = create<OfficeState>((set) => ({
   showSetup: (setup) => set({ setup, ws: null }),
   locked: true,
   unlock: () => set({ locked: false }),
-  lock: () => set({ locked: true, ws: null, setup: false, cockpit: false, search: false, alert: null, view: { kind: 'overview' } }),
+  lock: () => set({ locked: true, ws: null, pendingPackets: [], setup: false, cockpit: false, search: false, alert: null, view: { kind: 'overview' } }),
   prints: [],
   addPrint: (job) => set((s) => ({ prints: [...s.prints, job] })),
   alert: null,
@@ -174,6 +219,23 @@ export const useOffice = create<OfficeState>((set) => ({
     }),
   romp: 0,
   startRomp: () => set((s) => ({ romp: s.romp + 1 })),
+  resetDemo: () => {
+    save(KEY_DECISIONS, null)
+    save(KEY_HANDLED, null)
+    save(KEY_SIGNATURE, null)
+    set((s) => ({
+      approved: [],
+      decisions: [],
+      handled: {},
+      prints: [],
+      signatures: {},
+      ws: null,
+      pendingPackets: [],
+      cockpit: false,
+      view: { kind: 'overview' },
+      flight: s.flight + 1,
+    }))
+  },
   feed: [],
   inFlight: [],
   post: (msg, animate) =>
@@ -190,4 +252,14 @@ export const useOffice = create<OfficeState>((set) => ({
 applyTheme(themeOf(useOffice.getState().theme))
 useOffice.subscribe((s, prev) => {
   if (s.theme !== prev.theme) applyTheme(themeOf(s.theme))
+})
+
+// The window can also close without close(): the search, the setup plan or
+// the Leitung area replace it. The held-back packets go out then too. Each
+// path empties the queue as it posts, so nothing reaches the feed twice.
+useOffice.subscribe((s, prev) => {
+  if (!prev.ws || s.ws || !s.pendingPackets.length) return
+  const queued = s.pendingPackets
+  useOffice.setState({ pendingPackets: [] })
+  flush(queued)
 })

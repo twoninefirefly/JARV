@@ -54,14 +54,15 @@ export function applyTheme(t: Theme) {
     r.setProperty('--card', 'rgba(230, 236, 242, 0.035)')
     r.setProperty('--line', 'rgba(220, 228, 236, 0.1)')
     r.setProperty('--text', '#eef1f4')
-    r.setProperty('--muted', '#8b929b')
+    // Light enough for 4.5:1 on the department tints, not only on the plain card.
+    r.setProperty('--muted', '#959ca5')
   } else if (t.cool) {
     r.setProperty('--bg', '#0a0b0e')
     r.setProperty('--surface', 'rgba(18, 20, 25, 0.95)')
     r.setProperty('--card', 'rgba(225, 232, 245, 0.035)')
     r.setProperty('--line', 'rgba(215, 225, 240, 0.09)')
     r.setProperty('--text', '#edf0f5')
-    r.setProperty('--muted', '#848c99')
+    r.setProperty('--muted', '#959daa')
   } else {
     for (const k of ['--bg', '--surface', '--card', '--line', '--text', '--muted']) r.removeProperty(k)
   }

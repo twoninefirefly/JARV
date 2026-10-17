@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { Html, Line, OrbitControls, RoundedBox } from '@react-three/drei'
-import { Bloom, EffectComposer } from '@react-three/postprocessing'
+import { Bloom, EffectComposer, SMAA, ToneMapping, Vignette } from '@react-three/postprocessing'
+import { SMAAPreset, ToneMappingMode } from 'postprocessing'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { COMPANY, DEPARTMENTS, fmt, BRAIN, type Agent, type Department } from './data'
@@ -667,7 +668,7 @@ function Floor({ dept }: { dept: Department }) {
                   </mesh>
                   <mesh>
                     <ringGeometry args={[0.44, 0.48, 64]} />
-                    <meshBasicMaterial color={new THREE.Color(dept.color).multiplyScalar(1.6)} toneMapped={false} transparent opacity={0.95} depthWrite={false} />
+                    <meshBasicMaterial color={new THREE.Color(dept.color).multiplyScalar(2.2)} toneMapped={false} transparent opacity={0.95} depthWrite={false} />
                   </mesh>
                 </group>
               )
@@ -824,7 +825,9 @@ function Pad() {
   const kim = useOffice((s) => s.user?.id === 'leitung2')
   const theme = kim && chosen.id === 'centurion' ? themeOf('pink') : chosen
   const tex = useMemo(() => padTexture(theme), [theme])
-  const ring = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(1.7), [theme])
+  // A new colour draws a new texture; the old one has to leave the GPU, or every pick leaks one.
+  useEffect(() => () => tex.dispose(), [tex])
+  const ring = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(2.4), [theme])
   const halo = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(0.9), [theme])
   return (
     <group>
@@ -1064,7 +1067,7 @@ function Neurons() {
           return { a, p }
         })
         // Just over the bloom threshold: a glow, not a flare.
-        const bright = new THREE.Color(d.color).multiplyScalar(1.35)
+        const bright = new THREE.Color(d.color).multiplyScalar(1.8)
         const soft = new THREE.Color(d.color).multiplyScalar(0.9)
         return { d, at, agents, bright, soft }
       }),
@@ -1172,7 +1175,7 @@ function Links() {
     () => ({
       trail: new THREE.Color(theme.deep).lerp(new THREE.Color(theme.accent), 0.35),
       packet: new THREE.Color(theme.hi).multiplyScalar(2.6),
-      pulse: new THREE.Color(theme.accent).multiplyScalar(2.2),
+      pulse: new THREE.Color(theme.accent).multiplyScalar(2.8),
     }),
     [theme],
   )
@@ -2166,6 +2169,10 @@ export default function Scene() {
     <Canvas
       key={generation}
       onCreated={({ gl }) => {
+        // One tone curve everywhere. The composer below switches the renderer's own
+        // off while it runs and does the same in its ToneMapping pass; phones have no
+        // composer, so without this they would get a different curve and other colours.
+        gl.toneMapping = THREE.NeutralToneMapping
         // Right-click is ours: it zooms back out (see onPointerMissed).
         gl.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
         gl.domElement.addEventListener(
@@ -2184,7 +2191,8 @@ export default function Scene() {
           if (view.kind !== 'overview') show({ kind: 'overview' })
         }
       }}
-      shadows
+      // Plain PCF: three no longer does PCFSoft and fell back to it with a warning.
+      shadows="percentage"
       dpr={pixelRatio()}
       camera={{ position: [18, 22, 18], fov: 34, near: 0.1, far: 200 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
@@ -2203,7 +2211,9 @@ export default function Scene() {
         shadow-camera-right={15}
         shadow-camera-top={15}
         shadow-camera-bottom={-15}
-        shadow-bias={-0.0004}
+        shadow-bias={-0.0002}
+        shadow-normalBias={0.015}
+        shadow-radius={4}
       />
       <Cosmos />
       <Ground />
@@ -2216,10 +2226,16 @@ export default function Scene() {
       <Romp />
       {KIDS_ON_SPOT && <KidsOnSpot />}
       <Rig />
-      {/* Bloom costs the most GPU memory; phones skip it, which is what keeps iOS from dropping the context. */}
+      {/* Bloom costs the most GPU memory; phones skip it, which is what keeps iOS from dropping the context.
+          The scene renders into an HDR buffer: bloom picks up only what is brighter than white (the pad
+          ring, packets, neurons, hover rings), tone mapping then brings it into range, and SMAA smooths the
+          edges, since a composer target has no multisampling of its own. */}
       {!phone() && (
         <EffectComposer multisampling={0}>
-          <Bloom mipmapBlur luminanceThreshold={0.85} intensity={0.9} radius={0.7} />
+          <Bloom mipmapBlur luminanceThreshold={1} luminanceSmoothing={0.15} intensity={0.85} radius={0.7} />
+          <ToneMapping mode={ToneMappingMode.NEUTRAL} />
+          <Vignette offset={0.3} darkness={0.5} />
+          <SMAA preset={SMAAPreset.HIGH} />
         </EffectComposer>
       )}
     </Canvas>

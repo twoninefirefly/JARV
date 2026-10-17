@@ -81,6 +81,35 @@ function make(i: number, at: Date): Message {
 
 export const deptOf = (id: string) => DEPARTMENTS.find((d) => d.id === id)
 
+/** "?ruhig" in the address keeps the notifications out entirely, for a quiet walkthrough. */
+const QUIET = location.search.includes('ruhig')
+/** In a pitch two interruptions are plenty; this counts for the whole page, across locks. */
+const MAX_AUTO = 2
+let autoShown = 0
+/** How often raiseUrgent was used, so a second cue brings a different case. */
+let cue = 0
+
+/**
+ * Raises the next urgent message of the given level at once — for a tour step
+ * or a palette action that wants to show the emergency on cue. Falls back to
+ * any urgent message when the industry has none of that level (the standard
+ * office knows no emergency), and does nothing when there is none at all.
+ */
+export function raiseUrgent(level: 1 | 2) {
+  const urgent = ROUTES.map((r, i) => ({ i, u: URGENT[r[4]] })).filter((r) => r.u)
+  if (!urgent.length) return null
+  const pool = urgent.some((r) => r.u === level) ? urgent.filter((r) => r.u === level) : urgent
+  const hit = pool[cue % pool.length]
+  // A whole round further each time, so the placeholders ({object}, {person}) change between cues.
+  const m = make(hit.i + ROUTES.length * ++cue, new Date())
+  const { post, raise } = useOffice.getState()
+  post(m, true)
+  raise(m)
+  return m
+}
+// Reachable from the console too, so a presenter (or a test) can call the emergency in by hand.
+;(window as unknown as { raiseUrgent?: typeof raiseUrgent }).raiseUrgent = raiseUrgent
+
 /** Starts the traffic once the office is unlocked; one message every few seconds. */
 export function useComms(running: boolean) {
   const post = useOffice((s) => s.post)
@@ -91,14 +120,19 @@ export function useComms(running: boolean) {
     // A short backlog, so the feed is never empty on first look.
     for (let k = 6; k >= 1; k--) post(make(k * 5, new Date(now - k * 4 * 60_000)), false)
     let i = 0
-    // Urgent messages pop up as a notification — at most every 90 s, and the
-    // first one not before half a minute in, so the office can be shown first.
-    let lastAlert = Date.now() - 60_000
+    // Urgent messages pop up as a notification, but rarely: the first not before
+    // 45 s in, so the office can be shown first, then at most every three minutes,
+    // and no more than two per visit. Everything else only lands in the feed.
+    const start = Date.now()
+    let lastAlert = 0
     const t = setInterval(() => {
       const m = make(i++, new Date())
       post(m, true)
-      if (m.urgency && Date.now() - lastAlert > 90_000) {
-        lastAlert = Date.now()
+      const at = Date.now()
+      const due = lastAlert ? at - lastAlert >= 180_000 : at - start >= 45_000
+      if (m.urgency && !QUIET && autoShown < MAX_AUTO && due) {
+        lastAlert = at
+        autoShown++
         raise(m)
       }
     }, 4200)

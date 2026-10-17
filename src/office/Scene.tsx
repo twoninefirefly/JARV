@@ -1,17 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { Html, Line, OrbitControls, RoundedBox } from '@react-three/drei'
-import { Bloom, EffectComposer } from '@react-three/postprocessing'
+import { Environment, Html, Lightformer, Line, OrbitControls } from '@react-three/drei'
+import { Bloom, EffectComposer, SMAA, ToneMapping, Vignette } from '@react-three/postprocessing'
+import { SMAAPreset, ToneMappingMode } from 'postprocessing'
 import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { COMPANY, DEPARTMENTS, fmt, BRAIN, type Agent, type Department } from './data'
-import { useOffice, type View } from './state'
+import { useOffice } from './state'
 import { Icon, Spark } from './Icon'
-import { agentTarget } from './workspaces'
+import { agentTarget, waitingOwner } from './workspaces'
 import Garden from './Garden'
 import Bonsai from './Bonsai'
 import { MOBILE } from './mobile'
 import { themeOf, type Theme } from './themes'
+import { mayDecide, needsLeitung } from './team'
+import './styles/scene.css'
 
 /**
  * The isometric office: six department floors around a particle brain.
@@ -25,6 +29,36 @@ const RING = 6 // distance of each floor from the brain; below ~5.9 neighbouring
 const FLOOR = 3.4 // floor edge length
 const TOP = 0.3 // floor surface height
 const BG = '#040406'
+
+/** Reduced motion, from the system or from 'Ruhige Ansicht' in the colour picker. */
+const reduceQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+const still = () => reduceQuery.matches || document.documentElement.dataset.still === '1'
+
+/**
+ * Seconds of the build-up (floors rising, brain igniting) shown so far; -1
+ * while locked. It starts when the lock lifts rather than with the canvas'
+ * first frame: the scene is built while the lock screen is still up, and the
+ * animation used to be over before anyone saw it. It runs on frame time, at
+ * most 1/15 s a frame, so a slow first frame after unlocking cannot skip it,
+ * while anything drawing at 15 fps or more still sees it in real time.
+ */
+const reveal = { t: -1 }
+/** Seconds since the reveal; negative while locked, which keeps the floors and the brain hidden. */
+const since = () => {
+  if (reveal.t < 0) {
+    // Behind the lock, until the warm-up has drawn one complete frame, everything stands,
+    // so every shader gets compiled; then it is hidden for the build-up.
+    return warm.done ? -1 : 10
+  }
+  return still() ? 10 : reveal.t
+}
+/** One frame's step for the build-up and the camera flights. */
+const step = (dt: number) => Math.min(dt, 1 / 15)
+
+/** True while the camera is on a flight: the render budget keeps drawing then, even behind a window. */
+const rig = { flying: false }
+/** Set once every shader has compiled and the whole office has been drawn once; after that a locked office draws nothing. */
+const warm = { done: false }
 
 /** Clockwise from the top of the screen, for a camera at +x +z. */
 function place(angle: number) {
@@ -78,6 +112,15 @@ function press(fn: () => void) {
   }
 }
 
+/** Fades a label in with what it names; written only when it changes, since this runs every frame. */
+function fade(el: HTMLElement | null, k: number) {
+  if (!el) return
+  const v = k >= 1 ? '' : String(Math.round(k * 100) / 100)
+  if (el.style.opacity === v) return
+  el.style.opacity = v
+  el.style.visibility = k > 0 ? '' : 'hidden'
+}
+
 function onTap(fn: () => void) {
   return (e: ThreeEvent<MouseEvent>) => {
     // A drag that ends over a floor is a rotation, not a choice.
@@ -92,8 +135,9 @@ function onTap(fn: () => void) {
 // ---------------------------------------------------------------------------
 
 const mat = {
-  desk: new THREE.MeshStandardMaterial({ color: '#ece8e1', roughness: 0.6 }),
-  screen: new THREE.MeshStandardMaterial({ color: '#1b1d22', roughness: 0.4 }),
+  desk: new THREE.MeshStandardMaterial({ color: '#ece8e1', roughness: 0.42 }),
+  // Glass over the panel: glossy enough to catch the studio light.
+  screen: new THREE.MeshStandardMaterial({ color: '#1b1d22', roughness: 0.12, metalness: 0.3 }),
   chair: new THREE.MeshStandardMaterial({ color: '#2a2724', roughness: 0.7 }),
   chairMetal: new THREE.MeshStandardMaterial({ color: '#8a8580', roughness: 0.35, metalness: 0.6 }),
   suit: new THREE.MeshStandardMaterial({ color: '#1c1a19', roughness: 0.85 }),
@@ -184,6 +228,72 @@ const G = {
   bridge: new THREE.CylinderGeometry(0.0025, 0.0025, 0.014, 6).rotateZ(Math.PI / 2),
 }
 
+// Shared furniture: one set of shapes for all 40 desks. Each drei RoundedBox and
+// each inline geometry used to build its own copy, several hundred in all.
+const FURN = {
+  desk: new RoundedBoxGeometry(0.52, 0.035, 0.3, 2, 0.01),
+  seat: new RoundedBoxGeometry(0.2, 0.035, 0.19, 2, 0.014),
+  back: new RoundedBoxGeometry(0.19, 0.2, 0.028, 2, 0.012),
+  leg: new THREE.BoxGeometry(0.014, 0.012, 0.1),
+  lift: new THREE.CylinderGeometry(0.009, 0.012, 0.12, 8),
+  side: new THREE.BoxGeometry(0.03, 0.25, 0.28),
+  monitor: new THREE.BoxGeometry(0.26, 0.16, 0.02),
+  glow: new THREE.PlaneGeometry(0.23, 0.13),
+  stand: new THREE.BoxGeometry(0.03, 0.05, 0.03),
+  pot: new THREE.CylinderGeometry(0.06, 0.05, 0.12, 12),
+  leaf: new THREE.SphereGeometry(0.1, 12, 10),
+  // The beacon over a desk that waits for a decision.
+  column: new THREE.CylinderGeometry(0.006, 0.006, 0.55, 6),
+  gem: new THREE.OctahedronGeometry(0.05, 0),
+  ripple: new THREE.RingGeometry(0.18, 0.2, 40).rotateX(-Math.PI / 2),
+}
+
+/**
+ * What the screens show: rows of grey interface, drawn once. Working agents'
+ * screens scroll through it; a waiting agent's screen stands still in amber.
+ */
+const screenTex = (() => {
+  const cv = document.createElement('canvas')
+  cv.width = 256
+  cv.height = 160
+  const g = cv.getContext('2d')!
+  g.fillStyle = '#000'
+  g.fillRect(0, 0, 256, 160)
+  // A fixed sequence, so every load draws the same screen.
+  let n = 3
+  const r = () => ((n = (n * 16807) % 2147483647) / 2147483647)
+  for (let y = 8; y < 160; y += 12) {
+    let x = 10 + Math.floor(r() * 3) * 14
+    while (x < 236) {
+      const w = 12 + r() * 60
+      g.fillStyle = `rgba(200,206,216,${0.35 + r() * 0.5})`
+      g.beginPath()
+      g.roundRect(x, y, Math.min(w, 246 - x), 5, 2.5)
+      g.fill()
+      x += w + 6
+      if (r() < 0.25) break
+    }
+  }
+  const tex = new THREE.CanvasTexture(cv)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(1, 0.6)
+  return tex
+})()
+const screenStill = screenTex.clone()
+screenStill.needsUpdate = true
+
+/** One material per status instead of one per desk. */
+const SCREEN = {
+  arbeitet: new THREE.MeshStandardMaterial({ color: '#0d0f12', emissive: '#8fb4ff', emissiveMap: screenTex, emissiveIntensity: 1.4 }),
+  wartet: new THREE.MeshStandardMaterial({ color: '#0d0f12', emissive: '#ffb347', emissiveMap: screenStill, emissiveIntensity: 1.6 }),
+  bereit: new THREE.MeshStandardMaterial({ color: '#0d0f12', emissive: '#8fb4ff', emissiveIntensity: 0.35 }),
+}
+const AMBER = new THREE.Color('#ffb347').multiplyScalar(2.5)
+const BEACON = new THREE.MeshBasicMaterial({ color: AMBER, toneMapped: false, depthWrite: false, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending })
+const GEM = new THREE.MeshBasicMaterial({ color: AMBER, toneMapped: false })
+const noHit = () => null
+
 /** A capsule from a to b: limbs are placed by their joints, not by hand-tuned angles. */
 function Limb({ a, b, geometry, material }: { a: [number, number, number]; b: [number, number, number]; geometry: THREE.BufferGeometry; material: THREE.Material }) {
   const { position, quaternion } = useMemo(() => {
@@ -199,7 +309,7 @@ function Limb({ a, b, geometry, material }: { a: [number, number, number]; b: [n
 /** Head height, used by the hair and the idle look-around. */
 const HEAD_Y = 0.478
 
-function Person({ look }: { look: Look }) {
+const Person = memo(function Person({ look }: { look: Look }) {
   const { skin, hair, top, pants, female } = look
   const w = female ? 0.078 : 0.086 // shoulder half-width
   return (
@@ -239,7 +349,7 @@ function Person({ look }: { look: Look }) {
       </group>
     </group>
   )
-}
+})
 
 /** Eyes (they blink), brows in the hair colour, nose, mouth and ears; the person faces -z. */
 function Face({ look }: { look: Look }) {
@@ -320,34 +430,33 @@ function Hairdo({ look, material }: { look: Look; material: THREE.Material }) {
 }
 
 /** A proper office chair: star base, gas lift, rounded seat and back. */
-function Chair() {
+const Chair = memo(function Chair() {
   return (
     <group position={[0, 0, 0.3]}>
       {[0, 1, 2, 3, 4].map((k) => (
-        <mesh key={k} material={mat.chair} position={[Math.sin((k / 5) * Math.PI * 2) * 0.05, 0.018, Math.cos((k / 5) * Math.PI * 2) * 0.05]} rotation={[0, (k / 5) * Math.PI * 2, 0]}>
-          <boxGeometry args={[0.014, 0.012, 0.1]} />
-        </mesh>
+        <mesh key={k} geometry={FURN.leg} material={mat.chair} position={[Math.sin((k / 5) * Math.PI * 2) * 0.05, 0.018, Math.cos((k / 5) * Math.PI * 2) * 0.05]} rotation={[0, (k / 5) * Math.PI * 2, 0]} />
       ))}
-      <mesh material={mat.chairMetal} position={[0, 0.08, 0]}>
-        <cylinderGeometry args={[0.009, 0.012, 0.12, 8]} />
-      </mesh>
-      <RoundedBox args={[0.2, 0.035, 0.19]} radius={0.014} smoothness={3} material={mat.chair} position={[0, 0.155, -0.01]} castShadow />
-      <RoundedBox args={[0.19, 0.2, 0.028]} radius={0.012} smoothness={3} material={mat.chair} position={[0, 0.3, 0.09]} rotation={[-0.12, 0, 0]} castShadow />
+      <mesh geometry={FURN.lift} material={mat.chairMetal} position={[0, 0.08, 0]} />
+      <mesh geometry={FURN.seat} material={mat.chair} position={[0, 0.155, -0.01]} castShadow />
+      <mesh geometry={FURN.back} material={mat.chair} position={[0, 0.3, 0.09]} rotation={[-0.12, 0, 0]} castShadow />
     </group>
   )
-}
+})
 
-function Workstation({ agent, seed, look }: { agent: Agent; seed: number; look: Look }) {
+type Status = Agent['status']
+
+/**
+ * A desk with its person. `status` is what the desk shows, which may differ
+ * from the data: an agent whose decisions have all been made is back at work.
+ * `beacon` raises the amber pin over a desk with a decision still open.
+ */
+const Workstation = memo(function Workstation({ status, beacon, seed, look }: { status: Status; beacon: boolean; seed: number; look: Look }) {
   const body = useRef<THREE.Group>(null)
-  const glow = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#0d0f12',
-        emissive: agent.status === 'wartet' ? '#ffb347' : '#8fb4ff',
-        emissiveIntensity: agent.status === 'bereit' ? 0.25 : 0.7,
-      }),
-    [agent.status],
-  )
+  const gem = useRef<THREE.Mesh>(null)
+  const ripple = useRef<THREE.Mesh>(null)
+  // Each beacon fades its own ring, so it needs its own material; only waiting desks have one.
+  const rippleMat = useMemo(() => (beacon ? BEACON.clone() : null), [beacon])
+  useEffect(() => () => rippleMat?.dispose(), [rippleMat])
 
   // Parts that move on their own: found once, not searched every frame.
   const parts = useRef<{ head?: THREE.Object3D; eyes?: THREE.Object3D; hands: THREE.Object3D[] }>({ hands: [] })
@@ -367,56 +476,65 @@ function Workstation({ agent, seed, look }: { agent: Agent; seed: number; look: 
     const { head, eyes, hands } = parts.current
     // Seated and still: the body only breathes and leans; the hands do the typing.
     body.current.position.y = 0
-    body.current.rotation.x = agent.status === 'wartet' ? -0.08 + Math.sin(t * 0.8 + seed) * 0.03 : 0.03 + Math.sin(t * 1.1 + seed) * 0.006
-    const typing = agent.status === 'arbeitet'
+    body.current.rotation.x = status === 'wartet' ? -0.08 + Math.sin(t * 0.8 + seed) * 0.03 : 0.03 + Math.sin(t * 1.1 + seed) * 0.006
+    const typing = status === 'arbeitet'
     hands.forEach((h, i) => (h.position.y = 0.29 + (typing ? Math.max(0, Math.sin(t * 11 + seed + i * 1.9)) * 0.007 : 0)))
     // Now and then a glance to the side, as people at desks do.
     if (head) head.rotation.y = Math.sin(t * 0.35 + seed * 2) > 0.85 ? Math.sin(t * 0.9 + seed) * 0.5 : Math.sin(t * 0.5 + seed) * 0.08
     // A blink every few seconds.
     if (eyes) eyes.scale.y = (t * 0.31 + seed * 0.7) % 1 < 0.035 ? 0.1 : 1
+    // The beacon: the gem turns, and a ring spreads out on the floor and fades, every 1.6 s.
+    if (gem.current) gem.current.rotation.y = t * 1.6
+    if (ripple.current && rippleMat) {
+      const k = (t / 1.6) % 1
+      ripple.current.scale.setScalar(1 + 1.2 * k)
+      rippleMat.opacity = 0.6 * (1 - k)
+    }
   })
 
   return (
     <group>
       {/* desk */}
-      <RoundedBox args={[0.52, 0.035, 0.3]} radius={0.01} smoothness={2} material={mat.desk} position={[0, 0.25, 0]} castShadow receiveShadow />
-      <mesh material={mat.desk} position={[-0.24, 0.125, 0]} castShadow>
-        <boxGeometry args={[0.03, 0.25, 0.28]} />
-      </mesh>
-      <mesh material={mat.desk} position={[0.24, 0.125, 0]} castShadow>
-        <boxGeometry args={[0.03, 0.25, 0.28]} />
-      </mesh>
+      <mesh geometry={FURN.desk} material={mat.desk} position={[0, 0.25, 0]} castShadow receiveShadow />
+      <mesh geometry={FURN.side} material={mat.desk} position={[-0.24, 0.125, 0]} castShadow />
+      <mesh geometry={FURN.side} material={mat.desk} position={[0.24, 0.125, 0]} castShadow />
       {/* monitor */}
-      <mesh material={mat.screen} position={[0, 0.37, -0.09]} castShadow>
-        <boxGeometry args={[0.26, 0.16, 0.02]} />
-      </mesh>
-      <mesh material={glow} position={[0, 0.37, -0.078]}>
-        <planeGeometry args={[0.23, 0.13]} />
-      </mesh>
-      <mesh material={mat.screen} position={[0, 0.29, -0.09]}>
-        <boxGeometry args={[0.03, 0.05, 0.03]} />
-      </mesh>
+      <mesh geometry={FURN.monitor} material={mat.screen} position={[0, 0.37, -0.09]} castShadow />
+      <mesh geometry={FURN.glow} material={SCREEN[status]} position={[0, 0.37, -0.078]} />
+      <mesh geometry={FURN.stand} material={mat.screen} position={[0, 0.29, -0.09]} />
       <Chair />
       {/* person, seated: the group moves (typing, leaning back), the head looks around */}
       <group ref={body} position={[0, 0, 0.3]}>
         <Person look={look} />
       </group>
+      {/* Bright enough to read from the overview; clicks go through to the desk. */}
+      {beacon && (
+        <group>
+          <mesh geometry={FURN.column} material={BEACON} position={[0, 0.85, 0]} raycast={noHit} />
+          <mesh ref={gem} geometry={FURN.gem} material={GEM} position={[0, 1.15, 0]} raycast={noHit} />
+          <mesh ref={ripple} geometry={FURN.ripple} material={rippleMat!} position={[0, 0.006, 0]} raycast={noHit} />
+        </group>
+      )}
     </group>
   )
+})
+
+/** Scrolls the working screens, once for all of them. */
+function Screens() {
+  useFrame((_, dt) => {
+    screenTex.offset.y -= dt * 0.04
+  })
+  return null
 }
 
-function Plant() {
+const Plant = memo(function Plant() {
   return (
     <group>
-      <mesh material={mat.pot} position={[0, 0.06, 0]} castShadow>
-        <cylinderGeometry args={[0.06, 0.05, 0.12, 12]} />
-      </mesh>
-      <mesh material={mat.leaf} position={[0, 0.2, 0]} castShadow>
-        <sphereGeometry args={[0.1, 12, 10]} />
-      </mesh>
+      <mesh geometry={FURN.pot} material={mat.pot} position={[0, 0.06, 0]} castShadow />
+      <mesh geometry={FURN.leaf} material={mat.leaf} position={[0, 0.2, 0]} castShadow />
     </group>
   )
-}
+})
 
 // ---------------------------------------------------------------------------
 // A department floor
@@ -426,13 +544,21 @@ function Plant() {
 const DWELL_MS = 1400
 /** Resting to open needs a real mouse; on touch screens a tap does it, and nothing opens by itself. */
 const HOVER = !MOBILE && typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches
-const canDwell = (v: View, id: string) => HOVER && (v.kind === 'overview' || v.kind === 'brain' || (v.kind === 'dept' && v.id !== id))
+const canDwell = (id: string) => {
+  const v = useOffice.getState().view
+  return HOVER && (v.kind === 'overview' || v.kind === 'brain' || (v.kind === 'dept' && v.id !== id))
+}
 
 function Floor({ dept }: { dept: Department }) {
-  const view = useOffice((s) => s.view)
+  // Narrow selectors: a flight to one floor re-renders that floor (and the one it
+  // leaves), not all six with their forty desks. Dimming is read per frame instead.
+  const active = useOffice((s) => s.view.kind === 'dept' && s.view.id === dept.id)
+  const inside = useOffice((s) => s.view.kind === 'neural')
+  const chosen = useOffice((s) => (s.view.kind === 'dept' && s.view.id === dept.id ? s.view.agent : undefined))
   const show = useOffice((s) => s.show)
   const open = useOffice((s) => s.open)
-  const [hover, setHover] = useState(false)
+  // Read by the frame loop only, so pointing at a floor re-renders nothing.
+  const hover = useRef(false)
   // The badge has its own hover, apart from the floor's: the two used to fight
   // at the badge's edge and made it flicker open and shut.
   const [tagHover, setTagHover] = useState(false)
@@ -446,14 +572,21 @@ function Floor({ dept }: { dept: Department }) {
     leave.current = setTimeout(() => setTagHover(false), 140)
   }
   useEffect(() => () => clearTimeout(leave.current), [])
+  // The badge hides while its floor is open, and a hidden badge never gets its mouseleave:
+  // without this the stale hover filled the hourglass again on the way back and reopened the floor.
+  useEffect(() => {
+    if (!active && !inside) return
+    clearTimeout(leave.current)
+    setTagHover(false)
+  }, [active, inside])
   // Resting on the badge opens the department once its bar is full. A timer, not
   // the bar's transitionend: that one went missing now and then, and the bar filled for nothing.
   // Works from the overview and from inside another department alike.
-  const dwell = tagHover && canDwell(view, dept.id)
+  const dwell = tagHover && canDwell(dept.id)
   useEffect(() => {
     if (!dwell) return
     const t = setTimeout(() => {
-      if (canDwell(useOffice.getState().view, dept.id)) show({ kind: 'dept', id: dept.id })
+      if (canDwell(dept.id)) show({ kind: 'dept', id: dept.id })
     }, DWELL_MS)
     return () => clearTimeout(t)
   }, [dwell, dept.id, show])
@@ -463,12 +596,10 @@ function Floor({ dept }: { dept: Department }) {
   const [deskAgent, setDeskAgent] = useState<string | null>(null)
   const shade = useRef(1)
   const at = useMemo(() => place(dept.angle), [dept.angle])
-  const active = view.kind === 'dept' && view.id === dept.id
-  const inside = view.kind === 'neural'
-  const dim = (view.kind === 'dept' && !active) || inside
+  const base = useMemo(() => new THREE.Color(dept.color), [dept.color])
 
   const top = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: dept.color, roughness: 0.85 }),
+    () => new THREE.MeshStandardMaterial({ color: dept.color, roughness: 0.7 }),
     [dept.color],
   )
   const lip = useMemo(
@@ -481,12 +612,14 @@ function Floor({ dept }: { dept: Department }) {
   )
 
   useFrame((_, dt) => {
-    const want = active ? 0.18 : hover ? 0.1 : 0
-    top.emissive.set(dept.color)
+    const v = useOffice.getState().view
+    const dim = (v.kind === 'dept' && !active) || inside
+    const want = active ? 0.18 : hover.current ? 0.1 : 0
+    top.emissive.copy(base)
     top.emissiveIntensity += (want - top.emissiveIntensity) * Math.min(1, dt * 6)
     // Step back the floors you're not looking at.
     shade.current += ((inside ? 0.35 : dim ? 0.55 : 1) - shade.current) * Math.min(1, dt * 6)
-    top.color.set(dept.color).multiplyScalar(shade.current)
+    top.color.copy(base).multiplyScalar(shade.current)
   })
 
   // Inside the brain the floors have sunk away; a click into the dark must not bring one back.
@@ -495,20 +628,43 @@ function Floor({ dept }: { dept: Department }) {
   }
   const lead = SPOTS[0]
   const looks = useMemo(() => dept.agents.map((_, i) => lookFor(DEPARTMENTS.indexOf(dept) * 7 + i)), [dept])
+  // What each desk shows. An agent waits only while one of its own decisions is open:
+  // once all of them are made, it is back at work, as the work window and the panel say too.
+  const approved = useOffice((s) => s.approved)
+  const desks = useMemo(
+    () =>
+      dept.agents.map((a) => {
+        const owned = dept.waiting.filter((_, i) => waitingOwner(dept, i).id === a.id)
+        const status: Status = a.status === 'wartet' && owned.length > 0 && owned.every((w) => approved.includes(w)) ? 'arbeitet' : a.status
+        return { status, beacon: status === 'wartet' && owned.some((w) => !approved.includes(w)) }
+      }),
+    [dept, approved],
+  )
+  // The badge counts what waits here for the person signed in, and shows a pen
+  // when management's own signature is among it.
+  const user = useOffice((s) => s.user)
+  const waits = useMemo(() => {
+    const open = dept.waiting.filter((w) => !approved.includes(w) && mayDecide(user, dept.id, w).ok)
+    return { count: open.length, sign: user?.role === 'leitung' && open.some(needsLeitung) }
+  }, [dept, approved, user])
 
-  // Build-up after unlock: each floor rises into place, one after the other.
+  // Build-up after unlock: each floor rises into place, one after the other,
+  // while the camera glides in and the lock screen fades.
   const rise = useRef<THREE.Group>(null)
+  const badge = useRef<HTMLButtonElement>(null)
   const order = DEPARTMENTS.indexOf(dept)
   // Inside the brain the floors sink away, so the brain stands alone.
   const away = useRef(0)
-  useFrame(({ clock }, dt) => {
+  useFrame((_, dt) => {
     if (!rise.current) return
     away.current += ((inside ? 1 : 0) - away.current) * Math.min(1, dt * 3)
-    const k = THREE.MathUtils.clamp((clock.elapsedTime - 0.3 - order * 0.18) / 0.9, 0, 1)
+    const k = THREE.MathUtils.clamp((since() - 0.4 - order * 0.15) / 0.75, 0, 1)
     const e = 1 - Math.pow(1 - k, 3)
     rise.current.position.y = (1 - e) * -3 - away.current * 4
     rise.current.scale.setScalar((0.6 + 0.4 * e) * (1 - 0.3 * away.current))
     rise.current.visible = k > 0 && away.current < 0.97
+    // The badge arrives with its floor, not before it over an empty stage.
+    fade(badge.current, e)
   })
 
   return (
@@ -522,7 +678,7 @@ function Floor({ dept }: { dept: Department }) {
             ? undefined
             : (e) => {
                 e.stopPropagation()
-                setHover(true)
+                hover.current = true
                 document.body.style.cursor = 'pointer'
               }
         }
@@ -530,7 +686,7 @@ function Floor({ dept }: { dept: Department }) {
           inside
             ? undefined
             : () => {
-                setHover(false)
+                hover.current = false
                 document.body.style.cursor = ''
               }
         }
@@ -569,7 +725,7 @@ function Floor({ dept }: { dept: Department }) {
                     : undefined
                 }
               >
-                <Workstation agent={a} seed={i * 1.7 + dept.angle * 3} look={looks[i]} />
+                <Workstation status={desks[i].status} beacon={desks[i].beacon} seed={i * 1.7 + dept.angle * 3} look={looks[i]} />
               </group>
             )
           })}
@@ -587,7 +743,9 @@ function Floor({ dept }: { dept: Department }) {
           {/* Grows, glows and shows what the department does — from the badge or from its floor.
               Resting on the badge fills it like an hourglass, and when full the department opens. */}
           <button
-            className={`floor-badge${tagHover ? ' is-hover' : ''}${dwell ? ' is-dwell' : ''}`}
+            className={`floor-badge${tagHover ? ' is-hover' : ''}${dwell ? ' is-dwell' : ''}${waits.sign ? ' has-sign' : ''}`}
+            ref={badge}
+            data-dept={dept.id}
             style={{ ['--c' as string]: dept.color }}
             {...press(pick)}
             onMouseEnter={enterTag}
@@ -608,6 +766,12 @@ function Floor({ dept }: { dept: Department }) {
                 </span>
               </span>
             </span>
+            {waits.count > 0 && (
+              <span className="floor-badge__count" aria-label={`${waits.count} warten${waits.sign ? ', Unterschrift' : ''}`}>
+                {waits.sign ? '✎ ' : ''}
+                {waits.count}
+              </span>
+            )}
           </button>
         </Html>
       )}
@@ -617,13 +781,13 @@ function Floor({ dept }: { dept: Department }) {
         <group position={[0, TOP, 0]}>
           {dept.agents.map((a, i) => {
             const [x, z] = SPOTS[i % SPOTS.length]
-            const chosen = view.kind === 'dept' && view.agent === a.id
+            const picked = chosen === a.id
             const on = hoverAgent === a.id
             return (
               // Anchored at the tag's bottom edge, so the card opens upwards, away from the desk.
               <Html portal={overlay} key={a.id} position={[x, 0.85 + (i % 2) * 0.18, z]} zIndexRange={on ? [60, 50] : [20, 0]}>
                 <button
-                  className={`agent-tag${a.lead ? ' is-lead' : ''}${chosen ? ' is-chosen' : ''}${on ? ' is-open' : ''}`}
+                  className={`agent-tag${a.lead ? ' is-lead' : ''}${picked ? ' is-chosen' : ''}${on ? ' is-open' : ''}`}
                   style={{ ['--c' as string]: dept.color }}
                   onMouseEnter={() => setHoverAgent(a.id)}
                   onMouseLeave={() => setHoverAgent((h) => (h === a.id ? null : h))}
@@ -637,15 +801,15 @@ function Floor({ dept }: { dept: Department }) {
                   <span className="agent-tag__more" aria-hidden={!on}>
                     <span>
                       <span className="agent-tag__role">
-                        <i className={`status status--${a.status}`} />
-                        {a.role} · {a.status}
+                        <i className={`status status--${desks[i].status}`} />
+                        {a.role} · {desks[i].status}
                       </span>
                       <span className="agent-tag__doing">{a.doing[0].toUpperCase() + a.doing.slice(1)}</span>
                       <span className="agent-tag__go">Arbeitsbereich öffnen →</span>
                     </span>
                   </span>
                   <span className="agent-tag__name">
-                    {a.status === 'wartet' && <span className="agent-tag__warn">⚠</span>}
+                    {desks[i].status === 'wartet' && <span className="agent-tag__warn">⚠</span>}
                     {a.lead && <Spark size={10} />}
                     {a.name}
                   </span>
@@ -654,9 +818,9 @@ function Floor({ dept }: { dept: Department }) {
             )
           })}
           {/* A ring of light on the floor under the agent you're pointing at. */}
-          {(hoverAgent ?? deskAgent ?? (view.kind === 'dept' ? view.agent : undefined)) &&
+          {(hoverAgent ?? deskAgent ?? chosen) &&
             (() => {
-              const i = dept.agents.findIndex((a) => a.id === (hoverAgent ?? deskAgent ?? (view.kind === 'dept' ? view.agent : undefined)))
+              const i = dept.agents.findIndex((a) => a.id === (hoverAgent ?? deskAgent ?? chosen))
               if (i < 0) return null
               const [x, z] = SPOTS[i % SPOTS.length]
               return (
@@ -667,7 +831,7 @@ function Floor({ dept }: { dept: Department }) {
                   </mesh>
                   <mesh>
                     <ringGeometry args={[0.44, 0.48, 64]} />
-                    <meshBasicMaterial color={new THREE.Color(dept.color).multiplyScalar(1.6)} toneMapped={false} transparent opacity={0.95} depthWrite={false} />
+                    <meshBasicMaterial color={new THREE.Color(dept.color).multiplyScalar(2.2)} toneMapped={false} transparent opacity={0.95} depthWrite={false} />
                   </mesh>
                 </group>
               )
@@ -754,26 +918,40 @@ function useTheme(): Theme {
   return themeOf(id)
 }
 
-function padTexture(t: Theme) {
+/**
+ * The pad is drawn twice: a base with the gradient, rings and ticks in the
+ * theme's colour, and the bare mark in white on black. The mark then glows in
+ * the customer's own colour through the emissive map and stands proud through
+ * the bump map, so it reads as inlaid rather than printed on.
+ */
+function padTexture(t: Theme, anisotropy: number) {
   const ringColor = rgba(t.hi, 0.9)
   const dashColor = rgba(t.accent, 0.6)
-  const S = 1024
-  const cv = document.createElement('canvas')
-  cv.width = cv.height = S
-  const g = cv.getContext('2d')!
+  // Sharp enough for the brain view, where the camera is close above the pad.
+  const S = phone() ? 1024 : 2048
+  const u = S / 1024
+  const canvas = () => {
+    const cv = document.createElement('canvas')
+    cv.width = cv.height = S
+    return cv
+  }
+  const baseCv = canvas()
+  const g = baseCv.getContext('2d')!
   const c = S / 2
   const ring = (r: number, w: number, color: string, dash?: number[]) => {
     g.beginPath()
-    g.setLineDash(dash ?? [])
-    g.lineWidth = w
+    g.setLineDash((dash ?? []).map((d) => d * u))
+    g.lineWidth = w * u
     g.strokeStyle = color
     g.arc(c, c, r * c, 0, Math.PI * 2)
     g.stroke()
   }
+  // Graphite under the cool and metal looks, warm dark brown under the others.
+  const stops = t.cool ? ['#1a1c20', '#111316', '#0a0b0d'] : ['#221a15', '#15110f', '#0d0b0a']
   const bg = g.createRadialGradient(c, c, 0, c, c, c)
-  bg.addColorStop(0, '#221a15')
-  bg.addColorStop(0.7, '#15110f')
-  bg.addColorStop(1, '#0d0b0a')
+  bg.addColorStop(0, stops[0])
+  bg.addColorStop(0.7, stops[1])
+  bg.addColorStop(1, stops[2])
   g.fillStyle = bg
   g.fillRect(0, 0, S, S)
   ring(0.955, 6, ringColor)
@@ -785,57 +963,95 @@ function padTexture(t: Theme) {
     const r0 = k % 4 === 0 ? 0.69 : 0.715
     g.beginPath()
     g.setLineDash([])
-    g.lineWidth = k % 4 === 0 ? 4 : 2
+    g.lineWidth = (k % 4 === 0 ? 4 : 2) * u
     g.strokeStyle = rgba(t.hi, 0.4)
     g.moveTo(c + Math.cos(a) * r0 * c, c + Math.sin(a) * r0 * c)
     g.lineTo(c + Math.cos(a) * 0.75 * c, c + Math.sin(a) * 0.75 * c)
     g.stroke()
   }
-  const tex = new THREE.CanvasTexture(cv)
-  tex.colorSpace = THREE.SRGBColorSpace
-  tex.anisotropy = 8
-  const mark = COMPANY.logoMark
+  const markCv = canvas()
+  const m = markCv.getContext('2d')!
+  m.fillStyle = '#000'
+  m.fillRect(0, 0, S, S)
+  const texture = (cv: HTMLCanvasElement, srgb: boolean) => {
+    const tex = new THREE.CanvasTexture(cv)
+    if (srgb) tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = anisotropy
+    return tex
+  }
+  const base = texture(baseCv, true)
+  // The mark is a mask (emissive strength and height), not a colour, so it stays linear.
+  const mark = texture(markCv, false)
+  const crop = COMPANY.logoMark
   if (COMPANY.logo) {
     const img = new Image()
     img.onload = () => {
-      const [sx, sy, sw, sh] = mark ?? [0, 0, img.width, img.height]
-      // The mark, tinted a light copper so it reads on the dark pad.
+      const [sx, sy, sw, sh] = crop ?? [0, 0, img.width, img.height]
+      // The mark alone, in white: its colour comes from the material.
       const tint = document.createElement('canvas')
       tint.width = sw
       tint.height = sh
       const tc = tint.getContext('2d')!
       tc.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
       tc.globalCompositeOperation = 'source-in'
-      tc.fillStyle = t.hi
+      tc.fillStyle = '#fff'
       tc.fillRect(0, 0, sw, sh)
       const h = S * 0.5
       const w = (sw / sh) * h
-      g.drawImage(tint, c - w / 2, c - h / 2, w, h)
-      tex.needsUpdate = true
+      m.imageSmoothingEnabled = true
+      m.imageSmoothingQuality = 'high'
+      m.drawImage(tint, c - w / 2, c - h / 2, w, h)
+      mark.needsUpdate = true
     }
     img.src = COMPANY.logo
   }
-  return tex
+  return { base, mark }
 }
 
 function Pad() {
   const chosen = useTheme()
+  const gl = useThree((s) => s.gl)
   // Kim Bormann's pad keeps its pink ring in the standard Centurion look.
   const kim = useOffice((s) => s.user?.id === 'leitung2')
   const theme = kim && chosen.id === 'centurion' ? themeOf('pink') : chosen
-  const tex = useMemo(() => padTexture(theme), [theme])
-  const ring = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(1.7), [theme])
+  const tex = useMemo(() => padTexture(theme, gl.capabilities.getMaxAnisotropy()), [theme, gl])
+  // A new colour draws new textures; the old ones have to leave the GPU, or every pick leaks two.
+  useEffect(
+    () => () => {
+      tex.base.dispose()
+      tex.mark.dispose()
+    },
+    [tex],
+  )
+  const ring = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(2.4), [theme])
   const halo = useMemo(() => new THREE.Color(theme.accent).multiplyScalar(0.9), [theme])
+  // The mark in the customer's colour (a touch lighter and richer, so it reads on graphite),
+  // or in the theme's light tone where the office has no brand colour.
+  const glow = useMemo(() => {
+    const brand = (COMPANY as unknown as { brand?: string }).brand
+    return brand ? new THREE.Color(brand).offsetHSL(0, 0.08, 0.15) : new THREE.Color(theme.hi)
+  }, [theme])
   return (
     <group>
+      {/* Open-ended: a cap a millimetre under the glossy top fought it for depth and striped it dark. */}
       <mesh position={[0, 0.06, 0]} receiveShadow>
-        <cylinderGeometry args={[2.1, 2.16, 0.12, 96]} />
-        <meshStandardMaterial color="#141110" roughness={0.55} metalness={0.3} />
+        <cylinderGeometry args={[2.1, 2.16, 0.12, 96, 1, true]} />
+        {/* The metal looks get a polished rim that catches the studio light. */}
+        <meshStandardMaterial color="#141110" roughness={theme.metal ? 0.3 : 0.55} metalness={theme.metal ? 0.85 : 0.3} />
       </mesh>
       {/* the marked top faces the camera's default angle, so the mark reads upright */}
       <mesh position={[0, 0.121, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 4]} receiveShadow>
         <circleGeometry args={[2.1, 96]} />
-        <meshStandardMaterial map={tex} emissiveMap={tex} emissive="#ffffff" emissiveIntensity={0.35} roughness={0.5} metalness={0.2} />
+        <meshStandardMaterial
+          map={tex.base}
+          roughness={0.3}
+          metalness={0.55}
+          emissiveMap={tex.mark}
+          emissive={glow}
+          emissiveIntensity={2.2}
+          bumpMap={tex.mark}
+          bumpScale={3}
+        />
       </mesh>
       <mesh position={[0, 0.125, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <torusGeometry args={[2.1, 0.012, 8, 160]} />
@@ -959,7 +1175,7 @@ function Brain() {
     material.uniforms.uTime.value = clock.elapsedTime
     material.uniforms.uPixel.value = dpr
     // Fade in after unlock, then turn slowly; flare whenever a message passes through.
-    const born = THREE.MathUtils.clamp((clock.elapsedTime - 0.2) / 1.4, 0, 1)
+    const born = THREE.MathUtils.clamp((since() - 0.2) / 1.4, 0, 1)
     const now = performance.now()
     const flare = useOffice
       .getState()
@@ -967,7 +1183,7 @@ function Brain() {
     tree.current = THREE.MathUtils.clamp(tree.current + (garden ? dt / 3.5 : -dt / 1.2), 0, 1)
     const gone = 1 - THREE.MathUtils.smoothstep(tree.current, 0, 0.35)
     if (spin.current) {
-      spin.current.rotation.y += dt * 0.12
+      if (!still()) spin.current.rotation.y += dt * 0.12
       spin.current.scale.setScalar(Math.max(0.001, born * (1 + flare * 0.08) * gone))
     }
     wire.opacity = 0.18 + flare * 0.5
@@ -1064,7 +1280,7 @@ function Neurons() {
           return { a, p }
         })
         // Just over the bloom threshold: a glow, not a flare.
-        const bright = new THREE.Color(d.color).multiplyScalar(1.35)
+        const bright = new THREE.Color(d.color).multiplyScalar(1.8)
         const soft = new THREE.Color(d.color).multiplyScalar(0.9)
         return { d, at, agents, bright, soft }
       }),
@@ -1076,6 +1292,7 @@ function Neurons() {
     k.current += ((inside ? 1 : 0) - k.current) * Math.min(1, dt * 4)
     if (!root.current) return
     root.current.visible = k.current > 0.02
+    if (!root.current.visible) return
     root.current.scale.setScalar(0.6 + 0.4 * k.current)
     // A slow pulse on the department neurons, so they read as alive.
     root.current.traverse((c) => {
@@ -1138,14 +1355,17 @@ function Neurons() {
 }
 
 function BrainBadge() {
-  const view = useOffice((s) => s.view)
+  const overview = useOffice((s) => s.view.kind === 'overview')
   const show = useOffice((s) => s.show)
   const garden = useOffice((s) => s.garden)
-  if (view.kind !== 'overview') return null
+  const badge = useRef<HTMLButtonElement>(null)
+  // In step with the brain's fade-in after unlock.
+  useFrame(() => fade(badge.current, THREE.MathUtils.clamp((since() - 0.2) / 1.4, 0, 1)))
+  if (!overview) return null
   // Same size and style as the departments' badges; in the garden it names the bonsai.
   return (
     <Html portal={overlay} position={[0, garden ? 3.5 : 2.85, 0]} center zIndexRange={[20, 0]}>
-      <button className="floor-badge floor-badge--brain" {...press(() => show({ kind: 'brain' }))}>
+      <button ref={badge} className="floor-badge floor-badge--brain" data-dept="brain" {...press(() => show({ kind: 'brain' }))}>
         <span className="floor-badge__icon">
           <Icon name="brain" size={16} />
         </span>
@@ -1172,7 +1392,7 @@ function Links() {
     () => ({
       trail: new THREE.Color(theme.deep).lerp(new THREE.Color(theme.accent), 0.35),
       packet: new THREE.Color(theme.hi).multiplyScalar(2.6),
-      pulse: new THREE.Color(theme.accent).multiplyScalar(2.2),
+      pulse: new THREE.Color(theme.accent).multiplyScalar(2.8),
     }),
     [theme],
   )
@@ -1428,6 +1648,29 @@ function makeStars(n: number) {
   g.setAttribute('aSize', new THREE.BufferAttribute(size, 1))
   g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1))
   return g
+}
+
+/**
+ * Studio light for everything glossy: a soft box overhead, a warm strip from the
+ * left, a cool one from behind and a ring in the theme colour from below. The
+ * shapes are rendered once into a cube map, so nothing is downloaded — drei's
+ * presets would fetch HDR files, which the artifact sandbox blocks.
+ *
+ * One environment for the whole visit: a new colour re-renders the same cube
+ * (drei does that whenever the children change). Remounting it per colour
+ * leaked a texture each time, because three keeps the blurred copy it makes of
+ * a rendered cube map even after that cube map is disposed.
+ */
+function Studio() {
+  const t = useTheme()
+  return (
+    <Environment resolution={256} frames={1} environmentIntensity={0.35}>
+      <Lightformer form="rect" intensity={3} color="#fff4e8" position={[0, 12, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[16, 16, 1]} />
+      <Lightformer form="rect" intensity={1.6} color="#ffd9b8" position={[-10, 4, 6]} rotation={[0, Math.PI / 2.5, 0]} scale={[12, 2, 1]} />
+      <Lightformer form="rect" intensity={1.2} color="#b9ccff" position={[9, 3, -10]} rotation={[0, -Math.PI / 4, 0]} scale={[12, 1.5, 1]} />
+      <Lightformer form="ring" intensity={0.8} color={t.accent} position={[0, -6, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={6} />
+    </Environment>
+  )
 }
 
 function Cosmos() {
@@ -1927,7 +2170,8 @@ function KidsOnSpot() {
 function Romp() {
   const romp = useOffice((s) => s.romp)
   const [active, setActive] = useState(false)
-  const start = useRef(0)
+  // Distance run so far, summed from frame times: a pause behind a window must not jump the children ahead.
+  const ran = useRef(0)
   const groups = useRef<Record<string, THREE.Group | null>>({})
   const phases = useRef<Record<string, { current: number }>>({ cookie: { current: 0 }, adrian: { current: 1 }, soley: { current: 2.2 } })
   const v = useMemo(() => new THREE.Vector3(), [])
@@ -1936,16 +2180,17 @@ function Romp() {
   const SPEED = 3.4 // units per second
 
   useEffect(() => {
-    if (!romp) return
-    start.current = -1
+    // With reduced motion the office stays still, children included.
+    if (!romp || still()) return
+    ran.current = 0
     setActive(true)
   }, [romp])
 
-  useFrame(({ clock }, dt) => {
+  useFrame((_, dt) => {
     if (!active) return
-    if (start.current < 0) start.current = clock.elapsedTime
-    const run = (clock.elapsedTime - start.current) * SPEED
     const step = Math.min(dt, 0.05) * SPEED
+    ran.current += step
+    const run = ran.current
     for (const p of PACK) {
       const g = groups.current[p.id]
       if (!g) continue
@@ -2010,13 +2255,24 @@ function free(x: number, z: number, margin: number) {
 /** Is the sheet on the side (wide screens) or along the bottom (phones)? */
 const wide = () => window.innerWidth >= 900
 
+/** Starts and ends at rest, so a flight has no jolt on its first frame and no creep at its end. */
+const easeInOutCubic = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2)
+
+/** A camera flight: the target moves in a straight line, the camera around it on a sphere. */
+type Tween = { fromT: THREE.Vector3; toT: THREE.Vector3; fromS: THREE.Spherical; toS: THREE.Spherical; turn: number; u: number; dur: number; arc: boolean }
+
 function Rig() {
   const { camera, size, scene } = useThree()
   const controls = useRef<OrbitControlsImpl>(null)
   const view = useOffice((s) => s.view)
   const flight = useOffice((s) => s.flight)
-  const goal = useRef<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null)
+  const locked = useOffice((s) => s.locked)
+  const tween = useRef<Tween | null>(null)
+  const parked = useRef(useOffice.getState().locked)
   const idleSince = useRef(0)
+  // How far out the controls let you zoom: at least the whole office, which on a portrait phone is beyond 60.
+  const limit = useRef(60)
+  const sph = useMemo(() => new THREE.Spherical(), [])
 
   // Work out where to fly whenever the selection (or the window) changes.
   useEffect(() => {
@@ -2026,14 +2282,17 @@ function Rig() {
     if (!ctl || size.width < 2 || size.height < 2) return
     const aspect = size.width / size.height
 
+    // The overview fits the whole ring, whichever axis is tighter.
+    const vf = THREE.MathUtils.degToRad(cam.fov) / 2
+    const hf = Math.atan(Math.tan(vf) * aspect)
+    const fit = Math.max(8.7 / Math.tan(hf), 9.8 / Math.tan(vf))
+    limit.current = Math.max(60, fit * 1.05)
+
     let focus = new THREE.Vector3(0, 0.3, 0)
     let dist: number
     let polar = 0.88
     if (view.kind === 'overview') {
-      // Fit the whole ring, whichever axis is tighter.
-      const vf = THREE.MathUtils.degToRad(cam.fov) / 2
-      const hf = Math.atan(Math.tan(vf) * aspect)
-      dist = Math.max(8.7 / Math.tan(hf), 9.8 / Math.tan(vf))
+      dist = fit
       polar = aspect < 0.8 ? 0.55 : 0.8
     } else if (view.kind === 'neural') {
       focus = new THREE.Vector3(0, 1.9, 0)
@@ -2078,8 +2337,55 @@ function Rig() {
     const target = focus.clone().add(shift)
     const pos = target.clone().addScaledVector(dir, dist)
     if (![pos.x, pos.y, pos.z, target.x, target.y, target.z].every(Number.isFinite)) return
-    goal.current = { target, pos }
-  }, [view, flight, size, camera])
+
+    // Behind the lock the camera waits far out and high, for the establishing shot when it lifts.
+    const park = () => {
+      ctl.target.copy(target)
+      camera.position.copy(pos).sub(target).multiplyScalar(1.8).add(target)
+      camera.position.y += 8
+    }
+    if (locked) {
+      parked.current = true
+      tween.current = null
+      rig.flying = false
+      park()
+      return
+    }
+    // The first flight after the lock is the establishing shot: slow and long, from the parked spot.
+    const establishing = parked.current
+    parked.current = false
+    if (establishing) park()
+    const fromS = new THREE.Spherical().setFromVector3(cam.position.clone().sub(ctl.target))
+    const toS = new THREE.Spherical().setFromVector3(pos.clone().sub(target))
+    // Zooming feels the same speed at every distance when it is measured in doublings.
+    const dur = still()
+      ? 0.25
+      : establishing
+        ? 1.6
+        : THREE.MathUtils.clamp(0.8 + 0.35 * Math.abs(Math.log2(toS.radius / Math.max(0.01, fromS.radius))), 0.8, 1.6)
+    // Around the shorter way.
+    const turn = THREE.MathUtils.euclideanModulo(toS.theta - fromS.theta + Math.PI, Math.PI * 2) - Math.PI
+    tween.current = { fromT: ctl.target.clone(), toT: target, fromS, toS, turn, u: 0, dur, arc: ctl.target.distanceTo(target) > 3 }
+    rig.flying = true
+  }, [view, flight, size, camera, locked])
+
+  useEffect(() => () => void (rig.flying = false), [])
+
+  // drei asks for a frame on every 'change' of the controls, and the controls change on every
+  // frame that the camera turns or eases. That chain drew at the screen's full rate (120 Hz)
+  // and kept drawing behind windows. Budget asks for the frames; the controls only move the camera.
+  useEffect(() => {
+    const ctl = controls.current
+    if (!ctl) return
+    const own = ctl as unknown as { dispatchEvent: (e: { type: string }) => void }
+    const dispatch = own.dispatchEvent.bind(ctl)
+    own.dispatchEvent = (e) => {
+      if (e.type !== 'change') dispatch(e)
+    }
+    return () => {
+      own.dispatchEvent = dispatch
+    }
+  }, [])
 
   useFrame((_, dt) => {
     const ctl = controls.current
@@ -2089,15 +2395,30 @@ function Rig() {
     if (!Number.isFinite(p.x + p.y + p.z) || !Number.isFinite(ctl.target.x + ctl.target.y + ctl.target.z)) {
       p.set(18, 22, 18)
       ctl.target.set(0, 0.3, 0)
-      goal.current = null
+      tween.current = null
+      rig.flying = false
     }
-    const g = goal.current
-    if (g) {
-      const k = 1 - Math.exp(-dt * 3.2)
-      camera.position.lerp(g.pos, k)
-      ctl.target.lerp(g.target, k)
-      if (camera.position.distanceTo(g.pos) < 0.01) goal.current = null
+    if (reveal.t >= 0 && reveal.t < 10) reveal.t += step(dt)
+    const tw = tween.current
+    if (tw) {
+      // Frame time, not wall time: a frame that stalls cannot make the flight jump ahead.
+      tw.u = Math.min(1, tw.u + step(dt) / tw.dur)
+      const u = tw.u
+      const e = easeInOutCubic(u)
+      ctl.target.lerpVectors(tw.fromT, tw.toT, e)
+      // Distance on a log scale, and a little lift mid-way when the flight crosses the office, so it arcs over the ring.
+      sph.radius = Math.exp(THREE.MathUtils.lerp(Math.log(tw.fromS.radius), Math.log(tw.toS.radius), e)) * (tw.arc ? 1 + 0.12 * Math.sin(Math.PI * e) : 1)
+      sph.phi = THREE.MathUtils.lerp(tw.fromS.phi, tw.toS.phi, e)
+      sph.theta = tw.fromS.theta + tw.turn * e
+      camera.position.setFromSpherical(sph).add(ctl.target)
+      if (u >= 1) {
+        tween.current = null
+        rig.flying = false
+        idleSince.current = performance.now()
+      }
     }
+    // A flight and the parked camera may lie beyond the zoom limit; the controls must not pull them in.
+    ctl.maxDistance = tween.current || locked ? Infinity : limit.current
     // Fog follows the camera: a phone in portrait sits three times further back,
     // and fixed fog distances swallowed the floors there.
     if (scene.fog instanceof THREE.Fog) {
@@ -2105,8 +2426,10 @@ function Rig() {
       scene.fog.near = d + 4
       scene.fog.far = d + 45
     }
-    // Drift slowly in the overview once nobody has touched it for a while.
-    ctl.autoRotate = view.kind === 'overview' && !g && performance.now() - idleSince.current > 4000
+    // Drift slowly in the overview once nobody has touched it for a while; the drift eases in and out.
+    const idle = !tween.current && !locked && performance.now() - idleSince.current > 4000
+    ctl.autoRotate = view.kind === 'overview' && !still()
+    ctl.autoRotateSpeed = THREE.MathUtils.damp(ctl.autoRotateSpeed, idle ? 0.35 : 0, 2, dt)
     ctl.update()
   })
 
@@ -2118,18 +2441,125 @@ function Rig() {
       enableDamping
       dampingFactor={0.08}
       rotateSpeed={0.6}
-      autoRotateSpeed={0.35}
+      autoRotateSpeed={0}
       minPolarAngle={0.35}
       maxPolarAngle={1.2}
       minDistance={3.5}
-      maxDistance={60}
       onStart={() => {
-        goal.current = null
+        tween.current = null
+        rig.flying = false
         idleSince.current = performance.now()
       }}
       onEnd={() => (idleSince.current = performance.now())}
     />
   )
+}
+
+/**
+ * The render budget. The canvas only draws on demand, and this loop asks for
+ * frames: at most 60 a second (a 120 Hz screen would otherwise double the
+ * work), and none while a window covers the office, the tab is hidden, the
+ * stage is scrolled away or the lock is up. A flight keeps drawing even behind
+ * a window, so a window that opens mid-flight lands where it should.
+ */
+function Budget() {
+  const get = useThree((s) => s.get)
+  const invalidate = useThree((s) => s.invalidate)
+  useEffect(() => {
+    let raf = 0
+    let last = 0
+    let paused = false
+    let seen = true
+    const io =
+      overlay.current && 'IntersectionObserver' in window
+        ? new IntersectionObserver((entries) => {
+            seen = entries[entries.length - 1].isIntersecting
+          })
+        : null
+    if (io) io.observe(overlay.current)
+    // While paused, r3f is held inactive: it otherwise draws a frame of its own for every change
+    // to its store, and on the phone page every layout shift around the 3D card is one.
+    const hold = (on: boolean) => {
+      get().internal.active = !on
+    }
+    // A single frame drawn while paused keeps r3f active for the next two ticks, until it is out.
+    let once = 0
+    // After a pause the clock has run on; without this the first frame's dt is
+    // the whole pause, and the brain, the garden and the children jump.
+    const draw = () => {
+      if (paused) {
+        hold(false)
+        once = 2
+        get().clock.getDelta()
+      }
+      invalidate()
+    }
+    const tick = (t: number) => {
+      raf = requestAnimationFrame(tick)
+      const s = useOffice.getState()
+      const covered = Boolean(s.ws || s.setup || s.cockpit || s.search) && !rig.flying
+      if (covered || document.hidden || !seen || (s.locked && warm.done)) {
+        if (!paused || once === 0) hold(true)
+        else once--
+        paused = true
+        return
+      }
+      if (t - last < 1000 / 60 - 2) return
+      last = t
+      draw()
+      paused = false
+      once = 0
+    }
+    raf = requestAnimationFrame(tick)
+    // What the visitor changes behind a window is drawn once, so it is current the moment the
+    // window closes. Agent messages are left out: they arrive every few seconds and would keep
+    // the paused office drawing; their packets are only worth seeing live anyway.
+    const unsubscribe = useOffice.subscribe((s, p) => {
+      if (s.theme !== p.theme || s.view !== p.view || s.flight !== p.flight || s.approved !== p.approved) draw()
+    })
+    return () => {
+      cancelAnimationFrame(raf)
+      io?.disconnect()
+      unsubscribe()
+    }
+  }, [get, invalidate])
+  return null
+}
+
+/**
+ * Compiles every shader while the lock screen is still up, then draws the
+ * whole office once behind it (that also builds the shadow pass's programs),
+ * so the reveal does not stall on its first frames.
+ */
+function Warmup() {
+  const { gl, scene, camera, invalidate } = useThree()
+  const step = useRef(0)
+  useEffect(() => {
+    let live = true
+    warm.done = false
+    step.current = 0
+    gl.compileAsync(scene, camera)
+      .catch(() => undefined)
+      .then(() => {
+        if (!live) return
+        step.current = 1
+        invalidate()
+      })
+    return () => {
+      live = false
+    }
+  }, [gl, scene, camera, invalidate])
+  useFrame(() => {
+    // Step 1 is the full frame being drawn; the frame after it may hide what the lock still covers.
+    if (step.current === 1) {
+      step.current = 2
+      invalidate()
+    } else if (step.current === 2) {
+      warm.done = true
+      step.current = 3
+    }
+  })
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -2158,6 +2588,13 @@ const overlay = { current: null as unknown as HTMLElement }
 
 export default function Scene() {
   overlay.current = document.querySelector('.stage') as HTMLElement
+  // The reveal starts when the lock lifts and is cleared when it closes, so every unlock replays it.
+  useEffect(() => {
+    reveal.t = useOffice.getState().locked ? -1 : 10
+    return useOffice.subscribe((s, p) => {
+      if (s.locked !== p.locked) reveal.t = s.locked ? -1 : 0
+    })
+  }, [])
   // A phone drops the GPU context when the app goes to the background or the
   // page is reopened, and a lost context paints black forever. Rebuilding the
   // canvas is cheap, so that is the recovery.
@@ -2166,6 +2603,10 @@ export default function Scene() {
     <Canvas
       key={generation}
       onCreated={({ gl }) => {
+        // One tone curve everywhere. The composer below switches the renderer's own
+        // off while it runs and does the same in its ToneMapping pass; phones have no
+        // composer, so without this they would get a different curve and other colours.
+        gl.toneMapping = THREE.NeutralToneMapping
         // Right-click is ours: it zooms back out (see onPointerMissed).
         gl.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
         gl.domElement.addEventListener(
@@ -2184,18 +2625,22 @@ export default function Scene() {
           if (view.kind !== 'overview') show({ kind: 'overview' })
         }
       }}
-      shadows
+      // Plain PCF: three no longer does PCFSoft and fell back to it with a warning.
+      shadows="percentage"
+      // Frames are drawn on request only; Budget below decides how many.
+      frameloop="demand"
       dpr={pixelRatio()}
       camera={{ position: [18, 22, 18], fov: 34, near: 0.1, far: 200 }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
     >
       <color attach="background" args={[BG]} />
       <fog attach="fog" args={[BG, 26, 70]} />
-      <ambientLight intensity={0.65} color="#ffe8d6" />
-      <hemisphereLight args={['#ffe2c4', '#1a120c', 0.5]} />
+      {/* Most of the fill now comes from the studio environment; the flat lights only lift the shadows. */}
+      <ambientLight intensity={0.08} color="#ffe8d6" />
+      <hemisphereLight args={['#ffe2c4', '#1a120c', 0.14]} />
       <directionalLight
         position={[6, 14, 4]}
-        intensity={1.6}
+        intensity={2.3}
         color="#fff1e0"
         castShadow
         shadow-mapSize={phone() ? [1024, 1024] : [2048, 2048]}
@@ -2203,12 +2648,18 @@ export default function Scene() {
         shadow-camera-right={15}
         shadow-camera-top={15}
         shadow-camera-bottom={-15}
-        shadow-bias={-0.0004}
+        shadow-bias={-0.0002}
+        shadow-normalBias={0.015}
+        shadow-radius={4}
       />
+      {/* A cool rim from behind, so the far edges stand out against the black sky. */}
+      <directionalLight position={[-12, 7, -10]} intensity={0.8} color="#b4c8ff" />
+      <Studio />
       <Cosmos />
       <Ground />
       <Garden free={free} phone={phone()} />
       <Links />
+      <Screens />
       <Brain />
       {DEPARTMENTS.map((d) => (
         <Floor key={d.id} dept={d} />
@@ -2216,10 +2667,18 @@ export default function Scene() {
       <Romp />
       {KIDS_ON_SPOT && <KidsOnSpot />}
       <Rig />
-      {/* Bloom costs the most GPU memory; phones skip it, which is what keeps iOS from dropping the context. */}
+      <Budget />
+      <Warmup />
+      {/* Bloom costs the most GPU memory; phones skip it, which is what keeps iOS from dropping the context.
+          The scene renders into an HDR buffer: bloom picks up only what is brighter than white (the pad
+          ring, packets, neurons, hover rings), tone mapping then brings it into range, and SMAA smooths the
+          edges, since a composer target has no multisampling of its own. */}
       {!phone() && (
         <EffectComposer multisampling={0}>
-          <Bloom mipmapBlur luminanceThreshold={0.85} intensity={0.9} radius={0.7} />
+          <Bloom mipmapBlur luminanceThreshold={1} luminanceSmoothing={0.15} intensity={0.85} radius={0.7} />
+          <ToneMapping mode={ToneMappingMode.NEUTRAL} />
+          <Vignette offset={0.3} darkness={0.5} />
+          <SMAA preset={SMAAPreset.HIGH} />
         </EffectComposer>
       )}
     </Canvas>

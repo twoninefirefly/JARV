@@ -11,4 +11,13 @@ const forced = (() => {
   }
 })()
 
-export const MOBILE = forced || (window.matchMedia('(max-width: 700px)').matches && window.innerHeight > window.innerWidth)
+/** The full office with the brain, whatever the window: ?desktop or <html data-mobile="0">, for previews shown in a narrow pane. */
+const desktop = (() => {
+  try {
+    return new URLSearchParams(location.search).has('desktop') || document.documentElement.dataset.mobile === '0'
+  } catch {
+    return false
+  }
+})()
+
+export const MOBILE = !desktop && (forced || (window.matchMedia('(max-width: 700px)').matches && window.innerHeight > window.innerWidth))

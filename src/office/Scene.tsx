@@ -2364,6 +2364,22 @@ function Rig() {
 
   useEffect(() => () => void (rig.flying = false), [])
 
+  // drei asks for a frame on every 'change' of the controls, and the controls change on every
+  // frame that the camera turns or eases. That chain drew at the screen's full rate (120 Hz)
+  // and kept drawing behind windows. Budget asks for the frames; the controls only move the camera.
+  useEffect(() => {
+    const ctl = controls.current
+    if (!ctl) return
+    const own = ctl as unknown as { dispatchEvent: (e: { type: string }) => void }
+    const dispatch = own.dispatchEvent.bind(ctl)
+    own.dispatchEvent = (e) => {
+      if (e.type !== 'change') dispatch(e)
+    }
+    return () => {
+      own.dispatchEvent = dispatch
+    }
+  }, [])
+
   useFrame((_, dt) => {
     const ctl = controls.current
     if (!ctl) return
@@ -2454,10 +2470,21 @@ function Budget() {
           })
         : null
     if (io) io.observe(overlay.current)
+    // While paused, r3f is held inactive: it otherwise draws a frame of its own for every change
+    // to its store, and on the phone page every layout shift around the 3D card is one.
+    const hold = (on: boolean) => {
+      get().internal.active = !on
+    }
+    // A single frame drawn while paused keeps r3f active for the next two ticks, until it is out.
+    let once = 0
     // After a pause the clock has run on; without this the first frame's dt is
     // the whole pause, and the brain, the garden and the children jump.
     const draw = () => {
-      if (paused) get().clock.getDelta()
+      if (paused) {
+        hold(false)
+        once = 2
+        get().clock.getDelta()
+      }
       invalidate()
     }
     const tick = (t: number) => {
@@ -2465,6 +2492,8 @@ function Budget() {
       const s = useOffice.getState()
       const covered = Boolean(s.ws || s.setup || s.cockpit || s.search) && !rig.flying
       if (covered || document.hidden || !seen || (s.locked && warm.done)) {
+        if (!paused || once === 0) hold(true)
+        else once--
         paused = true
         return
       }
@@ -2472,6 +2501,7 @@ function Budget() {
       last = t
       draw()
       paused = false
+      once = 0
     }
     raf = requestAnimationFrame(tick)
     // What the visitor changes behind a window is drawn once, so it is current the moment the

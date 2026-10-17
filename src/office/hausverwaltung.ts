@@ -1,6 +1,18 @@
 import type { AgentStatus, Agent, Department } from './data'
 import type { Layout, Source, WsItem } from './workspaces'
 import type * as Letters from './letters'
+import {
+  GRUPPE,
+  GRUPPE_KIND_BY_NAME,
+  GRUPPE_KPI_OWNER,
+  GRUPPE_LAYOUT,
+  GRUPPE_ROUTES,
+  GRUPPE_WAITING_OWNER,
+  gruppeDepartment,
+  gruppeMakers,
+  gruppeSources,
+  type GruppeKind,
+} from './gruppe'
 
 /**
  * The office dressed for a property manager (`?branche=hausverwaltung`).
@@ -40,12 +52,13 @@ export type HvKind =
   | 'reserves'
   | 'ownerreports'
   | 'ownerrequests'
+  | GruppeKind
 
 type Team = (prefix: string, members: Array<[string, string, AgentStatus, string, boolean?]>) => Agent[]
 
 export function hvDepartments(day: (seed: number, scale: number) => number[], team: Team): Department[] {
   const step = (Math.PI * 2) / 6
-  return [
+  const floors: Department[] = [
     {
       id: 'mieter',
       name: 'Mieterkommunikation',
@@ -231,6 +244,9 @@ export function hvDepartments(day: (seed: number, scale: number) => number[], te
       docs: 1100,
     },
   ]
+  // A group of companies runs a holding, not owners' associations.
+  if (GRUPPE) floors[5] = gruppeDepartment(day, team, step * 5)
+  return floors
 }
 
 export const HV_BRAIN = {
@@ -254,10 +270,10 @@ export const HV_BRAIN = {
 
 export const HV_OBJECTS = ['Lindenstr. 12', 'Birkenweg 3', 'Hafenstr. 8', 'Parkallee 21', 'Am Markt 5', 'Gartenstr. 40']
 export const HV_PEOPLE = ['Fam. Yilmaz', 'Herr Becker', 'Frau Nowak', 'Herr Schulte', 'Frau Hansen', 'Fam. Kowalski', 'Herr Albrecht', 'Frau Demir', 'Herr Jansen', 'Frau Lorenz', 'Herr Özdemir', 'Frau Krause']
-export const HV_CRAFTS = ['Sanitär Kaya', 'Elektro Hahn', 'Dachdecker Brandt', 'Malerbetrieb Voss', 'Schlüsseldienst 24', 'Heizung & Solar Meyer', 'Gartenpflege Grün']
+export const HV_CRAFTS = [...(GRUPPE?.service ? [GRUPPE.service] : []), 'Sanitär Kaya', 'Elektro Hahn', 'Dachdecker Brandt', 'Malerbetrieb Voss', 'Schlüsseldienst 24', 'Heizung & Solar Meyer', 'Gartenpflege Grün']
 
 // [from dept, from agent, to dept, to agent, message, what the brain did]
-export const HV_ROUTES: Array<[string, string, string, string, string, string]> = [
+const ROUTES: Array<[string, string, string, string, string, string]> = [
   ['mieter', 'Posteingang', 'schaden', 'Schadensaufnahme', 'Wasserfleck an der Decke, {object}', 'Schaden angelegt'],
   ['schaden', 'Handwerker-Vergabe', 'mieter', 'Terminierung', '{craft} kommt Donnerstag 8–10 Uhr', 'Mieter informiert'],
   ['mieter', 'Telefon', 'miete', 'Mieteingänge', '{person} fragt nach der Oktobermiete', 'Kontostand geprüft'],
@@ -273,6 +289,8 @@ export const HV_ROUTES: Array<[string, string, string, string, string, string]> 
   ['vermietung', 'Besichtigungen', 'mieter', 'Terminierung', 'Besichtigung {object} Samstag 11:00', 'Vormieter informiert'],
   ['nebenkosten', 'Einsprüche', 'miete', 'Belege', '{person} möchte Belegeinsicht', 'Belege bereitgestellt'],
 ]
+
+export const HV_ROUTES = GRUPPE ? [...ROUTES.filter((r) => r[0] !== 'weg' && r[2] !== 'weg'), ...GRUPPE_ROUTES] : ROUTES
 
 // ---------------------------------------------------------------------------
 // Who works where, and the systems behind them
@@ -306,6 +324,7 @@ export const HV_KIND_BY_NAME: Record<string, string> = {
   Rücklagen: 'reserves',
   'Eigentümer-Reporting': 'ownerreports',
   'Eigentümer-Anfragen': 'ownerrequests',
+  ...GRUPPE_KIND_BY_NAME,
 }
 
 export const HV_WAITING_OWNER: Record<string, string[]> = {
@@ -315,6 +334,7 @@ export const HV_WAITING_OWNER: Record<string, string[]> = {
   miete: ['Mahnwesen'],
   nebenkosten: ['Abrechnung'],
   weg: ['Eigentümerversammlung'],
+  ...GRUPPE_WAITING_OWNER,
 }
 
 export const HV_KPI_OWNER: Record<string, [string, string]> = {
@@ -324,12 +344,14 @@ export const HV_KPI_OWNER: Record<string, [string, string]> = {
   miete: ['Mieteingänge', 'Mahnwesen'],
   nebenkosten: ['Abrechnung', 'Abrechnung'],
   weg: ['Beschlüsse', 'Eigentümerversammlung'],
+  ...GRUPPE_KPI_OWNER,
 }
 
 const ERP = 'Domus, Karthago, Immoware24'
 
 export function hvSources(domain: string): Record<HvKind, Source> & Partial<Record<string, Source>> {
   return {
+    ...gruppeSources(domain),
     // Shared kinds, re-dressed for the trade.
     chat: { system: 'Mieterportal und App', examples: 'Casavi, Facilioo, Immomio, WhatsApp Business', account: `portal.${domain}`, does: ['beantwortet Standardfragen sofort', 'nimmt Schäden mit Foto auf', 'schreibt jede Nachricht zum Mieter ins Gedächtnis'] },
     inbox: { system: 'E-Mail-Postfach', examples: 'Microsoft 365, Google Workspace, IMAP', account: `verwaltung@${domain}`, does: ['liest neue Mails alle 30 Minuten', 'ordnet sie Objekt und Mieter zu', 'legt Antworten als Entwurf an'] },
@@ -370,6 +392,7 @@ export function hvSources(domain: string): Record<HvKind, Source> & Partial<Reco
 }
 
 export const HV_LAYOUT: Record<HvKind, { layout: Layout; columns?: string[] }> & Partial<Record<string, { layout: Layout; columns?: string[] }>> = {
+  ...GRUPPE_LAYOUT,
   // Shared kinds whose columns read differently here.
   dunning: { layout: 'table', columns: ['Einheit', 'Mieter', 'Rückstand', 'Seit', 'Stufe'] },
   cashflow: { layout: 'table', columns: ['Objektkonto', 'Eingänge Monat', 'Ausgänge Monat', 'Stand'] },
@@ -417,13 +440,15 @@ export type Helpers = {
 
 type Maker = (r: () => number, pick: <T>(xs: T[]) => T) => WsItem[]
 
-export function hvMakers({ n, eur, clock, later, L }: Helpers): Partial<Record<string, Maker>> {
+export function hvMakers(helpers: Helpers): Partial<Record<string, Maker>> {
+  const { n, eur, clock, later, L } = helpers
   const O = HV_OBJECTS
   const P = HV_PEOPLE
   const C = HV_CRAFTS
   const unit = (r: () => number) => `WE ${String(1 + Math.floor(r() * 16)).padStart(2, '0')}`
 
   return {
+    ...gruppeMakers(helpers),
     inbox: (r, pick) =>
       [
         ['Wasserfleck an der Badezimmerdecke', 'Seit gestern ist an der Decke im Bad ein Fleck, der größer wird. Können Sie jemanden schicken?', 'Schaden'],

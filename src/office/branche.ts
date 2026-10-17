@@ -38,6 +38,9 @@ function read(): Branche {
 
 export const BRANCHE: Branche = read()
 
+/** The customer this office is dressed as, if any: chosen by link, or built in for the Hausverwaltung. */
+export const AKTIV = KUNDE ?? (BRANCHE === 'hausverwaltung' ? HV_KUNDE : null)
+
 export function setBranche(b: Branche) {
   try {
     localStorage.setItem(KEY, b)

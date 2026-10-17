@@ -4,6 +4,7 @@ import { COMPANY } from './data'
 import { useOffice } from './state'
 import { BRANCHE, BRANCHEN, setBranche } from './branche'
 import { HV_KUNDE, KUNDE } from './kunden'
+import { GRUPPE } from './gruppe'
 import { DEMO_PASSWORD, USERS, type Role, type User } from './team'
 
 /**
@@ -285,7 +286,7 @@ export default function Lock({ onStart }: { onStart: () => void }) {
               // For a customer the other office is not on offer — only a hint that it could be.
               <span className="lock__demo">
                 <button type="button" className="lock__more" aria-expanded={more} onClick={() => setMore(!more)}>
-                  + Holding · Erweiterung
+                  {GRUPPE ? '+ Weitere Gesellschaft' : '+ Holding · Erweiterung'}
                 </button>
               </span>
             )}
@@ -301,8 +302,9 @@ export default function Lock({ onStart }: { onStart: () => void }) {
             )}
             {more && (
               <span className="lock__morenote">
-                Hier kann Ihr nächstes Büro entstehen – zum Beispiel für Ihre Holding oder eine weitere Gesellschaft. Eigene Abteilungen, eigenes Team,
-                ein gemeinsames Gehirn. Auf Wunsch schalten wir es dazu.
+                {GRUPPE
+                  ? `Ihre Holding sitzt schon mit im Büro – eine eigene Etage für alle ${GRUPPE.gesellschaften.length} Gesellschaften. Kommt eine neue dazu, legt die Registerwache sie an; auf Wunsch bekommt sie ein eigenes Büro.`
+                  : 'Hier kann Ihr nächstes Büro entstehen – zum Beispiel für Ihre Holding oder eine weitere Gesellschaft. Eigene Abteilungen, eigenes Team, ein gemeinsames Gehirn. Auf Wunsch schalten wir es dazu.'}
               </span>
             )}
           </div>

@@ -349,6 +349,14 @@ npm run office     # opens http://localhost:5173/office.html
 
 - **Per customer:** everything shown lives in `src/office/data.ts`. For a quick
   personalised demo, add `?firma=Müller%20GmbH` to the URL.
+- **Customers:** `src/office/kunden.ts` holds name, logo and management for each
+  prospect (`?kunde=bormann`, `?kunde=hukic`). A customer with a `gruppe` of
+  companies gets a holding floor in place of the WEG floor
+  (`src/office/gruppe.ts`): the companies with their register entries, the
+  register watch, filing deadlines, intercompany charges, financing and the
+  group report. The Hukic group's register data comes from the agent office
+  research (`/buero.html`). Entries confirmed only by a search snippet are
+  marked "zu prüfen".
 - **Chat:** with the bridge running (`npm start`) questions go to Claude with the
   office's figures as context. Without it, the page answers from the same
   figures, so a demo on a phone never dead-ends.

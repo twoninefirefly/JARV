@@ -1,4 +1,5 @@
 import bormannLogo from './kunden/bormann.png?inline'
+import hukicLogo from './kunden/hukic.png?inline'
 
 /**
  * Personalised demos for one prospect: name, logo and trade in one place.
@@ -19,10 +20,55 @@ export type Kunde = {
   /** A second person in management. */
   chef2?: string
   branche: 'standard' | 'hausverwaltung'
+  /** A group of companies. With one, the WEG floor becomes the holding's (gruppe.ts). */
+  gruppe?: Gruppe
+}
+
+export type Gesellschaft = {
+  name: string
+  /** Short name for log lines and tight table cells. */
+  kurz: string
+  register: string
+  /** What the company does in the group. Read off its name and the network, so an assumption until confirmed. */
+  aufgabe: string
+  /** The shareholder above it, as drawn in the network. */
+  mutter?: string
+  /** Whether the register entry was confirmed in a source, or only seen in a search snippet. */
+  belegt: boolean
+}
+
+export type Gruppe = {
+  gesellschaften: Gesellschaft[]
+  /** The group's own service company, which joins the pool of tradesmen. */
+  service?: string
+  /** Where the register data came from, shown beside it. */
+  quelle: string
 }
 
 export const KUNDEN: Record<string, Kunde> = {
   bormann: { name: 'Bormann Immobilien', logo: bormannLogo, mark: [92, 0, 233, 283], chef: 'Martin Bormann', chef2: 'Kim Bormann', branche: 'hausverwaltung' },
+  // Register data from the agent office's live research (public/buero.html),
+  // shareholder lines from the network graph. MH 11's number came from a
+  // search snippet only, so it stays marked unconfirmed.
+  hukic: {
+    name: 'Hukic Gruppe',
+    logo: hukicLogo,
+    mark: [94, 6, 224, 268],
+    chef: 'Kenan Hukic',
+    branche: 'hausverwaltung',
+    gruppe: {
+      quelle: 'Registerrecherche Agenten-Büro, 16.10.2026',
+      service: 'Huck Service GmbH',
+      gesellschaften: [
+        { name: 'Hukic Holding GmbH', kurz: 'Holding', register: 'AG Charlottenburg, HRB 176694 B', aufgabe: 'Holding', belegt: true },
+        { name: 'Muki Immobilien GmbH', kurz: 'Muki Immobilien', register: 'AG Charlottenburg, HRB 173776 B', aufgabe: 'Bestand', mutter: 'Hukic Holding GmbH', belegt: true },
+        { name: 'Hukic Immobilien UG (haftungsbeschränkt)', kurz: 'Hukic Immobilien', register: 'AG Charlottenburg, HRB 215022 B', aufgabe: 'Bestand', mutter: 'Muki Immobilien GmbH', belegt: true },
+        { name: 'Huck Service GmbH', kurz: 'Huck Service', register: 'AG Charlottenburg, HRB 161560 B', aufgabe: 'Service & Hausmeister', mutter: 'Hukic Holding GmbH', belegt: true },
+        { name: 'MH 11 GmbH', kurz: 'MH 11', register: 'AG Charlottenburg, HRB 222653 B', aufgabe: 'Komplementärin der KG', belegt: false },
+        { name: 'HUKIC Real Estate GmbH & Co. KG', kurz: 'HUKIC Real Estate', register: 'AG Charlottenburg, HRA 57928', aufgabe: 'Objektgesellschaft Wohnen', mutter: 'MH 11 GmbH', belegt: true },
+      ],
+    },
+  },
 }
 
 const KEY = 'office.kunde'

@@ -10,6 +10,7 @@ import {
   split,
   type Department,
 } from './data'
+import { GRUPPE } from './gruppe'
 
 /**
  * Answers for the chat line under every panel.
@@ -38,10 +39,18 @@ async function bridgeUp(): Promise<boolean> {
 
 export const liveMode = () => bridge === 'up'
 
+/** The group's companies as the register knows them, for anyone asked about the group. */
+const gruppe = GRUPPE
+  ? `Gesellschaften der Gruppe (${GRUPPE.quelle}): ${GRUPPE.gesellschaften
+      .map((g) => `${g.name}, ${g.register}${g.mutter ? `, Gesellschafterin laut Netzwerk: ${g.mutter}` : ''}${g.belegt ? '' : ', Registernummer noch zu bestätigen'}`)
+      .join(' | ')}. Die Aufgaben der Gesellschaften sind aus ihren Namen abgeleitet und nicht bestätigt.`
+  : ''
+
 function context(who: Who): string {
   const now = new Date()
   if (who.kind === 'brain') {
     return [
+      ...(gruppe ? [gruppe] : []),
       `Firma: ${COMPANY.name}. ${AGENT_COUNT} KI-Agenten in ${DEPARTMENTS.length} Abteilungen.`,
       `Gedächtnis: ${BRAIN.stats.map((s) => `${fmt(s.value)} ${s.label}`).join(', ')}.`,
       `Abteilungen: ${DEPARTMENTS.map((d) => `${d.name} (${d.agents.length} Agenten, ${d.tagline}; wartet: ${d.waiting.join('; ') || 'nichts'})`).join(' | ')}.`,
@@ -57,6 +66,7 @@ function context(who: Who): string {
     `Team: ${d.agents.map((a) => `${a.name} (${a.status}: ${a.doing})`).join('; ')}.`,
     `Wartet auf Freigabe: ${d.waiting.join('; ') || 'nichts'}.`,
     `Protokoll: ${deptProtocol(d, now).slice(0, 8).map((p) => `${p.time} ${p.text}${p.done ? '' : ' (geplant)'}`).join('; ')}.`,
+    ...(gruppe && d.id === 'holding' ? [gruppe] : []),
   ].join('\n')
 }
 
@@ -64,6 +74,14 @@ function context(who: Who): string {
 function local(question: string, who: Who): string {
   const q = question.toLowerCase()
   const now = new Date()
+  if (GRUPPE && /gesellschaft|gruppe|register|hrb|firmen/.test(q) && (who.kind === 'brain' || who.dept.id === 'holding')) {
+    const open = GRUPPE.gesellschaften.filter((g) => !g.belegt)
+    return (
+      `Zur Gruppe gehören ${GRUPPE.gesellschaften.length} Gesellschaften, alle beim ${GRUPPE.gesellschaften[0].register.split(', ')[0]}:\n• ` +
+      GRUPPE.gesellschaften.map((g) => `${g.name} – ${g.register.split(', ').pop()}${g.mutter ? ` (gehalten von ${g.mutter})` : ''}`).join('\n• ') +
+      (open.length ? `\n\nNoch zu bestätigen: ${open.map((g) => g.name).join(', ')}.` : '')
+    )
+  }
   if (who.kind === 'brain') {
     if (/herein|heute|neu|kam/.test(q)) {
       const log = brainProtocol(now).filter((p) => p.done)

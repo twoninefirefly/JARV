@@ -1,7 +1,11 @@
 import { Component, Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { COMPANY } from './data'
+import { COMPANY, DEPARTMENTS } from './data'
 import { useOffice } from './state'
+import { needsLeitung } from './team'
+import { agentTarget, approvalsTarget, waitingOwner } from './workspaces'
+import { GRUPPE, GRUPPE_FREIGABE } from './gruppe'
+import { HV_KUNDE, KUNDE } from './kunden'
 import Panel from './Panel'
 import Workspace from './Workspace'
 import Setup from './Setup'
@@ -15,6 +19,7 @@ import { MOBILE } from './mobile'
 import MobileHome from './Mobile'
 import Palette from './Palette'
 import { GARDEN_DONE_MS } from './gardenTiming'
+import './styles/shell.css'
 
 /** One retry: a chunk request that fails once (a flaky connection) usually works the second time. */
 const Scene = lazy(() => import('./Scene').catch(() => import('./Scene')))
@@ -44,6 +49,22 @@ class SceneGuard extends Component<{ children: ReactNode; attempt: number; onRet
       </div>
     )
   }
+}
+
+/** A mouse or trackpad: the hints say "Klicke" there, and mention Esc. */
+const FINE = matchMedia('(hover: hover) and (pointer: fine)').matches
+
+/**
+ * Focus a floor badge once it is back. The badges leave the page while their
+ * floor is open and return a frame or two after the camera starts back, so
+ * this looks a few times instead of once.
+ */
+function focusSoon(selector: string, tries = 8) {
+  setTimeout(() => {
+    const el = document.querySelector<HTMLElement>(selector)
+    if (el) el.focus({ preventScroll: true })
+    else if (tries > 1) focusSoon(selector, tries - 1)
+  }, 60)
 }
 
 /** Online or not, live: the office works with the network, so say so when it's gone. */
@@ -98,27 +119,80 @@ export default function Office() {
   useComms(!locked)
   const showPalette = useOffice((s) => s.showPalette)
 
-  // The space bar sends Soley, Adrian and Cookie running through the office
-  // (not while typing). On a phone: tap the logo three times.
+  // Presenter keys, for a keyboard or a clicker (clickers send PageUp/PageDown
+  // or the arrows): 1–9 fly to a floor, the arrows step around the ring, Esc
+  // goes up one level, 0 or Home back to the overview, g into the brain, f to
+  // every approval. Shift+Space sends Soley, Adrian and Cookie running through
+  // the office; the bare space bar used to, and a presenter hits it by
+  // accident. On a phone: tap the logo three times.
   const startRomp = useOffice((s) => s.startRomp)
   const showSearch = useOffice((s) => s.showSearch)
+  const open = useOffice((s) => s.open)
   useEffect(() => {
     if (locked) return
     const key = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement
+      const typing = /INPUT|TEXTAREA|SELECT/.test(t.tagName) || t.isContentEditable
       // Ctrl/Cmd+K anywhere, or "/" outside a text field, opens the search.
-      if ((e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !/INPUT|TEXTAREA/.test(t.tagName))) {
+      if ((e.key.toLowerCase() === 'k' && (e.ctrlKey || e.metaKey)) || (e.key === '/' && !typing)) {
         e.preventDefault()
         showSearch(true)
         return
       }
-      if (e.code !== 'Space' || /INPUT|TEXTAREA|SELECT|BUTTON/.test(t.tagName) || t.isContentEditable) return
-      e.preventDefault()
-      startRomp()
+      // A dialog owns the keyboard, Esc included: it closes the dialog, not the floor behind it.
+      if (typing || e.ctrlKey || e.metaKey || e.altKey || useOffice.getState().search || document.querySelector('[aria-modal="true"]')) return
+      const v = useOffice.getState().view
+      if (e.key === 'Escape') {
+        if (v.kind === 'overview') return
+        e.preventDefault()
+        if (v.kind === 'dept' && v.agent) show({ kind: 'dept', id: v.id })
+        else if (v.kind === 'neural') show({ kind: 'brain' })
+        else {
+          show({ kind: 'overview' })
+          // Back where the keyboard left off: on the badge of the floor just closed.
+          focusSoon(v.kind === 'dept' ? `.floor-badge[data-dept="${v.id}"]` : '[data-dept="brain"], .floor-badge--brain')
+        }
+        return
+      }
+      if (e.code === 'Space') {
+        // On a button the space bar presses it, as it should.
+        if (e.shiftKey && t.tagName !== 'BUTTON') {
+          e.preventDefault()
+          startRomp()
+        }
+        return
+      }
+      // Holding a key down should not send the camera round and round.
+      if (e.repeat) return
+      const go = (view: Parameters<typeof show>[0]) => {
+        e.preventDefault()
+        show(view)
+      }
+      const k = e.key.toLowerCase()
+      if (/^[1-9]$/.test(k)) {
+        const d = DEPARTMENTS[Number(k) - 1]
+        if (d) go({ kind: 'dept', id: d.id })
+      } else if (k === '0' || k === 'home') {
+        if (v.kind !== 'overview') go({ kind: 'overview' })
+      } else if (k === 'g') go({ kind: 'brain' })
+      else if (k === 'f') {
+        e.preventDefault()
+        open(approvalsTarget(null))
+      } else {
+        const step = k === 'arrowright' || k === 'pagedown' ? 1 : k === 'arrowleft' || k === 'pageup' ? -1 : 0
+        if (!step) return
+        // DEPARTMENTS is already in ring order; from the overview the first step goes to either end.
+        const n = DEPARTMENTS.length
+        const at = v.kind === 'dept' ? DEPARTMENTS.findIndex((d) => d.id === v.id) : -1
+        const next = at < 0 ? (step > 0 ? 0 : n - 1) : (at + step + n) % n
+        go({ kind: 'dept', id: DEPARTMENTS[next].id })
+      }
     }
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  }, [locked, startRomp, showSearch])
+    // In the capture phase, so the check for an open dialog runs before that
+    // dialog's own Esc handler has closed it.
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+  }, [locked, startRomp, showSearch, show, open])
   const taps = useRef<number[]>([])
   const tapLogo = () => {
     const now = performance.now()
@@ -154,18 +228,28 @@ export default function Office() {
     </div>
   )
 
+  // What waits for the management's own signature, the group's filing first —
+  // counted the way the Leitung cockpit counts it.
+  const approved = useOffice((s) => s.approved)
+  const toSign =
+    user?.role === 'leitung' && !locked
+      ? DEPARTMENTS.flatMap((d) => d.waiting.map((w, i) => ({ d, w, i })))
+          .filter(({ w }) => !approved.includes(w) && needsLeitung(w))
+          .sort((a, b) => (GRUPPE ? Number(b.w === GRUPPE_FREIGABE) - Number(a.w === GRUPPE_FREIGABE) : 0))
+      : []
+  const signNext = () => {
+    const { d, w, i } = toSign[0]
+    show({ kind: 'dept', id: d.id })
+    // The record opens once the camera has nearly arrived, as from the cockpit.
+    setTimeout(() => open(agentTarget(d, waitingOwner(d, i), w)), 900)
+  }
+  const verb = FINE ? 'Klicke' : 'Tippe'
+
   return (
     // No native drag anywhere: holding and moving on a label used to pull out a ghost copy of it.
     <div className={`office${MOBILE ? ' office--m' : ''}${view.kind === 'overview' ? '' : ' is-open'}${bloomed ? ' is-garden' : ''}`} onDragStart={(e) => e.preventDefault()}>
-      {MOBILE ? (
-        <main className="m-page">
-          <MobileHome stage={stage} />
-        </main>
-      ) : (
-        stage
-      )}
-
-      <header className="topbar">
+      {/* The top bar comes first in the page, as it does on screen, so Tab reaches it before the 3D badges. Behind the lock it is out of reach. */}
+      <header className="topbar" inert={locked}>
         {MOBILE && !locked && (
           <button className="m-search" onClick={() => showSearch(true)} aria-label="Suchen">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
@@ -174,14 +258,18 @@ export default function Office() {
             </svg>
           </button>
         )}
+        {/* Co-branded: the customer's logo stands where our mark would, left of the product name. */}
         <span className="topbar__mark" onClick={tapLogo}>
-          <Mark />
+          {COMPANY.logo ? <img className="topbar__brandlogo" src={COMPANY.logo} alt={COMPANY.name} draggable={false} /> : <Mark />}
         </span>
-        <h1>Agenten-Büro</h1>
-        <span className="topbar__meta">
-          {COMPANY.name}
-          {COMPANY.demo && ' · Demo'}
-          <Net />
+        <span className="topbar__sep" aria-hidden />
+        <span className="topbar__title">
+          <h1>Agenten-Büro</h1>
+          <span className="topbar__meta">
+            {COMPANY.name}
+            {COMPANY.demo && ' · Demo'}
+            <Net />
+          </span>
         </span>
         <span className="topbar__actions">
           {!locked && (
@@ -194,7 +282,6 @@ export default function Office() {
               <kbd>Strg K</kbd>
             </button>
           )}
-          {COMPANY.logo && !locked && <img className="topbar__logo" src={COMPANY.logo} alt={COMPANY.name} />}
           {!locked && (
             <button className="topbar__setup" onClick={() => showSetup(true)} aria-label="Einrichtung" title="Einrichtung">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -243,15 +330,37 @@ export default function Office() {
         </span>
       </header>
 
+      {/* main stays position: static, so .stage still sits against .office and Scene finds it as before. */}
+      {MOBILE ? (
+        <main className="m-page" inert={locked}>
+          <MobileHome stage={stage} />
+        </main>
+      ) : (
+        <main className="office__main" aria-label="Büro – 3D-Übersicht" inert={locked}>
+          {stage}
+        </main>
+      )}
+
+      {/* For the management the pill points at what waits for their signature; otherwise it explains the office. */}
       <AnimatePresence>
-        {!MOBILE && (view.kind === 'overview' || view.kind === 'neural') && (
-          <motion.div key={view.kind} className="hint" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-            {view.kind === 'neural'
-              ? 'Jeder Punkt ist ein Agent · antippen öffnet ihn'
-              : window.innerWidth < 600
-                ? 'Tippe auf eine Abteilung oder das Gehirn'
-                : 'Tippe auf eine Abteilung · Doppelklick aufs Gehirn zoomt hinein'}
-          </motion.div>
+        {!MOBILE && view.kind === 'overview' && toSign.length > 0 ? (
+          <motion.button key="sign" type="button" className="hint hint--cta" onClick={signNext} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <span aria-hidden>✎ </span>
+            {toSign.length === 1 ? '1 Unterschrift wartet' : `${toSign.length} Unterschriften warten`} · {toSign[0].d.short}
+            <span aria-hidden> →</span>
+          </motion.button>
+        ) : (
+          !MOBILE &&
+          !locked &&
+          (view.kind === 'overview' || view.kind === 'neural') && (
+            <motion.div key={view.kind} className="hint" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              {view.kind === 'neural'
+                ? `Jeder Punkt ist ein Agent · ${FINE ? 'anklicken' : 'antippen'} öffnet ihn`
+                : window.innerWidth < 600
+                  ? `${verb} auf eine Abteilung oder das Gehirn`
+                  : `${verb} auf eine Abteilung · Doppelklick aufs Gehirn zoomt hinein${FINE ? ' · Esc zurück' : ''}`}
+            </motion.div>
+          )
         )}
       </AnimatePresence>
 
@@ -293,6 +402,18 @@ export default function Office() {
         {!locked && user?.role === 'leitung' && <Cockpit />}
       </Guard>
       <Lock onStart={() => setStarted(true)} />
+      {/* Part of the page, not of a wrapper, so it takes the theme and can step aside for other UI. It stands above the lock too. */}
+      {COMPANY.demo && (KUNDE || HV_KUNDE) && (
+        // A footer, so the note sits in a landmark of its own like the rest of the page.
+        <footer className="demo-ribbon">
+          <b>Demo</b>
+          <span role="note">
+            {GRUPPE
+              ? `Vorschau für die ${COMPANY.name} · keine offizielle Seite · Registerdaten aus öffentlicher Recherche, alles andere erfunden`
+              : `Vorschau · keine Seite der ${COMPANY.name} · Zahlen erfunden`}
+          </span>
+        </footer>
+      )}
     </div>
   )
 }

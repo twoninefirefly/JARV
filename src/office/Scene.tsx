@@ -1648,11 +1648,16 @@ function makeStars(n: number) {
  * left, a cool one from behind and a ring in the theme colour from below. The
  * shapes are rendered once into a cube map, so nothing is downloaded — drei's
  * presets would fetch HDR files, which the artifact sandbox blocks.
+ *
+ * One environment for the whole visit: a new colour re-renders the same cube
+ * (drei does that whenever the children change). Remounting it per colour
+ * leaked a texture each time, because three keeps the blurred copy it makes of
+ * a rendered cube map even after that cube map is disposed.
  */
 function Studio() {
   const t = useTheme()
   return (
-    <Environment key={t.id} resolution={256} frames={1} environmentIntensity={0.35}>
+    <Environment resolution={256} frames={1} environmentIntensity={0.35}>
       <Lightformer form="rect" intensity={3} color="#fff4e8" position={[0, 12, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[16, 16, 1]} />
       <Lightformer form="rect" intensity={1.6} color="#ffd9b8" position={[-10, 4, 6]} rotation={[0, Math.PI / 2.5, 0]} scale={[12, 2, 1]} />
       <Lightformer form="rect" intensity={1.2} color="#b9ccff" position={[9, 3, -10]} rotation={[0, -Math.PI / 4, 0]} scale={[12, 1.5, 1]} />

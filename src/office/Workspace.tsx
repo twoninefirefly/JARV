@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY, DEPARTMENTS, deptProtocol, fmt, split } from './data'
 import { useOffice } from './state'
@@ -7,6 +7,9 @@ import { LetterView } from './LetterPaper'
 import { PrintDialog, type PrintJob } from './Print'
 import { DEMO_PASSWORD, USERS, mayDecide, needsLeitung } from './team'
 import { ConfirmDecision, SignaturePad } from './Signature'
+import { useModal } from './modal'
+import type { Letter } from './letters'
+import './styles/flow.css'
 import {
   LAYOUT,
   SOURCES,
@@ -15,6 +18,7 @@ import {
   itemsFor,
   kindOf,
   logTarget,
+  waitingOwner,
   type Handled,
   type WsItem,
   type WsTarget,
@@ -44,6 +48,57 @@ function Badge({ badge }: { badge?: WsItem['badge'] }) {
   return <span className={`badge badge--${badge.tone}`}>{badge.text}</span>
 }
 
+const hhmm = (d = new Date()) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+
+/** How a released letter leaves the house, in the words of the trail and the toast. */
+const sent = (l: Letter) =>
+  l.channel === 'Portal'
+    ? { done: `Beim ${l.to[0]} eingereicht`, short: 'Eingereicht', going: `Wird beim ${l.to[0]} eingereicht` }
+    : l.channel === 'Brief'
+      ? { done: 'Brief an den Versand übergeben', short: 'Im Versand', going: 'Der Brief geht in den Versand' }
+      : { done: 'Mail gesendet', short: 'Gesendet', going: 'Die Mail wird gesendet' }
+
+/** Nothing to show: an icon, what is missing and, where it helps, the way out. */
+export function Empty({ icon, title, hint, action }: { icon?: ReactNode; title: string; hint?: string; action?: ReactNode }) {
+  return (
+    <div className="empty">
+      <span className="empty__icon" aria-hidden>
+        {icon ?? (
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+        )}
+      </span>
+      <b>{title}</b>
+      {hint && <small>{hint}</small>}
+      {action}
+    </div>
+  )
+}
+
+const MON = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
+
+/**
+ * A deadline reads as a date leaf, not as a clock time: 'Do., 29.10.',
+ * '31.12.2026' and the older '29.10. 14:30' all become a day over a month,
+ * with the time underneath only when there is one. Today's times stay as
+ * they are.
+ */
+function DateLeaf({ meta }: { meta?: string }) {
+  if (meta && /^(jetzt|heute)$/i.test(meta.trim())) return <span className="ws-date is-now">Jetzt</span>
+  const m = meta?.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})?(?:\s+(\d{1,2}:\d{2}))?\s*$/)
+  const month = m ? Number(m[2]) : 0
+  if (!m || month < 1 || month > 12) return <span className="ws-row__time">{meta}</span>
+  return (
+    <span className="ws-date" title={meta}>
+      <b>{Number(m[1])}</b>
+      <small>{MON[month - 1]}</small>
+      {m[4] && <i>{m[4]}</i>}
+    </span>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Record views
 // ---------------------------------------------------------------------------
@@ -54,7 +109,7 @@ function List({ items, chosen, pick, agenda }: { items: WsItem[]; chosen?: strin
       {items.map((it) => (
         <li key={it.id}>
           <button className={`ws-row${chosen === it.id ? ' is-chosen' : ''}${it.approval ? ' is-approval' : ''}${it.handled ? ' is-done' : ''}`} onClick={() => pick(it)}>
-            {agenda && <span className="ws-row__time">{it.meta}</span>}
+            {agenda && <DateLeaf meta={it.meta} />}
             <span className="ws-row__main">
               <b>{it.title}</b>
               {it.sub && <small>{it.sub}</small>}
@@ -105,7 +160,9 @@ function Table({ items, columns, chosen, pick }: { items: WsItem[]; columns: str
         <thead>
           <tr>
             {columns.map((c) => (
-              <th key={c}>{c}</th>
+              <th key={c} scope="col">
+                {c}
+              </th>
             ))}
           </tr>
         </thead>
@@ -113,7 +170,9 @@ function Table({ items, columns, chosen, pick }: { items: WsItem[]; columns: str
           {items.map((it) => (
             <tr key={it.id} className={`${chosen === it.id ? 'is-chosen' : ''}${it.approval ? ' is-approval' : ''}${it.handled ? ' is-done' : ''}`} onClick={() => pick(it)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && pick(it)}>
               {(it.cells ?? [it.title]).map((c, i) => (
-                <td key={i}>{i === (it.cells?.length ?? 1) - 1 && it.badge ? <Badge badge={it.badge} /> : c}</td>
+                <td key={i} title={String(c)}>
+                  {i === (it.cells?.length ?? 1) - 1 && it.badge ? <Badge badge={it.badge} /> : c}
+                </td>
               ))}
             </tr>
           ))}
@@ -149,7 +208,7 @@ function Trail({ item, printed, onPrint }: { item: WsItem; printed?: PrintJob; o
           {d.result === 'Freigegeben' && (
             <li className="is-done">
               <i />
-              <span>{item.letter ? (item.letter.channel === 'Brief' ? 'Brief an den Versand übergeben' : 'Mail gesendet') : 'Ausgeführt'} (in der Demo vorgemerkt)</span>
+              <span>{item.letter ? sent(item.letter).done : 'Ausgeführt'} (in der Demo vorgemerkt)</span>
               <small>{d.at} Uhr</small>
             </li>
           )}
@@ -214,8 +273,10 @@ function Detail({
   act: (item: WsItem, action: string) => void
   back?: () => void
 }) {
+  // Signed this very minute: the signature draws itself onto the page.
+  const fresh = item.decision?.signed && item.decision.at === hhmm()
   return (
-    <div className="ws-detail">
+    <div className={`ws-detail${fresh ? ' is-fresh' : ''}`}>
       {back && (
         <button className="ws-back" onClick={back}>
           ← Zurück zur Liste
@@ -328,18 +389,16 @@ function LeadOverview({ target, go }: { target: WsTarget; go: (t: WsTarget) => v
       <p className="body body--lead">{dept.lead.about}</p>
       <div className="stats stats--3">
         <button className="stat stat--link" onClick={() => go(logTarget(dept, 'done'))}>
-          <div className="stat__value">{fmt(s.done)}</div>
-          <div className="stat__label">Heute erledigt</div>
+          <span className="stat__value">{fmt(s.done)}</span>
+          <span className="stat__label">Heute erledigt</span>
         </button>
         <button className="stat stat--link" onClick={() => go(logTarget(dept, 'planned'))}>
-          <div className="stat__value">{fmt(s.total - s.done)}</div>
-          <div className="stat__label">Noch geplant</div>
+          <span className="stat__value">{fmt(s.total - s.done)}</span>
+          <span className="stat__label">Noch geplant</span>
         </button>
-        <button className="stat stat--link" onClick={() => go(approvalsTarget(dept))}>
-          <div className="stat__value" style={{ color: '#e8c170' }}>
-            {open.length}
-          </div>
-          <div className="stat__label">Wartet auf Sie</div>
+        <button className="stat stat--link" data-tone="warn" onClick={() => go(approvalsTarget(dept))}>
+          <span className="stat__value">{open.length}</span>
+          <span className="stat__label">Wartet auf Sie</span>
         </button>
       </div>
       <div className="section">
@@ -347,9 +406,13 @@ function LeadOverview({ target, go }: { target: WsTarget; go: (t: WsTarget) => v
         <div className="team">
           {dept.agents
             .filter((a) => !a.lead)
-            .map((a) => (
+            .map((a) => {
+              // Waiting only while something this agent prepared is still open — the same rule as the desks and the panel.
+              const owned = dept.waiting.filter((_, i) => waitingOwner(dept, i).id === a.id)
+              const status = a.status === 'wartet' && owned.length > 0 && owned.every((w) => approved.includes(w)) ? 'arbeitet' : a.status
+              return (
               <button key={a.id} className="team__row" onClick={() => go(agentTarget(dept, a))}>
-                <span className={`status status--${a.status}`} />
+                <span className={`status status--${status}`} role="img" aria-label={`Status: ${status}`} />
                 <span>
                   <b>{a.name}</b>
                   <small>
@@ -358,7 +421,8 @@ function LeadOverview({ target, go }: { target: WsTarget; go: (t: WsTarget) => v
                 </span>
                 <span className="eyebrow">Öffnen →</span>
               </button>
-            ))}
+              )
+            })}
         </div>
       </div>
       <div className="section">
@@ -415,7 +479,9 @@ function Window({ ws }: { ws: WsTarget }) {
   const addPrint = useOffice((s) => s.addPrint)
   const [printing, setPrinting] = useState<WsItem | null>(null)
   const showSetup = useOffice((s) => s.showSetup)
+  const queuePacket = useOffice((s) => s.queuePacket)
   const wide = useWide()
+  const root = useRef<HTMLElement>(null)
 
   const [stack, setStack] = useState<WsTarget[]>([])
   const [query, setQuery] = useState('')
@@ -450,12 +516,6 @@ function Window({ ws }: { ws: WsTarget }) {
   }, [key])
 
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && closeWs()
-    window.addEventListener('keydown', esc)
-    return () => window.removeEventListener('keydown', esc)
-  }, [ws, closeWs])
-
-  useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 2600)
     return () => clearTimeout(t)
@@ -479,17 +539,34 @@ function Window({ ws }: { ws: WsTarget }) {
     setStack((s) => s.slice(0, -1))
     if (prev) openWs(prev)
   }
+  // Esc steps back through the drill-down first, and closes the window only from where it opened.
+  useModal(root, () => (stack.length ? back() : closeWs()))
+
+  /**
+   * A decision travels: the agent who prepared it tells the lead, through
+   * the brain. The packet waits until the window closes, so it is seen.
+   */
+  const report = (it: WsItem, text: string) => {
+    const dept = DEPARTMENTS.find((d) => d.id === (it.dept ?? ws.deptId))
+    if (!dept) return
+    const lead = dept.agents.find((a) => a.lead)?.name ?? dept.lead.title
+    queuePacket({ id: Date.now(), from: { dept: dept.id, agent: it.preparedBy ?? ws.title }, to: { dept: dept.id, agent: lead }, text, filed: 'wird ausgeführt', time: hhmm() })
+  }
 
   const sign = (it: WsItem) => {
+    const what = it.title.replace(/ (freigeben|durchsehen)$/, '')
     approve(it.approval!, it.dept ?? ws.deptId ?? '', 'Freigegeben', true)
     mark(it, 'Unterschrieben und freigegeben', 'Unterschrieben', 'ok')
-    setToast(`Unterschrieben von ${user?.name}: ${it.title.replace(/ (freigeben|durchsehen)$/, '')}. Geht mit Ihrer Unterschrift raus – in der Demo nur vorgemerkt.`)
+    const goes = it.letter?.channel === 'Portal' ? `${sent(it.letter).going}, mit Ihrer Unterschrift` : 'Geht mit Ihrer Unterschrift raus'
+    setToast(`Unterschrieben von ${user?.name}: ${what}. ${goes} – in der Demo nur vorgemerkt.`)
     setSigning(null)
+    report(it, `Unterschrieben: ${what}`)
+    // The page scrolls to where the ink goes on.
+    requestAnimationFrame(() => document.querySelector('.ws .paper__sig')?.scrollIntoView({ block: 'center' }))
   }
 
   const mark = (it: WsItem, label: string, short: string, tone: 'ok' | 'muted') => {
-    const now = new Date()
-    handle(`${key}/${it.id}`, { label, short, tone, by: user?.name, at: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` })
+    handle(`${key}/${it.id}`, { label, short, tone, by: user?.name, at: hhmm() })
   }
 
   const decides = (action: string) => /^(Freigeben|Beauftragen|Handwerker beauftragen|Ablehnen|Unterschreiben)/.test(action)
@@ -505,7 +582,7 @@ function Window({ ws }: { ws: WsTarget }) {
       by: user?.name,
       at: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
     })
-    setToast(`Antwort gesendet: „${it.reply!.subject.replace(/‹|›/g, '')}“ – in der Demo nur vorgemerkt.`)
+    setToast(`Antwort gesendet: „${it.reply!.subject.replace(/‹|›|\[\[|\]\]/g, '')}“ – in der Demo nur vorgemerkt.`)
     setReplying(null)
   }
 
@@ -535,7 +612,7 @@ function Window({ ws }: { ws: WsTarget }) {
     const label = craft
       ? `Handwerker beauftragt – Auftrag ist raus an ${it.letter?.to[0] ?? 'den Betrieb'}`
       : sends
-      ? `Freigegeben – ${it.letter!.channel === 'Brief' ? 'Brief geht in den Versand' : 'Mail wird gesendet'}`
+      ? `Freigegeben – ${it.letter!.channel === 'Portal' ? `beim ${it.letter!.to[0]} eingereicht` : it.letter!.channel === 'Brief' ? 'Brief geht in den Versand' : 'Mail wird gesendet'}`
       : action === 'Freigeben'
         ? 'Freigegeben'
         : action === 'Ablehnen'
@@ -548,9 +625,7 @@ function Window({ ws }: { ws: WsTarget }) {
       : sends
       ? action === 'Ablehnen'
         ? 'Abgelehnt'
-        : it.letter!.channel === 'Brief'
-          ? 'Im Versand'
-          : 'Gesendet'
+        : sent(it.letter!).short
       : action === 'Freigeben'
         ? 'Freigegeben'
         : action === 'Ablehnen'
@@ -569,9 +644,10 @@ function Window({ ws }: { ws: WsTarget }) {
       craft
         ? `${label}.${it.reply ? ' Jetzt noch die Antwort an den Mieter – liegt als Vorlage bereit.' : ''}`
         : sends
-        ? `${action === 'Ablehnen' ? 'Abgelehnt' : 'Freigegeben'}${by}: ${what}. ${it.letter!.channel === 'Brief' ? 'Der Brief geht in den Versand' : 'Die Mail wird gesendet'} – in der Demo nur vorgemerkt.`
+        ? `${action === 'Ablehnen' ? 'Abgelehnt' : 'Freigegeben'}${by}: ${what}. ${sent(it.letter!).going} – in der Demo nur vorgemerkt.`
         : `${label}: ${it.title}. Nach der Anbindung an „${source.system}“ passiert das wirklich.`,
     )
+    if (/^(Freigeben|Beauftragen|Handwerker beauftragen)/.test(action)) report(it, `Freigegeben: ${what}`)
   }
 
   const showDetail = item && (wide || layout.layout !== 'overview')
@@ -617,6 +693,7 @@ function Window({ ws }: { ws: WsTarget }) {
         onClick={closeWs}
       />
       <motion.section
+        ref={root}
         className="ws"
         role="dialog"
         aria-modal="true"
@@ -688,7 +765,7 @@ function Window({ ws }: { ws: WsTarget }) {
             {ws.kind === 'log' && (
               <div className="ws-filter" role="group" aria-label="Filter">
                 {(['alle', 'done', 'planned'] as const).map((f) => (
-                  <button key={f} className={filter === f ? 'is-on' : ''} onClick={() => setFilter(f)}>
+                  <button key={f} className={filter === f ? 'is-on' : ''} aria-pressed={filter === f} onClick={() => setFilter(f)}>
                     {f === 'alle' ? 'Alle' : f === 'done' ? 'Erledigt' : 'Geplant'}
                   </button>
                 ))}
@@ -704,7 +781,21 @@ function Window({ ws }: { ws: WsTarget }) {
           ) : (
             <>
               <div className="ws-records">
-                {items.length || layout.layout === 'overview' ? records : <p className="ws-empty">Nichts gefunden.</p>}
+                {items.length || layout.layout === 'overview' ? (
+                  records
+                ) : q ? (
+                  <Empty
+                    title={`Kein Treffer für „${query.trim()}“`}
+                    hint="Andere Schreibweise oder weniger Wörter versuchen."
+                    action={
+                      <button className="btn btn--small" onClick={() => setQuery('')}>
+                        Suche zurücksetzen
+                      </button>
+                    }
+                  />
+                ) : (
+                  <Empty title="Hier ist nichts" hint={filter !== 'alle' ? 'Unter „Alle“ steht jeder Eintrag.' : undefined} />
+                )}
               </div>
               {wide && showDetail && detail}
             </>
@@ -729,28 +820,7 @@ function Window({ ws }: { ws: WsTarget }) {
             onCancel={() => setConfirming(null)}
           />
         )}
-        {replying?.reply && (
-          <div className="sig" role="dialog" aria-modal="true" aria-label="Antwort senden">
-            <motion.div className="sig__backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={() => setReplying(null)} />
-            <motion.div className="sig__card reply" initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', damping: 26, stiffness: 300 }}>
-              <h3>Antwort senden</h3>
-              <p className="sig__lead">Vorlage „{replying.reply.template}“ – so geht sie raus, mit Ihrem Namen.</p>
-              <div className="reply__letter">
-                <LetterView letter={replying.reply} />
-              </div>
-              <div className="sig__actions">
-                <span />
-                <span />
-                <button type="button" className="btn" onClick={() => setReplying(null)}>
-                  Abbrechen
-                </button>
-                <button type="button" className="btn btn--primary" onClick={() => sendReply(replying)} autoFocus>
-                  Antwort senden
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
+        {replying?.reply && <ReplyDialog reply={replying.reply} onSend={() => sendReply(replying)} onCancel={() => setReplying(null)} />}
         {printing && user && (
           <PrintDialog
             letters={printing.batch ?? [printing.letter!]}
@@ -774,13 +844,45 @@ function Window({ ws }: { ws: WsTarget }) {
         )}
         <AnimatePresence>
           {toast && (
-            <motion.div className="ws-toast" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <motion.div className="ws-toast" aria-hidden initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
               {toast}
             </motion.div>
           )}
         </AnimatePresence>
+        {/* Always there, so a screen reader hears each confirmation once, as it changes. */}
+        <div className="sr-only" role="status" aria-live="polite">
+          {toast ?? ''}
+        </div>
       </motion.section>
     </>
+  )
+}
+
+/** The prepared reply, as it will go out, one press from sent. */
+function ReplyDialog({ reply, onSend, onCancel }: { reply: Letter; onSend: () => void; onCancel: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useModal(ref, onCancel)
+  return (
+    <div className="sig" role="dialog" aria-modal="true" ref={ref}>
+      <motion.div className="sig__backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={onCancel} />
+      <motion.div className="sig__card reply" initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', damping: 26, stiffness: 300 }}>
+        <h3>Antwort senden</h3>
+        <p className="sig__lead">Vorlage „{reply.template}“ – so geht sie raus, mit Ihrem Namen.</p>
+        <div className="reply__letter">
+          <LetterView letter={reply} />
+        </div>
+        <div className="sig__actions">
+          <span />
+          <span />
+          <button type="button" className="btn" onClick={onCancel}>
+            Abbrechen
+          </button>
+          <button type="button" className="btn btn--primary" onClick={onSend} autoFocus>
+            Antwort senden
+          </button>
+        </div>
+      </motion.div>
+    </div>
   )
 }
 

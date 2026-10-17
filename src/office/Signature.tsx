@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
+import { useModal } from './modal'
 
 /**
  * Management's signature: drawn once, kept on this computer like the
@@ -176,14 +177,12 @@ export function ConfirmDecision({
   )
 }
 
+/** On top of the window or the Leitung area: Esc closes this card only, never what is under it. */
 function Modal({ children, onCancel }: { children: React.ReactNode; onCancel: () => void }) {
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onCancel()
-    window.addEventListener('keydown', esc)
-    return () => window.removeEventListener('keydown', esc)
-  }, [onCancel])
+  const ref = useRef<HTMLDivElement>(null)
+  useModal(ref, onCancel)
   return (
-    <div className="sig" role="dialog" aria-modal="true">
+    <div className="sig" role="dialog" aria-modal="true" ref={ref}>
       <motion.div className="sig__backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={onCancel} />
       <motion.div className="sig__card" initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', damping: 26, stiffness: 300 }}>
         {children}

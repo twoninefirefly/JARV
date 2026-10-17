@@ -1,0 +1,261 @@
+/*
+ * The approval flow: date leaves, empty states, the signature ink, search
+ * marks, the theme reveal and the calm-view switch.
+ *
+ * This file loads before office.css, so it only adds new class names,
+ * pseudo-elements and selectors more specific than the ones there.
+ */
+
+/* Read out, not shown. office.css carries the same rule; either is enough. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A dialog moves focus to its heading so the reader starts there; the heading is no control, so no ring. */
+[aria-modal='true'] :is(h2, h3)[tabindex='-1']:focus {
+  outline: none;
+}
+
+/* ------------------------------------------------------------- signature */
+
+/* Signed this very minute: the ink runs across the page from left to right. */
+.ws-detail.is-fresh .paper__sig {
+  animation: ink 0.9s ease-out both;
+}
+@keyframes ink {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+
+/* ------------------------------------------------------------ date leaves */
+
+.ws-list--agenda .ws-date {
+  flex: none;
+  width: 50px;
+  aspect-ratio: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 1px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--c) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--c) 40%, transparent);
+  text-align: center;
+}
+.ws-list--agenda .ws-date b {
+  font: 650 20px/1 var(--display, var(--sans));
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.ws-list--agenda .ws-date small {
+  font: 600 10px/1.1 var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ws-list--agenda .ws-date i {
+  font: 500 10px/1 var(--mono);
+  font-style: normal;
+  color: var(--c);
+}
+.ws-list--agenda .ws-date.is-now {
+  font: 650 11px var(--sans);
+  letter-spacing: 0.04em;
+  color: var(--c);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ws-list--agenda .ws-date.is-now {
+    animation: date-pulse 1.6s ease-out infinite;
+  }
+}
+@keyframes date-pulse {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--c) 55%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 10px color-mix(in oklab, var(--c) 0%, transparent);
+  }
+}
+
+/* ------------------------------------------------------- lead overview */
+
+/* The figures are spans now (a button holds no divs); they still stack. */
+.ws-overview .stat__value,
+.ws-overview .stat__label {
+  display: block;
+}
+.ws-overview .stat[data-tone='warn'] .stat__value {
+  color: var(--warn, #e8c170);
+}
+
+/* ------------------------------------------------------------ empty state */
+
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 48px 24px;
+  text-align: center;
+  text-wrap: balance;
+  color: var(--muted);
+}
+.empty b {
+  font: 650 16px var(--display, var(--sans));
+  color: var(--text);
+}
+.empty small {
+  max-width: 34ch;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.empty .btn {
+  margin-top: 6px;
+}
+.empty__icon {
+  width: 56px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  color: var(--c, var(--accent));
+  background: radial-gradient(circle, color-mix(in oklab, var(--c, var(--accent)) 22%, transparent), transparent 70%);
+  border: 1px solid color-mix(in oklab, var(--c, var(--accent)) 35%, transparent);
+}
+.cockpit__empty {
+  --c: var(--ok, #b7cf85);
+}
+.cockpit__empty .empty {
+  padding: 18px 16px 8px;
+}
+
+/* --------------------------------------------------------- demo reset */
+
+.cockpit__reset {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.cockpit__reset .ws-note {
+  margin: 0;
+}
+.cockpit__reset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- search */
+
+.search__mark {
+  background: none;
+  color: var(--accent-hi);
+  font-weight: 700;
+  text-decoration: underline 2px color-mix(in oklab, var(--accent) 55%, transparent);
+  text-underline-offset: 3px;
+}
+.search .search__hit[aria-selected='true'] {
+  box-shadow: inset 3px 0 0 var(--c, var(--accent));
+}
+.search__count {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--muted) 18%, transparent);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.search .search__foot kbd {
+  display: inline-block;
+  min-width: 18px;
+  margin-right: 3px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  font: 600 10px var(--mono);
+  text-align: center;
+  color: var(--text);
+}
+
+/* --------------------------------------------------------- theme reveal */
+
+/* The new colour grows as a circle from the swatch that was picked. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-new(root) {
+  animation: theme-reveal 0.75s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 50%));
+  }
+  to {
+    clip-path: circle(150vmax at var(--vt-x, 50%) var(--vt-y, 50%));
+  }
+}
+
+/* ------------------------------------------------------------ calm view */
+
+.palette__calm {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: none;
+  color: var(--muted);
+  font: 13px var(--sans);
+  text-align: left;
+  cursor: pointer;
+}
+.palette__calm b {
+  font-weight: 600;
+  color: var(--text);
+}
+.palette__track {
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--muted) 30%, transparent);
+  transition: background 0.2s;
+}
+.palette__track span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 0.2s;
+}
+.palette__calm[aria-checked='true'] .palette__track {
+  background: var(--accent);
+}
+.palette__calm[aria-checked='true'] .palette__track span {
+  transform: translateX(14px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .palette__track,
+  .palette__track span {
+    transition: none;
+  }
+}

@@ -1,8 +1,10 @@
-import { useEffect } from 'react'
+import { useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { COMPANY } from './data'
 import { BRANCHE } from './branche'
+import { GRUPPE } from './gruppe'
 import { useOffice } from './state'
+import { useModal } from './modal'
 
 /**
  * The setup plan: how the office gets from this demo to a customer's real
@@ -81,7 +83,7 @@ const STEPS: Array<{ title: string; when: string; we: string[]; you: string[] }>
 
 const RULES = HV
   ? [
-      { tone: 'warn', title: 'Immer mit Ihrer Freigabe', items: ['Mahnungen', 'Mieterhöhungen', 'Nebenkostenabrechnungen', 'Einladungen zur Eigentümerversammlung', 'Handwerkeraufträge ab einem Betrag, den Sie festlegen'] },
+      { tone: 'warn', title: 'Immer mit Ihrer Freigabe', items: ['Mahnungen', 'Mieterhöhungen', 'Nebenkostenabrechnungen', GRUPPE ? 'Gesellschafterbeschlüsse und Offenlegungen' : 'Einladungen zur Eigentümerversammlung', 'Handwerkeraufträge ab einem Betrag, den Sie festlegen'] },
       { tone: 'ok', title: 'Nach der Testphase automatisch', items: ['Eingangsbestätigungen', 'Handwerker- und Ablesetermine an Mieter', 'Antworten auf Standardfragen (Müll, Schlüssel, Hausordnung)', 'Zuordnung von Belegen und Zahlungen'] },
       { tone: 'bad', title: 'Nie automatisch', items: ['Kündigungen und Räumung', 'Anwalts- und Gerichtssachen', 'Streit mit Versicherungen', 'Alles, was Sie ausschließen'] },
     ]
@@ -102,136 +104,133 @@ const SAFETY = [
 
 export default function Setup() {
   const open = useOffice((s) => s.setup)
+  return <AnimatePresence>{open && <Plan key="setup" />}</AnimatePresence>
+}
+
+function Plan() {
   const close = useOffice((s) => s.showSetup)
-  useEffect(() => {
-    if (!open) return
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && close(false)
-    window.addEventListener('keydown', esc)
-    return () => window.removeEventListener('keydown', esc)
-  }, [open, close])
+  const root = useRef<HTMLElement>(null)
+  useModal(root, () => close(false))
 
   return (
-    <AnimatePresence>
-      {open && (
-        <>
-          <motion.div
-            key="setup-backdrop"
-            className="ws-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, pointerEvents: 'none' }}
-            onClick={() => close(false)}
-          />
-          <motion.section
-            key="setup"
-            className="ws setup"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Einrichtung"
-            initial={{ opacity: 0, y: 30, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 30, pointerEvents: 'none', transition: { duration: 0.18 } }}
-            transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-          >
-            <header className="ws-head">
-              <span className="sheet__icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M4 6h16M4 12h10M4 18h6M17 15l2 2 4-4" />
-                </svg>
-              </span>
-              <div className="ws-head__title">
-                <h2>So wird Ihr Agenten-Büro eingerichtet</h2>
-                <div className="eyebrow">{COMPANY.name} · in 6 Schritten · 4–8 Wochen</div>
-              </div>
-              {canPrint && (
-                <button className="btn btn--small setup__print" onClick={() => window.print()}>
-                  Als PDF speichern
-                </button>
-              )}
-              <button className="icon-btn" onClick={() => close(false)} aria-label="Einrichtung schließen">
-                ✕
-              </button>
-            </header>
+    <>
+      <motion.div
+        key="setup-backdrop"
+        className="ws-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, pointerEvents: 'none' }}
+        onClick={() => close(false)}
+      />
+      <motion.section
+        key="setup"
+        ref={root}
+        className="ws setup"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Einrichtung"
+        initial={{ opacity: 0, y: 30, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 30, pointerEvents: 'none', transition: { duration: 0.18 } }}
+        transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+      >
+        <header className="ws-head">
+          <span className="sheet__icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M4 6h16M4 12h10M4 18h6M17 15l2 2 4-4" />
+            </svg>
+          </span>
+          <div className="ws-head__title">
+            <h2>So wird Ihr Agenten-Büro eingerichtet</h2>
+            <div className="eyebrow">{COMPANY.name} · in 6 Schritten · 4–8 Wochen</div>
+          </div>
+          {canPrint && (
+            <button className="btn btn--small setup__print" onClick={() => window.print()}>
+              Als PDF speichern
+            </button>
+          )}
+          <button className="icon-btn" onClick={() => close(false)} aria-label="Einrichtung schließen">
+            ✕
+          </button>
+        </header>
 
-            <div className="setup__body">
-              {COMPANY.logo && <img className="setup__logo" src={COMPANY.logo} alt={COMPANY.name} />}
-              <p className="body body--lead">
-                Wir richten alles ein, Ihr Team arbeitet in der Zeit weiter wie gewohnt. Die Agenten übernehmen erst, wenn sie im Schattenbetrieb gezeigt haben,
-                dass sie es können – und alles Wichtige geht weiter über Ihren Tisch.
-              </p>
+        <div className="setup__body">
+          {COMPANY.logo && <img className="setup__logo" src={COMPANY.logo} alt={COMPANY.name} />}
+          <p className="body body--lead">
+            Wir richten alles ein, Ihr Team arbeitet in der Zeit weiter wie gewohnt. Die Agenten übernehmen erst, wenn sie im Schattenbetrieb gezeigt haben,
+            dass sie es können – und alles Wichtige geht weiter über Ihren Tisch.
+          </p>
 
-              <ol className="setup__steps">
-                {STEPS.map((s, i) => (
-                  <li key={s.title}>
-                    <span className="setup__num">{i + 1}</span>
-                    <div>
-                      <div className="setup__steptitle">
-                        <b>{s.title}</b>
-                        <span className="eyebrow">{s.when}</span>
-                      </div>
-                      <div className="setup__cols">
-                        <div>
-                          <span className="eyebrow">Wir</span>
-                          <ul>
-                            {s.we.map((x) => (
-                              <li key={x}>{x}</li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div>
-                          <span className="eyebrow">Sie</span>
-                          <ul>
-                            {s.you.map((x) => (
-                              <li key={x}>{x}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-
-              <h3 className="setup__h">Was rausgeht – und wer es freigibt</h3>
-              <div className="setup__rules">
-                {RULES.map((r) => (
-                  <div key={r.title} className={`setup__rule setup__rule--${r.tone}`}>
-                    <b>{r.title}</b>
-                    <ul>
-                      {r.items.map((x) => (
-                        <li key={x}>{x}</li>
-                      ))}
-                    </ul>
+          <ol className="setup__steps">
+            {STEPS.map((s, i) => (
+              <li key={s.title}>
+                <span className="setup__num">{i + 1}</span>
+                <div>
+                  <div className="setup__steptitle">
+                    <b>{s.title}</b>
+                    <span className="eyebrow">{s.when}</span>
                   </div>
-                ))}
-              </div>
-              <p className="ws-note">
-                Jedes Schreiben kommt aus Ihrer eigenen Vorlage. Die Agenten setzen nur Namen, Beträge und Fristen aus Ihren Systemen ein – und Sie sehen vor
-                der Freigabe genau, was eingesetzt wurde.
-              </p>
+                  <div className="setup__cols">
+                    <div>
+                      <span className="eyebrow">Wir</span>
+                      <ul>
+                        {s.we.map((x) => (
+                          <li key={x}>{x}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <span className="eyebrow">Sie</span>
+                      <ul>
+                        {s.you.map((x) => (
+                          <li key={x}>{x}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
 
-              <div className="setup__two">
-                <div>
-                  <h3 className="setup__h">Was angebunden wird</h3>
-                  <ul className="setup__list">
-                    {SYSTEMS.map((x) => (
-                      <li key={x}>{x}</li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <h3 className="setup__h">Sicherheit & Datenschutz</h3>
-                  <ul className="setup__list">
-                    {SAFETY.map((x) => (
-                      <li key={x}>{x}</li>
-                    ))}
-                  </ul>
-                </div>
+          <h3 className="setup__h">Was rausgeht – und wer es freigibt</h3>
+          <div className="setup__rules">
+            {RULES.map((r) => (
+              <div key={r.title} className={`setup__rule setup__rule--${r.tone}`}>
+                <b>{r.title}</b>
+                <ul>
+                  {r.items.map((x) => (
+                    <li key={x}>{x}</li>
+                  ))}
+                </ul>
               </div>
+            ))}
+          </div>
+          <p className="ws-note">
+            Jedes Schreiben kommt aus Ihrer eigenen Vorlage. Die Agenten setzen nur Namen, Beträge und Fristen aus Ihren Systemen ein – und Sie sehen vor
+            der Freigabe genau, was eingesetzt wurde.
+          </p>
+
+          <div className="setup__two">
+            <div>
+              <h3 className="setup__h">Was angebunden wird</h3>
+              <ul className="setup__list">
+                {SYSTEMS.map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ul>
             </div>
-          </motion.section>
-        </>
-      )}
-    </AnimatePresence>
+            <div>
+              <h3 className="setup__h">Sicherheit & Datenschutz</h3>
+              <ul className="setup__list">
+                {SAFETY.map((x) => (
+                  <li key={x}>{x}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </motion.section>
+    </>
   )
 }

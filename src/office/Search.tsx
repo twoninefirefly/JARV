@@ -4,6 +4,8 @@ import { DEPARTMENTS, type Agent, type Department } from './data'
 import { useOffice } from './state'
 import { Icon } from './Icon'
 import { SOURCES, agentTarget, itemsFor, kindOf, waitingOwner } from './workspaces'
+import { useModal } from './modal'
+import { Empty } from './Workspace'
 
 /**
  * Search everything in the office — departments, agents, every record in
@@ -81,8 +83,31 @@ function buildIndex(approved: string[]): Hit[] {
 
 const ORDER: Hit['group'][] = ['Freigaben', 'Abteilungen', 'Agenten', 'Vorgänge']
 
+/**
+ * The typed words, marked where they occur. Matching itself ignores umlaut
+ * spellings ('mueller' finds 'Müller'); the mark only shows exact spellings,
+ * which is the common case and never marks the wrong letters.
+ */
+function hl(text: string, words: string[]) {
+  if (!words.length) return text
+  const re = new RegExp(`(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'ig')
+  return text.split(re).map((part, i) =>
+    i % 2 ? (
+      <mark key={i} className="search__mark">
+        {part}
+      </mark>
+    ) : (
+      part
+    ),
+  )
+}
+
 export default function Search() {
   const open = useOffice((s) => s.search)
+  return <AnimatePresence>{open && <Finder key="search" />}</AnimatePresence>
+}
+
+function Finder() {
   const setOpen = useOffice((s) => s.showSearch)
   const show = useOffice((s) => s.show)
   const openWs = useOffice((s) => s.open)
@@ -91,8 +116,11 @@ export default function Search() {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const list = useRef<HTMLDivElement>(null)
+  const root = useRef<HTMLDivElement>(null)
+  useModal(root, () => setOpen(false))
 
-  const index = useMemo(() => (open ? buildIndex(approved) : []), [open, approved])
+  // Built once per opening: the search mounts with every opening.
+  const index = useMemo(() => buildIndex(approved), [approved])
   const results = useMemo(() => {
     const words = norm(q).split(/\s+/).filter(Boolean)
     const found = words.length ? index.filter((h) => words.every((w) => h.hay.includes(w))) : index.filter((h) => h.group === 'Abteilungen' || h.group === 'Freigaben')
@@ -114,10 +142,7 @@ export default function Search() {
     setGarden(true)
   }
 
-  useEffect(() => setSel(0), [q, open])
-  useEffect(() => {
-    if (open) setQ('')
-  }, [open])
+  useEffect(() => setSel(0), [q])
   useEffect(() => {
     list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [sel])
@@ -136,71 +161,112 @@ export default function Search() {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setSel((s) => Math.max(0, s - 1))
-    } else if (e.key === 'Enter' && secret) bloom()
-    else if (e.key === 'Enter' && results[sel]) go(results[sel])
-    else if (e.key === 'Escape') setOpen(false)
+    } else if (e.key === 'Home' && results.length) {
+      e.preventDefault()
+      setSel(0)
+    } else if (e.key === 'End' && results.length) {
+      e.preventDefault()
+      setSel(results.length - 1)
+    } else if (e.key === 'Enter') {
+      // Handled here; the Enter must not go on to press whatever has focus once the search is gone.
+      e.preventDefault()
+      if (secret) bloom()
+      else if (results[sel]) go(results[sel])
+    }
   }
 
-  let lastGroup = ''
+  const rawWords = q.trim().split(/\s+/).filter(Boolean)
+  const counts: Partial<Record<Hit['group'], number>> = {}
+  for (const h of results) counts[h.group] = (counts[h.group] ?? 0) + 1
+  // The results in their groups, each group a labelled set of options.
+  const groups = ORDER.map((g) => ({ g, hits: results.map((h, i) => ({ h, i })).filter(({ h }) => h.group === g) })).filter((x) => x.hits.length)
+  const active = secret ? 'hit-secret' : results[sel] ? `hit-${results[sel].key}` : undefined
+
   return (
-    <AnimatePresence>
-      {open && (
-        <div className="search" role="dialog" aria-modal="true" aria-label="Suchen">
-          <motion.div className="sig__backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOpen(false)} />
-          <motion.div className="search__card" initial={{ opacity: 0, y: -14, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10 }} transition={{ type: 'spring', damping: 28, stiffness: 320 }}>
-            <div className="search__field">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-3.5-3.5" />
-              </svg>
-              <input
-                autoFocus
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={key}
-                placeholder="Suchen: Mieter, Schaden, Agent, Rechnung, Adresse …"
-                aria-label="Suchen"
-                role="combobox"
-                aria-expanded
-              />
-              <kbd>Esc</kbd>
-            </div>
-            <div className="search__list" ref={list} role="listbox">
-              {secret && (
-                <button className="search__hit search__secret" aria-selected onClick={bloom}>
-                  <span className="search__icon">🌹</span>
-                  <span className="search__text">
-                    <b>Secret Garden</b>
-                    <small>Rasen und Rosen unter dem ganzen Büro</small>
-                  </span>
-                  <span className="search__go">Erblühen lassen →</span>
-                </button>
-              )}
-              {!secret && results.length === 0 && <p className="search__empty">Nichts gefunden.</p>}
-              {results.map((h, i) => {
-                const head = h.group !== lastGroup ? h.group : null
-                lastGroup = h.group
-                return (
-                  <div key={h.key}>
-                    {head && <div className="search__group">{head}</div>}
-                    <button role="option" aria-selected={i === sel} className="search__hit" style={{ ['--c' as string]: h.dept.color }} onMouseEnter={() => setSel(i)} onClick={() => go(h)}>
-                      <span className="search__icon">
-                        <Icon name={h.dept.icon} size={15} />
-                      </span>
-                      <span className="search__text">
-                        <b>{h.title}</b>
-                        <small>{h.sub}</small>
-                      </span>
-                      <span className="search__go">{h.agent ? 'Hinfliegen →' : 'Zur Abteilung →'}</span>
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-            <div className="search__foot">↑ ↓ auswählen · Enter hinfliegen · Strg K öffnet die Suche überall</div>
-          </motion.div>
+    <div className="search" role="dialog" aria-modal="true" aria-label="Suchen" ref={root}>
+      <motion.div className="sig__backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOpen(false)} />
+      <motion.div className="search__card" initial={{ opacity: 0, y: -14, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10 }} transition={{ type: 'spring', damping: 28, stiffness: 320 }}>
+        <div className="search__field">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={key}
+            placeholder="Suchen: Mieter, Schaden, Agent, Rechnung, Adresse …"
+            aria-label="Suchen"
+            role="combobox"
+            aria-controls="search-list"
+            aria-autocomplete="list"
+            aria-expanded={results.length > 0 || secret}
+            aria-activedescendant={active}
+          />
+          <kbd>Esc</kbd>
         </div>
-      )}
-    </AnimatePresence>
+        <div className="search__list" ref={list} role="listbox" id="search-list" aria-label="Suchergebnisse">
+          {secret && (
+            <button id="hit-secret" role="option" tabIndex={-1} className="search__hit search__secret" aria-selected onMouseDown={(e) => e.preventDefault()} onClick={bloom}>
+              <span className="search__icon">🌹</span>
+              <span className="search__text">
+                <b>Secret Garden</b>
+                <small>Rasen und Rosen unter dem ganzen Büro</small>
+              </span>
+              <span className="search__go">Erblühen lassen →</span>
+            </button>
+          )}
+          {!secret && results.length === 0 && (
+            <Empty
+              title={`Kein Treffer für „${q.trim()}“`}
+              hint="Andere Schreibweise oder weniger Wörter versuchen."
+              action={
+                <button className="btn btn--small" onMouseDown={(e) => e.preventDefault()} onClick={() => setQ('')}>
+                  Suche zurücksetzen
+                </button>
+              }
+            />
+          )}
+          {groups.map(({ g, hits }) => (
+            <div key={g} role="group" aria-labelledby={`grp-${g}`}>
+              <div className="search__group" id={`grp-${g}`}>
+                {g} <span className="search__count">{counts[g]}</span>
+              </div>
+              {hits.map(({ h, i }) => (
+                <button
+                  key={h.key}
+                  id={`hit-${h.key}`}
+                  role="option"
+                  tabIndex={-1}
+                  aria-selected={i === sel}
+                  className="search__hit"
+                  style={{ ['--c' as string]: h.dept.color }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setSel(i)}
+                  onClick={() => go(h)}
+                >
+                  <span className="search__icon">
+                    <Icon name={h.dept.icon} size={15} />
+                  </span>
+                  <span className="search__text">
+                    <b>{hl(h.title, rawWords)}</b>
+                    <small>{hl(h.sub, rawWords)}</small>
+                  </span>
+                  <span className="search__go">{h.agent ? 'Hinfliegen →' : 'Zur Abteilung →'}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+        <p className="sr-only" role="status">
+          {secret ? '1 Treffer' : `${results.length} Treffer`}
+        </p>
+        <div className="search__foot">
+          <kbd>↑</kbd>
+          <kbd>↓</kbd> auswählen · <kbd>Enter</kbd> hinfliegen · <kbd>Strg K</kbd> überall
+        </div>
+      </motion.div>
+    </div>
   )
 }

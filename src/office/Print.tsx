@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
+import { useModal } from './modal'
 import { Paper, type Signed } from './LetterPaper'
 import type { Letter } from './letters'
 
@@ -53,11 +54,9 @@ export function PrintDialog({
   const [sheets, setSheets] = useState(false)
   const chosen = PRINTERS.find((p) => p.id === printer)!
 
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && phase !== 'printing' && onCancel()
-    window.addEventListener('keydown', esc)
-    return () => window.removeEventListener('keydown', esc)
-  }, [onCancel, phase])
+  // A running job is not cancelled by a stray Esc; before and after, Esc closes the dialog only.
+  const root = useRef<HTMLDivElement>(null)
+  useModal(root, onCancel, phase !== 'printing')
 
   // The job runs letter by letter, so you see it go out.
   useEffect(() => {
@@ -89,7 +88,7 @@ export function PrintDialog({
   const pages = letters.length * (attachments && letters[0].attachments ? 1 + letters[0].attachments.length : 1)
 
   return (
-    <div className="sig" role="dialog" aria-modal="true" aria-label="Drucken">
+    <div className="sig" role="dialog" aria-modal="true" aria-label="Drucken" ref={root}>
       <motion.div className="sig__backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} onClick={() => phase !== 'printing' && onCancel()} />
       <motion.div className="sig__card print" initial={{ opacity: 0, y: 20, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: 'spring', damping: 26, stiffness: 300 }}>
         <h3>Postversand drucken</h3>

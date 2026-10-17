@@ -572,6 +572,13 @@ function Floor({ dept }: { dept: Department }) {
     leave.current = setTimeout(() => setTagHover(false), 140)
   }
   useEffect(() => () => clearTimeout(leave.current), [])
+  // The badge hides while its floor is open, and a hidden badge never gets its mouseleave:
+  // without this the stale hover filled the hourglass again on the way back and reopened the floor.
+  useEffect(() => {
+    if (!active && !inside) return
+    clearTimeout(leave.current)
+    setTagHover(false)
+  }, [active, inside])
   // Resting on the badge opens the department once its bar is full. A timer, not
   // the bar's transitionend: that one went missing now and then, and the bar filled for nothing.
   // Works from the overview and from inside another department alike.
